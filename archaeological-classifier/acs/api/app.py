@@ -63,6 +63,7 @@ def create_app(config=None):
     from acs.api.blueprints.classification import classification_bp
     from acs.api.blueprints.agents import agents_bp
     from acs.api.blueprints.savignano import savignano_bp
+    from acs.api.blueprints.system import system_bp
 
     app.register_blueprint(auth_bp)  # Auth at /api/auth
     app.register_blueprint(mesh_bp, url_prefix='/api/mesh')
@@ -70,6 +71,7 @@ def create_app(config=None):
     app.register_blueprint(classification_bp, url_prefix='/api/classification')
     app.register_blueprint(agents_bp, url_prefix='/api/agents')
     app.register_blueprint(savignano_bp, url_prefix='/api/savignano')
+    app.register_blueprint(system_bp, url_prefix='/api/system')
 
     # Initialize authentication: create default admin if no users exist
     with app.app_context():

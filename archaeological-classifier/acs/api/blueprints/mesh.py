@@ -10,7 +10,7 @@ from werkzeug.utils import secure_filename
 import os
 import time
 from acs.core.mesh_processor import MeshProcessor
-from acs.core.database import Database
+from acs.core.database import ArtifactDatabase
 from acs.core.auth import login_required, role_required
 from acs.core.file_validator import (
     FileValidator,
@@ -22,7 +22,7 @@ mesh_bp = Blueprint('mesh', __name__)
 
 # Global instances
 processor = MeshProcessor()
-db = Database()
+db = ArtifactDatabase()
 
 
 @mesh_bp.route('/upload', methods=['POST'])
@@ -339,9 +339,9 @@ def get_artifacts():
 
 @mesh_bp.route('/artifacts/<artifact_id>', methods=['GET'])
 @login_required
-def get_artifact(artifact_id):
+def get_artifact_from_db(artifact_id):
     """
-    Get details for a specific artifact.
+    Get details for a specific artifact from database.
 
     Args:
         artifact_id: ID of the artifact
