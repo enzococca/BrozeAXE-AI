@@ -5,8 +5,8 @@ Classification System Blueprint
 Endpoints for formal taxonomy management and classification.
 """
 
-from flask import Blueprint, request, jsonify
-from acs.core.auth import login_required, role_required, current_app, send_file
+from flask import Blueprint, request, jsonify, current_app, send_file
+from acs.core.auth import login_required, role_required
 from acs.core.taxonomy import FormalTaxonomySystem
 from acs.savignano.taxonomy_rules import SavignanoClassifier, classify_savignano_artifact
 import os
