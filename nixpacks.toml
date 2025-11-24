@@ -1,19 +1,14 @@
-# Force Python provider (ignore any Node.js files)
-[providers]
-python = "3.11"
+# Nixpacks configuration for Python Flask app
+providers = ["python"]
 
 [phases.setup]
 nixPkgs = ['python311', 'gcc', 'libstdcxx5']
-nixLibs = ['gcc', 'stdenv.cc.cc.lib']
 
 [phases.install]
 cmds = [
     'pip install --upgrade pip setuptools wheel',
     'pip install -r requirements.txt'
 ]
-
-[phases.build]
-cmds = []
 
 [start]
 cmd = 'cd archaeological-classifier && python3 -m acs.api.app'
