@@ -162,7 +162,7 @@ def create_app(config=None):
     return app
 
 
-def run_server(host='0.0.0.0', port=5000, debug=False):
+def run_server(host='0.0.0.0', port=5001, debug=False):
     """Run Flask development server."""
     app = create_app()
     app.run(host=host, port=port, debug=debug)
