@@ -149,6 +149,12 @@ def dashboard_page():
     return render_template('dashboard.html')
 
 
+@web_bp.route('/data-explorer')
+def data_explorer_page():
+    """Data Explorer - Navigate artifacts, features, training data."""
+    return render_template('data_explorer.html')
+
+
 @web_bp.route('/api/statistics')
 def get_statistics():
     """Get statistics for dashboard (protected by JavaScript token check)."""

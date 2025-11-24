@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Explorer - BrozeAXE-AI</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .nav-pills {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        .nav-pill {
+            padding: 10px 20px;
+            background: #f0f0f0;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: 2px solid transparent;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .nav-pill:hover {
+            background: #667eea;
+            color: white;
+        }
+
+        .nav-pill.active {
+            background: #667eea;
+            color: white;
+            border-color: #764ba2;
+        }
+
+        .content-section {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            display: none;
+        }
+
+        .content-section.active {
+            display: block;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .stat-card h3 {
+            font-size: 36px;
+            margin-bottom: 5px;
+        }
+
+        .stat-card p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .artifact-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .artifact-card {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 20px;
+            border: 2px solid #e0e0e0;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .artifact-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .artifact-card h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+
+        .feature-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e0e0e0;
+            font-size: 14px;
+        }
+
+        .feature-row:last-child {
+            border-bottom: none;
+        }
+
+        .feature-label {
+            color: #666;
+            font-weight: 500;
+        }
+
+        .feature-value {
+            color: #333;
+            font-weight: 600;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 14px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+
+        .action-buttons .btn {
+            flex: 1;
+            min-width: 120px;
+            text-align: center;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+
+        .empty-state svg {
+            width: 100px;
+            height: 100px;
+            margin-bottom: 20px;
+            opacity: 0.3;
+        }
+
+        .quick-actions {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+
+        .quick-action-card {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            padding: 25px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+        }
+
+        .quick-action-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+        }
+
+        .quick-action-card h3 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .quick-action-card p {
+            color: #666;
+            font-size: 13px;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 30px;
+            align-items: center;
+        }
+
+        .pagination button {
+            padding: 8px 16px;
+            border: 1px solid #667eea;
+            background: white;
+            color: #667eea;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .pagination button:hover:not(:disabled) {
+            background: #667eea;
+            color: white;
+        }
+
+        .pagination button:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .pagination .page-info {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .filter-bar {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .filter-bar input, .filter-bar select {
+            padding: 10px 15px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .user-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            float: right;
+        }
+
+        .user-info .role-badge {
+            background: #667eea;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .logout-btn {
+            background: #dc3545;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <div>
+                    <h1>🗄️ Data Explorer</h1>
+                    <p>Esplora artifacts, features, classificazioni e training data</p>
+                </div>
+                <div class="user-info">
+                    <span id="userName">Loading...</span>
+                    <span class="role-badge" id="userRole">---</span>
+                    <button class="logout-btn" onclick="logout()">Logout</button>
+                </div>
+            </div>
+
+            <!-- Navigation Pills -->
+            <div class="nav-pills">
+                <div class="nav-pill active" onclick="showSection('overview')">📊 Overview</div>
+                <div class="nav-pill" onclick="showSection('artifacts')">🏺 Artifacts</div>
+                <div class="nav-pill" onclick="showSection('features')">📐 Features</div>
+                <div class="nav-pill" onclick="showSection('training')">🎯 Training Data</div>
+                <div class="nav-pill" onclick="showSection('reports')">📄 Reports</div>
+                <div class="nav-pill" onclick="showSection('users')" id="usersTab" style="display:none">👥 Users</div>
+            </div>
+        </div>
+
+        <!-- Overview Section -->
+        <div id="overview-section" class="content-section active">
+            <h2 style="margin-bottom: 20px; color: #667eea;">Statistiche Sistema</h2>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3 id="statArtifacts">0</h3>
+                    <p>Artifacts Totali</p>
+                </div>
+                <div class="stat-card">
+                    <h3 id="statClassifications">0</h3>
+                    <p>Classificazioni</p>
+                </div>
+                <div class="stat-card">
+                    <h3 id="statTraining">0</h3>
+                    <p>Training Samples</p>
+                </div>
+                <div class="stat-card">
+                    <h3 id="statProjects">0</h3>
+                    <p>Progetti Attivi</p>
+                </div>
+            </div>
+
+            <h3 style="margin: 30px 0 20px; color: #333;">Quick Actions</h3>
+            <div class="quick-actions">
+                <div class="quick-action-card" onclick="window.location.href='/web/savignano-comprehensive-report'">
+                    <h3>📊 Genera Report</h3>
+                    <p>Report completo con AI, PCA, analisi martellatura</p>
+                </div>
+                <div class="quick-action-card" onclick="window.location.href='/web/savignano-analysis'">
+                    <h3>🔬 Analisi Savignano</h3>
+                    <p>Upload batch e analisi tecnologica</p>
+                </div>
+                <div class="quick-action-card" onclick="window.location.href='/web/savignano-compare'">
+                    <h3>⚖️ Comparazione</h3>
+                    <p>Confronta artifacts e visualizza differenze</p>
+                </div>
+                <div class="quick-action-card" onclick="window.location.href='/web/projects'">
+                    <h3>📁 Project Manager</h3>
+                    <p>Gestione progetti e organizzazione</p>
+                </div>
+                <div class="quick-action-card" onclick="showSection('training')">
+                    <h3>🎯 Training Data</h3>
+                    <p>Prepara dati per ML e validazione</p>
+                </div>
+                <div class="quick-action-card" onclick="window.open('/api/system/health', '_blank')">
+                    <h3>❤️ System Health</h3>
+                    <p>Stato server e metriche sistema</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Artifacts Section -->
+        <div id="artifacts-section" class="content-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="color: #667eea;">Artifacts nel Database</h2>
+                <button class="btn btn-primary" onclick="window.location.href='/web/upload'">+ Upload Artifact</button>
+            </div>
+
+            <div class="filter-bar">
+                <input type="text" id="searchArtifact" placeholder="Cerca per ID o filename..." onkeyup="filterArtifacts()">
+                <select id="projectFilter" onchange="filterArtifacts()">
+                    <option value="">Tutti i progetti</option>
+                </select>
+            </div>
+
+            <div id="artifactsList" class="loading">
+                <div class="spinner"></div>
+                <p>Caricamento artifacts...</p>
+            </div>
+
+            <div class="pagination" id="artifactsPagination" style="display: none;">
+                <button onclick="loadArtifacts(currentPage - 1)" id="prevBtn">← Precedente</button>
+                <span class="page-info" id="pageInfo">Pagina 1 di 1</span>
+                <button onclick="loadArtifacts(currentPage + 1)" id="nextBtn">Successiva →</button>
+            </div>
+        </div>
+
+        <!-- Features Section -->
+        <div id="features-section" class="content-section">
+            <h2 style="margin-bottom: 20px; color: #667eea;">Features Estratte</h2>
+            <p style="color: #666; margin-bottom: 20px;">
+                Seleziona un artifact dalla sezione Artifacts per vedere le features estratte dall'AI e dai sistemi di analisi morfometrica.
+            </p>
+            <div id="featuresList" class="empty-state">
+                <p>Nessun artifact selezionato</p>
+            </div>
+        </div>
+
+        <!-- Training Data Section -->
+        <div id="training-section" class="content-section">
+            <h2 style="margin-bottom: 20px; color: #667eea;">Training Data Management</h2>
+            <p style="color: #666; margin-bottom: 20px;">
+                Training samples sono usati per addestrare i modelli ML. Ogni sample è un artifact con classificazione validata.
+            </p>
+            <div id="trainingList" class="loading">
+                <div class="spinner"></div>
+                <p>Caricamento training data...</p>
+            </div>
+        </div>
+
+        <!-- Reports Section -->
+        <div id="reports-section" class="content-section">
+            <h2 style="margin-bottom: 20px; color: #667eea;">Report Generator</h2>
+
+            <div class="quick-actions">
+                <div class="quick-action-card" onclick="window.location.href='/web/savignano-comprehensive-report'">
+                    <h3>📊 Comprehensive Report</h3>
+                    <p>Report completo con AI, PCA, clustering, hammering, casting</p>
+                </div>
+                <div class="quick-action-card" onclick="window.location.href='/web/savignano-drawings-test'">
+                    <h3>📐 Technical Drawings</h3>
+                    <p>Disegni tecnici multilingual per pubblicazioni</p>
+                </div>
+            </div>
+
+            <div style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 10px;">
+                <h3 style="margin-bottom: 15px; color: #333;">Come Generare un Report</h3>
+                <ol style="color: #666; line-height: 1.8; padding-left: 20px;">
+                    <li>Vai alla sezione <strong>Artifacts</strong> e carica i tuoi file 3D</li>
+                    <li>Clicca su <strong>Comprehensive Report</strong></li>
+                    <li>Seleziona gli artifacts da analizzare</li>
+                    <li>Configura parametri (opzionale: API key Claude per AI analysis)</li>
+                    <li>Clicca su <strong>Generate Report</strong></li>
+                    <li>Il sistema genererà PDF con:
+                        <ul style="margin-top: 10px;">
+                            <li>Analisi AI delle caratteristiche tecnologiche</li>
+                            <li>PCA e clustering automatico</li>
+                            <li>Analisi martellatura (hammering patterns)</li>
+                            <li>Analisi fusione (casting analysis)</li>
+                            <li>Visualizzazioni 3D e grafici</li>
+                        </ul>
+                    </li>
+                </ol>
+            </div>
+        </div>
+
+        <!-- Users Section (Admin only) -->
+        <div id="users-section" class="content-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="color: #667eea;">User Management</h2>
+                <button class="btn btn-primary" onclick="showAddUserModal()">+ Add User</button>
+            </div>
+            <div id="usersList" class="loading">
+                <div class="spinner"></div>
+                <p>Caricamento utenti...</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="/web/static/js/auth.js"></script>
+    <script>
+        let currentPage = 1;
+        let totalPages = 1;
+        let allArtifacts = [];
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Check authentication
+            if (!AuthHelper.isAuthenticated()) {
+                window.location.href = '/web/login';
+                return;
+            }
+
+            // Load user info
+            const user = AuthHelper.getCurrentUser();
+            if (user) {
+                document.getElementById('userName').textContent = user.full_name || user.username;
+                document.getElementById('userRole').textContent = user.role.toUpperCase();
+
+                // Show users tab only for admin
+                if (user.role === 'admin') {
+                    document.getElementById('usersTab').style.display = 'block';
+                }
+            }
+
+            // Load initial data
+            await loadStats();
+            await loadProjects();
+        });
+
+        async function showSection(section) {
+            // Update pills
+            document.querySelectorAll('.nav-pill').forEach(pill => pill.classList.remove('active'));
+            event.target.classList.add('active');
+
+            // Update sections
+            document.querySelectorAll('.content-section').forEach(sec => sec.classList.remove('active'));
+            document.getElementById(`${section}-section`).classList.add('active');
+
+            // Load section data
+            if (section === 'artifacts') {
+                await loadArtifacts(1);
+            } else if (section === 'training') {
+                await loadTrainingData();
+            } else if (section === 'users') {
+                await loadUsers();
+            }
+        }
+
+        async function loadStats() {
+            try {
+                const response = await AuthHelper.authenticatedFetch('/api/system/status');
+                const data = await response.json();
+
+                if (data.database) {
+                    document.getElementById('statArtifacts').textContent = data.database.artifacts || 0;
+                    document.getElementById('statClassifications').textContent = data.database.classifications || 0;
+                    document.getElementById('statTraining').textContent = data.database.training_samples || 0;
+                }
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        async function loadProjects() {
+            try {
+                const response = await AuthHelper.authenticatedFetch('/web/api/projects');
+                const data = await response.json();
+
+                if (data.projects) {
+                    document.getElementById('statProjects').textContent = data.projects.length;
+
+                    // Populate project filter
+                    const select = document.getElementById('projectFilter');
+                    data.projects.forEach(proj => {
+                        const option = document.createElement('option');
+                        option.value = proj.project_id;
+                        option.textContent = proj.project_name;
+                        select.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading projects:', error);
+            }
+        }
+
+        async function loadArtifacts(page = 1) {
+            currentPage = page;
+            const listEl = document.getElementById('artifactsList');
+            listEl.innerHTML = '<div class="loading"><div class="spinner"></div><p>Caricamento...</p></div>';
+
+            try {
+                const response = await AuthHelper.authenticatedFetch(`/api/mesh/artifacts?page=${page}&per_page=12`);
+                const data = await response.json();
+
+                if (data.status === 'success' && data.artifacts) {
+                    allArtifacts = data.artifacts;
+                    totalPages = data.pages;
+
+                    if (data.artifacts.length === 0) {
+                        listEl.innerHTML = '<div class="empty-state"><p>Nessun artifact trovato</p></div>';
+                        return;
+                    }
+
+                    renderArtifacts(data.artifacts);
+                    updatePagination(data);
+                } else {
+                    listEl.innerHTML = '<div class="empty-state"><p>Errore nel caricamento artifacts</p></div>';
+                }
+            } catch (error) {
+                console.error('Error loading artifacts:', error);
+                listEl.innerHTML = '<div class="empty-state"><p>Errore: ' + error.message + '</p></div>';
+            }
+        }
+
+        function renderArtifacts(artifacts) {
+            const listEl = document.getElementById('artifactsList');
+
+            if (artifacts.length === 0) {
+                listEl.innerHTML = '<div class="empty-state"><p>Nessun artifact trovato</p></div>';
+                return;
+            }
+
+            listEl.innerHTML = '<div class="artifact-grid">' + artifacts.map(art => `
+                <div class="artifact-card">
+                    <h3>📦 ${art.artifact_id}</h3>
+                    <div class="feature-row">
+                        <span class="feature-label">Project</span>
+                        <span class="feature-value">${art.project_id || 'N/A'}</span>
+                    </div>
+                    <div class="feature-row">
+                        <span class="feature-label">Filename</span>
+                        <span class="feature-value">${art.filename || 'N/A'}</span>
+                    </div>
+                    <div class="feature-row">
+                        <span class="feature-label">Upload Date</span>
+                        <span class="feature-value">${new Date(art.upload_date).toLocaleDateString('it-IT')}</span>
+                    </div>
+                    <div class="action-buttons">
+                        <button class="btn btn-primary" onclick="viewFeatures('${art.artifact_id}')">📐 Features</button>
+                        <button class="btn btn-danger" onclick="deleteArtifact('${art.artifact_id}')">🗑️</button>
+                    </div>
+                </div>
+            `).join('') + '</div>';
+        }
+
+        function updatePagination(data) {
+            const pagination = document.getElementById('artifactsPagination');
+            pagination.style.display = 'flex';
+
+            document.getElementById('pageInfo').textContent = `Pagina ${data.page} di ${data.pages} (${data.total} totali)`;
+            document.getElementById('prevBtn').disabled = data.page <= 1;
+            document.getElementById('nextBtn').disabled = data.page >= data.pages;
+        }
+
+        async function viewFeatures(artifactId) {
+            showSection('features');
+            const listEl = document.getElementById('featuresList');
+            listEl.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+            try {
+                const response = await AuthHelper.authenticatedFetch(`/api/mesh/artifacts/${artifactId}`);
+                const data = await response.json();
+
+                if (data.artifact && data.artifact.features) {
+                    const features = data.artifact.features;
+                    listEl.innerHTML = `
+                        <h3 style="color: #667eea; margin-bottom: 20px;">Features per ${artifactId}</h3>
+                        <div class="artifact-grid">
+                            ${Object.entries(features).map(([key, value]) => `
+                                <div class="feature-row">
+                                    <span class="feature-label">${key}</span>
+                                    <span class="feature-value">${typeof value === 'number' ? value.toFixed(3) : value}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                } else {
+                    listEl.innerHTML = '<div class="empty-state"><p>Nessuna feature trovata</p></div>';
+                }
+            } catch (error) {
+                listEl.innerHTML = '<div class="empty-state"><p>Errore: ' + error.message + '</p></div>';
+            }
+        }
+
+        async function deleteArtifact(artifactId) {
+            if (!confirm(`Eliminare artifact ${artifactId}? Questa azione è irreversibile!`)) {
+                return;
+            }
+
+            try {
+                const response = await AuthHelper.authenticatedFetch(`/api/mesh/artifacts/${artifactId}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    alert('Artifact eliminato con successo');
+                    loadArtifacts(currentPage);
+                    loadStats();
+                } else {
+                    alert('Errore: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Errore: ' + error.message);
+            }
+        }
+
+        async function loadTrainingData() {
+            const listEl = document.getElementById('trainingList');
+            listEl.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+            // TODO: Implement training data endpoint
+            listEl.innerHTML = '<div class="empty-state"><p>Training data endpoint coming soon...</p></div>';
+        }
+
+        async function loadUsers() {
+            const listEl = document.getElementById('usersList');
+            listEl.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+            try {
+                const response = await AuthHelper.authenticatedFetch('/api/auth/users');
+                const data = await response.json();
+
+                if (data.users) {
+                    listEl.innerHTML = '<div class="artifact-grid">' + data.users.map(user => `
+                        <div class="artifact-card">
+                            <h3>👤 ${user.username}</h3>
+                            <div class="feature-row">
+                                <span class="feature-label">Email</span>
+                                <span class="feature-value">${user.email}</span>
+                            </div>
+                            <div class="feature-row">
+                                <span class="feature-label">Role</span>
+                                <span class="feature-value">${user.role}</span>
+                            </div>
+                            <div class="feature-row">
+                                <span class="feature-label">Active</span>
+                                <span class="feature-value">${user.is_active ? '✅' : '❌'}</span>
+                            </div>
+                        </div>
+                    `).join('') + '</div>';
+                }
+            } catch (error) {
+                listEl.innerHTML = '<div class="empty-state"><p>Errore: ' + error.message + '</p></div>';
+            }
+        }
+
+        function filterArtifacts() {
+            const search = document.getElementById('searchArtifact').value.toLowerCase();
+            const project = document.getElementById('projectFilter').value;
+
+            const filtered = allArtifacts.filter(art => {
+                const matchSearch = !search ||
+                    art.artifact_id.toLowerCase().includes(search) ||
+                    (art.filename && art.filename.toLowerCase().includes(search));
+                const matchProject = !project || art.project_id === project;
+                return matchSearch && matchProject;
+            });
+
+            renderArtifacts(filtered);
+        }
+
+        function logout() {
+            AuthHelper.logout();
+            window.location.href = '/web/login';
+        }
+    </script>
+</body>
+</html>
