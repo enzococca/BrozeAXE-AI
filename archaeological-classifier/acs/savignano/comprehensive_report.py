@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Dict, Optional, List, Tuple
 from datetime import datetime
 import json
+import logging
 
 # Matplotlib with Agg backend for headless rendering
 import matplotlib
@@ -32,6 +33,9 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.patches import Rectangle, FancyBboxPatch, Polygon
 import matplotlib.gridspec as gridspec
+
+# Setup logger
+logger = logging.getLogger(__name__)
 
 
 class SavignanoComprehensiveReport:
@@ -1571,17 +1575,39 @@ class SavignanoComprehensiveReport:
 
         hammer_text = self._analyze_hammering()
 
-        # Split into lines with proper wrapping
+        # DEBUG: Log analysis text info
+        logger.info(f"\n=== HAMMERING ANALYSIS DEBUG ===")
+        logger.info(f"Analysis text length: {len(hammer_text)} characters")
+        logger.info(f"Analysis text lines: {len(hammer_text.split(chr(10)))} lines")
+        logger.info(f"First 200 chars: {hammer_text[:200]}")
+        logger.info(f"=== END DEBUG ===\n")
+
+        # Split into lines with proper wrapping (preserve indentation)
         wrapped_lines = []
         for paragraph in hammer_text.split('\n'):
             if paragraph.strip():
-                wrapped_lines.extend(textwrap.wrap(paragraph, width=95, break_long_words=False))
+                # Preserve leading spaces for indentation
+                leading_spaces = len(paragraph) - len(paragraph.lstrip())
+                indent = ' ' * leading_spaces
+                # Wrap the stripped content
+                stripped = paragraph.lstrip()
+                if len(stripped) > 95:
+                    # Need to wrap
+                    wrapped = textwrap.wrap(stripped, width=95 - leading_spaces, break_long_words=False)
+                    wrapped_lines.extend([indent + line for line in wrapped])
+                else:
+                    # No wrap needed, keep original line
+                    wrapped_lines.append(paragraph)
             else:
                 wrapped_lines.append('')  # Preserve empty lines
+
+        logger.info(f"Wrapped lines count: {len(wrapped_lines)}")
 
         # Split into pages (max ~45 lines per page to avoid overflow)
         lines_per_page = 45
         total_pages = (len(wrapped_lines) + lines_per_page - 1) // lines_per_page
+
+        logger.info(f"Total pages needed: {total_pages}")
 
         for page_num in range(total_pages):
             fig = plt.figure(figsize=(8.27, 11.69))  # A4 portrait
@@ -1614,7 +1640,7 @@ class SavignanoComprehensiveReport:
             for line in page_lines:
                 if line.strip():
                     ax.text(0.08, current_y, line, ha='left', va='top',
-                           fontsize=9, family='monospace')
+                           fontsize=9, family='monospace', color='black')
                 current_y -= line_height
 
             # Footer with page number
@@ -1630,17 +1656,39 @@ class SavignanoComprehensiveReport:
 
         casting_text = self._analyze_casting()
 
-        # Split into lines with proper wrapping
+        # DEBUG: Log analysis text info
+        logger.info(f"\n=== CASTING ANALYSIS DEBUG ===")
+        logger.info(f"Analysis text length: {len(casting_text)} characters")
+        logger.info(f"Analysis text lines: {len(casting_text.split(chr(10)))} lines")
+        logger.info(f"First 200 chars: {casting_text[:200]}")
+        logger.info(f"=== END DEBUG ===\n")
+
+        # Split into lines with proper wrapping (preserve indentation)
         wrapped_lines = []
         for paragraph in casting_text.split('\n'):
             if paragraph.strip():
-                wrapped_lines.extend(textwrap.wrap(paragraph, width=95, break_long_words=False))
+                # Preserve leading spaces for indentation
+                leading_spaces = len(paragraph) - len(paragraph.lstrip())
+                indent = ' ' * leading_spaces
+                # Wrap the stripped content
+                stripped = paragraph.lstrip()
+                if len(stripped) > 95:
+                    # Need to wrap
+                    wrapped = textwrap.wrap(stripped, width=95 - leading_spaces, break_long_words=False)
+                    wrapped_lines.extend([indent + line for line in wrapped])
+                else:
+                    # No wrap needed, keep original line
+                    wrapped_lines.append(paragraph)
             else:
                 wrapped_lines.append('')  # Preserve empty lines
+
+        logger.info(f"Wrapped lines count: {len(wrapped_lines)}")
 
         # Split into pages (max ~45 lines per page to avoid overflow)
         lines_per_page = 45
         total_pages = (len(wrapped_lines) + lines_per_page - 1) // lines_per_page
+
+        logger.info(f"Total pages needed: {total_pages}")
 
         # Note: Page numbers continue from hammering analysis
         # Assuming hammering takes 1-2 pages, casting starts at page 5 or 6
@@ -1677,7 +1725,7 @@ class SavignanoComprehensiveReport:
             for line in page_lines:
                 if line.strip():
                     ax.text(0.08, current_y, line, ha='left', va='top',
-                           fontsize=9, family='monospace')
+                           fontsize=9, family='monospace', color='black')
                 current_y -= line_height
 
             # Footer with page number (will be adjusted in final numbering)
