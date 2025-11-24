@@ -38,28 +38,50 @@ def create_app(config=None):
     app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max file size
     app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', '/tmp/acs_uploads')
     app.config['TAXONOMY_DB'] = os.getenv('TAXONOMY_DB', '/tmp/acs_taxonomy.json')
+    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-CHANGE-IN-PRODUCTION')
 
     if config:
         app.config.update(config)
 
-    # Enable CORS
-    CORS(app)
+    # Enable CORS with specific origins
+    CORS(app, resources={
+        r"/api/*": {
+            "origins": os.getenv('CORS_ORIGINS', 'http://localhost:3000,http://localhost:5000').split(','),
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization", "X-Access-Token"],
+            "supports_credentials": True
+        }
+    })
 
     # Create upload folder
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
     # Register API blueprints
+    from acs.api.blueprints.auth import auth_bp
     from acs.api.blueprints.mesh import mesh_bp
     from acs.api.blueprints.morphometric import morphometric_bp
     from acs.api.blueprints.classification import classification_bp
     from acs.api.blueprints.agents import agents_bp
     from acs.api.blueprints.savignano import savignano_bp
 
+    app.register_blueprint(auth_bp)  # Auth at /api/auth
     app.register_blueprint(mesh_bp, url_prefix='/api/mesh')
     app.register_blueprint(morphometric_bp, url_prefix='/api/morphometric')
     app.register_blueprint(classification_bp, url_prefix='/api/classification')
     app.register_blueprint(agents_bp, url_prefix='/api/agents')
     app.register_blueprint(savignano_bp, url_prefix='/api/savignano')
+
+    # Initialize authentication: create default admin if no users exist
+    with app.app_context():
+        from acs.core.auth import create_default_admin
+        admin = create_default_admin()
+        if admin:
+            print("[Auth] ⚠️  Default admin created:")
+            print(f"[Auth]     Username: admin")
+            print(f"[Auth]     Password: admin123")
+            print(f"[Auth]     ⚠️  CHANGE PASSWORD IMMEDIATELY!")
+        else:
+            print("[Auth] ✓ Users already exist, skipping default admin creation")
 
     # Register Web UI blueprint
     from acs.web.routes import web_bp

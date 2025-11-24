@@ -149,11 +149,28 @@ class ArtifactDatabase:
                 )
             ''')
 
+            # Users table (for authentication)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE NOT NULL,
+                    email TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    role TEXT DEFAULT 'viewer',
+                    full_name TEXT,
+                    created_date TEXT,
+                    last_login TEXT,
+                    is_active INTEGER DEFAULT 1
+                )
+            ''')
+
             # Create indexes
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_artifact_id ON features(artifact_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_class_id ON classifications(class_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_validated ON classifications(validated)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_training_class ON training_data(class_label)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_username ON users(username)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_email ON users(email)')
 
             conn.commit()
 
@@ -645,6 +662,104 @@ class ArtifactDatabase:
             json.dump(data, f, indent=2)
 
         return output_path
+
+    # ========== USER OPERATIONS ==========
+
+    def add_user(self, username: str, email: str, password_hash: str,
+                 role: str = 'viewer', full_name: str = None) -> int:
+        """Add a new user to the database.
+
+        Args:
+            username: Unique username
+            email: Unique email address
+            password_hash: Hashed password (use bcrypt)
+            role: User role ('admin', 'archaeologist', 'viewer')
+            full_name: Optional full name
+
+        Returns:
+            user_id of created user
+
+        Raises:
+            sqlite3.IntegrityError: If username or email already exists
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO users (username, email, password_hash, role, full_name, created_date, is_active)
+                VALUES (?, ?, ?, ?, ?, ?, 1)
+            ''', (username, email, password_hash, role, full_name, datetime.now().isoformat()))
+            return cursor.lastrowid
+
+    def get_user_by_username(self, username: str) -> Optional[Dict]:
+        """Get user by username."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM users WHERE username = ? AND is_active = 1', (username,))
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+
+    def get_user_by_email(self, email: str) -> Optional[Dict]:
+        """Get user by email."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM users WHERE email = ? AND is_active = 1', (email,))
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+
+    def get_user_by_id(self, user_id: int) -> Optional[Dict]:
+        """Get user by ID."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
+            row = cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+
+    def update_last_login(self, user_id: int):
+        """Update user's last login timestamp."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE users SET last_login = ? WHERE user_id = ?
+            ''', (datetime.now().isoformat(), user_id))
+
+    def get_all_users(self) -> List[Dict]:
+        """Get all active users (exclude password hashes)."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT user_id, username, email, role, full_name, created_date, last_login
+                FROM users WHERE is_active = 1
+                ORDER BY created_date DESC
+            ''')
+            return [dict(row) for row in cursor.fetchall()]
+
+    def update_user_role(self, user_id: int, new_role: str):
+        """Update user's role."""
+        valid_roles = ['admin', 'archaeologist', 'viewer']
+        if new_role not in valid_roles:
+            raise ValueError(f"Invalid role: {new_role}. Must be one of {valid_roles}")
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('UPDATE users SET role = ? WHERE user_id = ?', (new_role, user_id))
+
+    def deactivate_user(self, user_id: int):
+        """Deactivate user (soft delete)."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('UPDATE users SET is_active = 0 WHERE user_id = ?', (user_id,))
+
+    def activate_user(self, user_id: int):
+        """Reactivate a deactivated user."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('UPDATE users SET is_active = 1 WHERE user_id = ?', (user_id,))
 
 
 # Global database instance
