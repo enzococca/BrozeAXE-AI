@@ -380,7 +380,7 @@
             container.innerHTML = `
                 <div class="projects-grid">
                     ${projects.map(proj => `
-                        <div class="project-card" onclick="openProject('${proj.project_id}')">
+                        <div class="project-card">
                             <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
                                 <h3>📁 ${proj.project_name}</h3>
                                 <span class="status-badge status-${proj.status || 'active'}">
@@ -459,9 +459,10 @@
         }
 
         function openProject(projectId) {
-            // Store current project in session
+            // Removed - project detail page not implemented yet
+            // Use Upload or Report buttons instead
             sessionStorage.setItem('currentProject', projectId);
-            window.location.href = `/web/project/${projectId}`;
+            goToReport(projectId);
         }
 
         function goToUpload(projectId) {

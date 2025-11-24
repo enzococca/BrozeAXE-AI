@@ -34,6 +34,31 @@
         .header h1 {
             color: #667eea;
             margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .back-button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .back-button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
         }
 
         .header p {
@@ -356,7 +381,10 @@
         <div class="header">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                 <div>
-                    <h1>🗄️ Data Explorer</h1>
+                    <h1>
+                        <span>🗄️ Data Explorer</span>
+                        <a href="/web/dashboard" class="back-button">⬅️ Dashboard</a>
+                    </h1>
                     <p>Esplora artifacts, features, classificazioni e training data</p>
                 </div>
                 <div class="user-info">
@@ -414,7 +442,7 @@
                     <h3>⚖️ Comparazione</h3>
                     <p>Confronta artifacts e visualizza differenze</p>
                 </div>
-                <div class="quick-action-card" onclick="window.location.href='/web/projects'">
+                <div class="quick-action-card" onclick="window.location.href='/web/projects-page'">
                     <h3>📁 Project Manager</h3>
                     <p>Gestione progetti e organizzazione</p>
                 </div>
@@ -518,7 +546,7 @@
         <div id="users-section" class="content-section">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                 <h2 style="color: #667eea;">User Management</h2>
-                <button class="btn btn-primary" onclick="showAddUserModal()">+ Add User</button>
+                <p style="color: #666; font-size: 14px;">View all system users</p>
             </div>
             <div id="usersList" class="loading">
                 <div class="spinner"></div>
@@ -598,7 +626,7 @@
 
         async function loadProjects() {
             try {
-                const response = await AuthHelper.fetch('/web/api/projects');
+                const response = await AuthHelper.fetch('/web/projects');
                 const data = await response.json();
 
                 if (data.projects) {
