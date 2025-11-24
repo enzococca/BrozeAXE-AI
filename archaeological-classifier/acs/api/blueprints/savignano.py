@@ -1071,31 +1071,40 @@ def generate_comprehensive_report_stream(artifact_id: str):
             yield f"data: {json.dumps({'type': 'log', 'message': '  Pagina 2: Disegni tecnici', 'level': 'info'})}\n\n"
             yield f"data: {json.dumps({'type': 'log', 'message': '  Pagina 3: Interpretazione AI', 'level': 'info'})}\n\n"
 
-            # Stream hammering analysis preview
-            yield f"data: {json.dumps({'type': 'log', 'message': '  Pagina 4+: Analisi martellatura', 'level': 'info'})}\n\n"
-            yield f"data: {json.dumps({'type': 'log', 'message': '    → Calcolo rugosità superficiale per regioni...', 'level': 'info'})}\n\n"
-            yield f"data: {json.dumps({'type': 'log', 'message': '    → Analisi tallone, corpo e tagliente...', 'level': 'info'})}\n\n"
-            yield f"data: {json.dumps({'type': 'log', 'message': '    → Interpretazione tracce di martellamento...', 'level': 'info'})}\n\n"
+            # Create generator instance to access analysis methods
+            from acs.savignano.comprehensive_report import SavignanoComprehensiveReport
+            generator = SavignanoComprehensiveReport(mesh_path, savignano_features, artifact_id, language)
 
-            # Stream casting analysis preview
+            # Stream REAL hammering analysis data
+            yield f"data: {json.dumps({'type': 'log', 'message': '  Pagina 4+: Analisi martellatura', 'level': 'info'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': '    → Calcolo rugosità superficiale...', 'level': 'info'})}\n\n"
+
+            hammer_analysis = generator._analyze_hammering()
+            # Stream the actual hammering analysis line by line
+            for line in hammer_analysis.split('\n')[:10]:  # First 10 lines
+                if line.strip():
+                    yield f"data: {json.dumps({'type': 'log', 'message': f'      {line[:80]}', 'level': 'success'})}\n\n"
+
+            yield f"data: {json.dumps({'type': 'log', 'message': f'    → Totale: {len(hammer_analysis.split(chr(10)))} righe generate', 'level': 'info'})}\n\n"
+
+            # Stream REAL casting analysis data
             yield f"data: {json.dumps({'type': 'log', 'message': '  Analisi fusione', 'level': 'info'})}\n\n"
-            yield f"data: {json.dumps({'type': 'log', 'message': '    → Analisi simmetria bilaterale...', 'level': 'info'})}\n\n"
-            yield f"data: {json.dumps({'type': 'log', 'message': '    → Valutazione qualità mesh...', 'level': 'info'})}\n\n"
-            yield f"data: {json.dumps({'type': 'log', 'message': '    → Analisi variazione spessore...', 'level': 'info'})}\n\n"
-            yield f"data: {json.dumps({'type': 'log', 'message': '    → Verifica tecnica stampo...', 'level': 'info'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': '    → Calcolo simmetria e qualità...', 'level': 'info'})}\n\n"
+
+            casting_analysis = generator._analyze_casting()
+            # Stream the actual casting analysis line by line
+            for line in casting_analysis.split('\n')[:10]:  # First 10 lines
+                if line.strip():
+                    yield f"data: {json.dumps({'type': 'log', 'message': f'      {line[:80]}', 'level': 'success'})}\n\n"
+
+            yield f"data: {json.dumps({'type': 'log', 'message': f'    → Totale: {len(casting_analysis.split(chr(10)))} righe generate', 'level': 'info'})}\n\n"
 
             yield f"data: {json.dumps({'type': 'log', 'message': '  Analisi PCA e clustering', 'level': 'info'})}\n\n"
             yield f"data: {json.dumps({'type': 'log', 'message': '  Analisi comparativa', 'level': 'info'})}\n\n"
 
-            from acs.savignano.comprehensive_report import generate_comprehensive_report as gen_report
-
-            results = gen_report(
-                mesh_path=mesh_path,
-                features=savignano_features,
-                output_dir=str(output_dir),
-                artifact_id=artifact_id,
-                language=language
-            )
+            # Now generate the complete PDF
+            pdf_path = output_dir / f"{artifact_id}_comprehensive_report_{language}.pdf"
+            results = generator.generate_complete_report(str(pdf_path))
 
             # Update artifact metadata
             metadata = artifact.get('metadata', '{}')
