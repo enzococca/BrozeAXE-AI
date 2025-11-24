@@ -4,11 +4,8 @@ providers = ["python"]
 [phases.setup]
 nixPkgs = ['python311', 'gcc', 'libstdcxx5']
 
-[phases.install]
-cmds = [
-    'pip install --upgrade pip setuptools wheel',
-    'pip install -r requirements.txt'
-]
+# Let Nixpacks handle installation automatically (uses venv)
+# Remove custom install phase to use default python:install
 
 [start]
 cmd = 'cd archaeological-classifier && python3 -m acs.api.app'
