@@ -1,0 +1,5 @@
+# Ignore Node.js files (used for Claude Code CLI, not for deployment)
+node_modules/
+package.json
+package-lock.json
+.npm/
