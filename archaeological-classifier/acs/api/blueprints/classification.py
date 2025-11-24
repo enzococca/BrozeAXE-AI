@@ -5,7 +5,8 @@ Classification System Blueprint
 Endpoints for formal taxonomy management and classification.
 """
 
-from flask import Blueprint, request, jsonify, current_app, send_file
+from flask import Blueprint, request, jsonify
+from acs.core.auth import login_required, role_required, current_app, send_file
 from acs.core.taxonomy import FormalTaxonomySystem
 from acs.savignano.taxonomy_rules import SavignanoClassifier, classify_savignano_artifact
 import os
@@ -18,6 +19,7 @@ savignano_classifier = SavignanoClassifier()
 
 
 @classification_bp.route('/define-class', methods=['POST'])
+@role_required('admin', 'archaeologist')
 def define_class():
     """
     Define new taxonomic class from reference group.
@@ -63,6 +65,7 @@ def define_class():
 
 
 @classification_bp.route('/classify', methods=['POST'])
+@role_required('admin', 'archaeologist')
 def classify_artifact():
     """
     Classify an artifact using defined taxonomy.
@@ -101,6 +104,7 @@ def classify_artifact():
 
 
 @classification_bp.route('/classify-savignano', methods=['POST'])
+@role_required('admin', 'archaeologist')
 def classify_savignano():
     """
     Classify artifact using Savignano morphometric taxonomy.
@@ -149,6 +153,7 @@ def classify_savignano():
 
 
 @classification_bp.route('/savignano-classes', methods=['GET'])
+@login_required
 def get_savignano_classes():
     """
     Get all defined Savignano taxonomic classes.
@@ -187,6 +192,7 @@ def get_savignano_classes():
 
 
 @classification_bp.route('/modify-class', methods=['POST'])
+@role_required('admin', 'archaeologist')
 def modify_class():
     """
     Modify class parameters with justification.
@@ -234,6 +240,7 @@ def modify_class():
 
 
 @classification_bp.route('/discover', methods=['POST'])
+@role_required('admin', 'archaeologist')
 def discover_classes():
     """
     Discover new classes from unclassified artifacts.
@@ -276,6 +283,7 @@ def discover_classes():
 
 
 @classification_bp.route('/classes', methods=['GET'])
+@login_required
 def list_classes():
     """
     List all defined classes.
@@ -310,6 +318,7 @@ def list_classes():
 
 
 @classification_bp.route('/classes/<class_id>', methods=['GET'])
+@login_required
 def get_class_details(class_id):
     """
     Get detailed information about a specific class.
@@ -339,6 +348,7 @@ def get_class_details(class_id):
 
 
 @classification_bp.route('/export', methods=['GET'])
+@role_required('admin')
 def export_taxonomy():
     """
     Export complete taxonomy to JSON file.
@@ -369,6 +379,7 @@ def export_taxonomy():
 
 
 @classification_bp.route('/import', methods=['POST'])
+@role_required('admin')
 def import_taxonomy():
     """
     Import taxonomy from JSON file.
@@ -407,6 +418,7 @@ def import_taxonomy():
 
 
 @classification_bp.route('/statistics', methods=['GET'])
+@login_required
 def get_statistics():
     """
     Get taxonomy statistics.

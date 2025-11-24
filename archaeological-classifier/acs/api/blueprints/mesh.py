@@ -10,6 +10,7 @@ from werkzeug.utils import secure_filename
 import os
 import time
 from acs.core.mesh_processor import MeshProcessor
+from acs.core.auth import login_required, role_required
 
 mesh_bp = Blueprint('mesh', __name__)
 
@@ -25,9 +26,12 @@ def allowed_file(filename):
 
 
 @mesh_bp.route('/upload', methods=['POST'])
+@role_required('admin', 'archaeologist')
 def upload_mesh():
     """
     Upload and process a single mesh file.
+
+    Requires: admin or archaeologist role
 
     Returns:
         JSON with extracted features
@@ -75,9 +79,12 @@ def upload_mesh():
 
 
 @mesh_bp.route('/batch', methods=['POST'])
+@role_required('admin', 'archaeologist')
 def batch_process():
     """
     Batch process multiple uploaded meshes.
+
+    Requires: admin or archaeologist role
 
     Expects: Multiple files in 'files[]' field
 
@@ -126,9 +133,12 @@ def batch_process():
 
 
 @mesh_bp.route('/<artifact_id>', methods=['GET'])
+@login_required
 def get_artifact(artifact_id):
     """
     Get features for a specific artifact.
+
+    Requires: any authenticated user
 
     Args:
         artifact_id: Artifact identifier
@@ -157,9 +167,12 @@ def get_artifact(artifact_id):
 
 
 @mesh_bp.route('/<id1>/distance/<id2>', methods=['GET'])
+@login_required
 def compute_distance(id1, id2):
     """
     Compute distance between two meshes.
+
+    Requires: any authenticated user
 
     Args:
         id1: First artifact ID
@@ -198,9 +211,12 @@ def compute_distance(id1, id2):
 
 
 @mesh_bp.route('/export', methods=['POST'])
+@role_required('admin')
 def export_features():
     """
     Export all extracted features to file.
+
+    Requires: admin role
 
     Body:
         format: 'json' or 'csv'

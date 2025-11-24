@@ -37,6 +37,7 @@ from acs.savignano.matrix_analyzer import MatrixAnalyzer
 from acs.savignano.archaeological_qa import SavignanoArchaeologicalQA
 from acs.core.config import get_config
 from acs.core.database import get_database
+from acs.core.auth import login_required, role_required
 import pandas as pd
 import trimesh
 
@@ -106,9 +107,12 @@ def get_status():
 
 
 @savignano_bp.route('/upload-batch', methods=['POST'])
+@role_required('admin', 'archaeologist')
 def upload_batch():
     """
     Upload batch meshes per analisi Savignano.
+
+    Requires: admin or archaeologist role
 
     Expected:
         - files: List di file mesh (.obj, .stl, .ply)
@@ -216,6 +220,7 @@ def upload_batch():
 
 
 @savignano_bp.route('/configure', methods=['POST'])
+@role_required('admin', 'archaeologist')
 def configure_analysis():
     """
     Configura parametri analisi Savignano.
@@ -262,6 +267,7 @@ def configure_analysis():
 
 
 @savignano_bp.route('/run-analysis', methods=['POST'])
+@role_required('admin', 'archaeologist')
 def run_analysis():
     """
     Esegue workflow completo Savignano.
@@ -328,6 +334,7 @@ def run_analysis():
 
 
 @savignano_bp.route('/results/<analysis_id>', methods=['GET'])
+@login_required
 def get_results(analysis_id):
     """
     Ottiene risultati analisi completata.
@@ -363,6 +370,7 @@ def get_results(analysis_id):
 
 
 @savignano_bp.route('/download/<analysis_id>/<file_type>', methods=['GET'])
+@login_required
 def download_file(analysis_id, file_type):
     """
     Download file risultati.
@@ -668,6 +676,7 @@ def _save_artifacts_to_database(analysis_id: str, analysis: dict, results: dict)
 
 
 @savignano_bp.route('/generate-drawings/<artifact_id>', methods=['POST'])
+@role_required('admin', 'archaeologist')
 def generate_drawings(artifact_id: str):
     """
     Generate technical drawings for a Savignano artifact.
@@ -803,6 +812,7 @@ def generate_drawings(artifact_id: str):
 
 
 @savignano_bp.route('/download-drawing/<artifact_id>/<file_type>', methods=['GET'])
+@login_required
 def download_drawing(artifact_id: str, file_type: str):
     """
     Download a technical drawing file.
@@ -891,6 +901,7 @@ def get_supported_languages():
 
 
 @savignano_bp.route('/generate-comprehensive-report/<artifact_id>', methods=['POST'])
+@role_required('admin', 'archaeologist')
 def generate_comprehensive_report(artifact_id: str):
     """
     Generate comprehensive archaeological report with:
@@ -1008,6 +1019,7 @@ def generate_comprehensive_report(artifact_id: str):
 
 
 @savignano_bp.route('/generate-comprehensive-report-stream/<artifact_id>', methods=['GET'])
+@role_required('admin', 'archaeologist')
 def generate_comprehensive_report_stream(artifact_id: str):
     """
     Generate comprehensive report with real-time streaming logs via Server-Sent Events.
@@ -1136,6 +1148,7 @@ def generate_comprehensive_report_stream(artifact_id: str):
 
     return current_app.response_class(generate(), mimetype='text/event-stream')
 @savignano_bp.route('/download-comprehensive-report/<artifact_id>', methods=['GET'])
+@login_required
 def download_comprehensive_report(artifact_id: str):
     """
     Download comprehensive archaeological report PDF.
