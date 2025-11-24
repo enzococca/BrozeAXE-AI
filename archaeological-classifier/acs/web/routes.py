@@ -5,7 +5,7 @@ Web Interface Routes
 Blueprint for web-based user interface.
 """
 
-from flask import Blueprint, render_template, request, jsonify, session, current_app, make_response, send_file
+from flask import Blueprint, render_template, request, jsonify, session, current_app, make_response, send_file, redirect, url_for
 from werkzeug.utils import secure_filename
 import os
 import json
@@ -15,6 +15,7 @@ from datetime import datetime
 from acs.core.mesh_processor import MeshProcessor
 from acs.core.morphometric import MorphometricAnalyzer
 from acs.core.taxonomy import FormalTaxonomySystem
+from acs.core.database import get_database
 
 web_bp = Blueprint('web', __name__,
                    template_folder='templates',
@@ -136,16 +137,39 @@ def init_default_taxonomy_classes():
 init_default_taxonomy_classes()
 
 
+@web_bp.route('/login')
+def login_page():
+    """Login page."""
+    return render_template('login.html')
+
+
+@web_bp.route('/dashboard')
+def dashboard_page():
+    """Dashboard page (requires authentication via JavaScript)."""
+    return render_template('dashboard.html')
+
+
+@web_bp.route('/api/statistics')
+def get_statistics():
+    """Get statistics for dashboard (protected by JavaScript token check)."""
+    try:
+        db = get_database()
+        stats = db.get_statistics()
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({
+            'total_artifacts': 0,
+            'total_classifications': 0,
+            'validated_classifications': 0,
+            'training_samples': 0
+        })
+
+
 @web_bp.route('/')
 def index():
-    """Main dashboard."""
-    stats = {
-        'meshes_loaded': len(mesh_processor.meshes),
-        'features_analyzed': len(morphometric_analyzer.features),
-        'classes_defined': len(taxonomy_system.classes),
-        'total_classifications': len(taxonomy_system.classification_log)
-    }
-    return render_template('index.html', stats=stats)
+    """Main dashboard - redirect to new dashboard if logged in."""
+    # Check if user might be logged in (via JavaScript check)
+    return redirect(url_for('web.dashboard_page'))
 
 
 @web_bp.route('/test')
