@@ -17,7 +17,7 @@ Autore: Archaeological Classifier System
 Data: Novembre 2025
 """
 
-from flask import Blueprint, request, jsonify, send_file, current_app
+from flask import Blueprint, request, jsonify, send_file, current_app, g
 import os
 import json
 import logging
@@ -27,6 +27,13 @@ import tempfile
 import shutil
 from werkzeug.utils import secure_filename
 import numpy as np
+
+# Import validation
+from acs.core.file_validator import (
+    FileValidator,
+    FileValidationError,
+    upload_rate_limiter
+)
 
 # Import moduli Savignano
 import sys
@@ -114,6 +121,11 @@ def upload_batch():
 
     Requires: admin or archaeologist role
 
+    Security:
+    - Max batch size: 2 GB total
+    - Individual file validation
+    - Rate limiting: 10 uploads/minute
+
     Expected:
         - files: List di file mesh (.obj, .stl, .ply)
         - Optional: weights_file (JSON con pesi)
@@ -125,6 +137,16 @@ def upload_batch():
         - n_files_uploaded: Numero file caricati
         - files: Lista file caricati
     """
+    # Rate limiting
+    user_id = str(g.current_user.get('user_id', 'anonymous'))
+    if not upload_rate_limiter.is_allowed(user_id):
+        remaining = upload_rate_limiter.get_remaining(user_id)
+        return jsonify({
+            'error': 'Rate limit exceeded. Please try again later.',
+            'code': 'RATE_LIMIT_EXCEEDED',
+            'remaining': remaining
+        }), 429
+
     try:
         # Verifica files
         if 'files' not in request.files:
@@ -135,6 +157,15 @@ def upload_batch():
         if len(files) == 0:
             return jsonify({'error': 'Empty file list'}), 400
 
+        # Validate batch size
+        try:
+            FileValidator.validate_batch_upload(files, max_total_size=FileValidator.MAX_SIZE_BATCH)
+        except FileValidationError as e:
+            return jsonify({
+                'error': e.message,
+                'code': e.error_code
+            }), 400
+
         # Crea ID analisi e directory temporanea
         analysis_id = f"savignano_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         temp_dir = Path(tempfile.mkdtemp(prefix=f'savignano_{analysis_id}_'))
@@ -142,20 +173,37 @@ def upload_batch():
         meshes_dir = temp_dir / 'meshes'
         meshes_dir.mkdir(exist_ok=True)
 
-        # Salva meshes
+        # Salva meshes con validazione
         uploaded_files = []
+        validation_errors = []
+
         for file in files:
             if file.filename == '':
                 continue
 
-            # Verifica estensione
-            filename = secure_filename(file.filename)
-            if not filename.lower().endswith(('.obj', '.stl', '.ply')):
-                continue
+            try:
+                # Validate file
+                safe_filename, detected_type = FileValidator.validate_upload(
+                    file,
+                    max_size=FileValidator.MAX_SIZE_API,
+                    check_integrity=False  # Check after saving
+                )
 
-            file_path = meshes_dir / filename
-            file.save(str(file_path))
-            uploaded_files.append(filename)
+                file_path = meshes_dir / safe_filename
+                file.save(str(file_path))
+
+                # Validate mesh integrity
+                is_valid, error_msg = FileValidator.validate_mesh_integrity(str(file_path))
+                if not is_valid:
+                    os.remove(str(file_path))
+                    validation_errors.append(f"{safe_filename}: {error_msg}")
+                    continue
+
+                uploaded_files.append(safe_filename)
+
+            except FileValidationError as e:
+                validation_errors.append(f"{file.filename}: {e.message}")
+                continue
 
         if len(uploaded_files) == 0:
             shutil.rmtree(temp_dir)
@@ -206,13 +254,20 @@ def upload_batch():
 
         logger.info(f"Created analysis {analysis_id} with {len(uploaded_files)} meshes")
 
-        return jsonify({
+        response = {
             'status': 'success',
             'analysis_id': analysis_id,
             'n_files_uploaded': len(uploaded_files),
             'files': uploaded_files,
             'weights_loaded': len(weights_data) > 0
-        })
+        }
+
+        # Include validation errors if any
+        if validation_errors:
+            response['validation_errors'] = validation_errors
+            response['validation_warnings'] = f"{len(validation_errors)} files skipped due to validation errors"
+
+        return jsonify(response)
 
     except Exception as e:
         logger.error(f"Error in upload_batch: {e}", exc_info=True)

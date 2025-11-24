@@ -5,24 +5,22 @@ Mesh Processing Blueprint
 Endpoints for 3D mesh upload, processing, and feature extraction.
 """
 
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, g
 from werkzeug.utils import secure_filename
 import os
 import time
 from acs.core.mesh_processor import MeshProcessor
 from acs.core.auth import login_required, role_required
+from acs.core.file_validator import (
+    FileValidator,
+    FileValidationError,
+    upload_rate_limiter
+)
 
 mesh_bp = Blueprint('mesh', __name__)
 
 # Global mesh processor instance
 processor = MeshProcessor()
-
-ALLOWED_EXTENSIONS = {'.obj', '.ply', '.stl'}
-
-
-def allowed_file(filename):
-    """Check if file extension is allowed."""
-    return any(filename.lower().endswith(ext) for ext in ALLOWED_EXTENSIONS)
 
 
 @mesh_bp.route('/upload', methods=['POST'])
@@ -33,9 +31,25 @@ def upload_mesh():
 
     Requires: admin or archaeologist role
 
+    Security:
+    - Max file size: 100 MB (web), 500 MB (API)
+    - File type validation (magic bytes)
+    - Mesh integrity check
+    - Rate limiting: 10 uploads/minute
+
     Returns:
         JSON with extracted features
     """
+    # Rate limiting
+    user_id = str(g.current_user.get('user_id', 'anonymous'))
+    if not upload_rate_limiter.is_allowed(user_id):
+        remaining = upload_rate_limiter.get_remaining(user_id)
+        return jsonify({
+            'error': 'Rate limit exceeded. Please try again later.',
+            'code': 'RATE_LIMIT_EXCEEDED',
+            'remaining': remaining
+        }), 429
+
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
 
@@ -44,16 +58,32 @@ def upload_mesh():
     if file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
 
-    if not allowed_file(file.filename):
-        return jsonify({
-            'error': f'Invalid file type. Allowed: {", ".join(ALLOWED_EXTENSIONS)}'
-        }), 400
-
     try:
+        # Determine max size based on source (web vs API)
+        is_web_upload = request.headers.get('X-Upload-Source') == 'web'
+        max_size = FileValidator.MAX_SIZE_WEB if is_web_upload else FileValidator.MAX_SIZE_API
+
+        # Validate file
+        safe_filename, detected_type = FileValidator.validate_upload(
+            file,
+            max_size=max_size,
+            check_integrity=False  # We'll check after saving
+        )
+
         # Save file
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
+        filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], safe_filename)
         file.save(filepath)
+
+        # Validate mesh integrity
+        is_valid, error_msg = FileValidator.validate_mesh_integrity(filepath)
+        if not is_valid:
+            # Clean up invalid file
+            if os.path.exists(filepath):
+                os.remove(filepath)
+            return jsonify({
+                'error': error_msg,
+                'code': 'INVALID_MESH'
+            }), 400
 
         # Get artifact ID from request or use filename
         artifact_id = request.form.get('artifact_id')
@@ -68,8 +98,15 @@ def upload_mesh():
             'artifact_id': features['id'],
             'features': features,
             'processing_time': processing_time,
+            'file_type': detected_type,
             'message': f'Mesh processed successfully'
         })
+
+    except FileValidationError as e:
+        return jsonify({
+            'error': e.message,
+            'code': e.error_code
+        }), 400
 
     except Exception as e:
         return jsonify({
