@@ -1612,20 +1612,29 @@ class SavignanoComprehensiveReport:
         for page_num in range(total_pages):
             fig = plt.figure(figsize=(8.27, 11.69))  # A4 portrait
             ax = fig.add_subplot(111)
+
+            # Set axis limits BEFORE turning off axis
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
             ax.axis('off')
 
             # Title (only on first page)
             if page_num == 0:
                 ax.text(0.5, 0.97, 'ANALISI MARTELLATURA',
-                       ha='center', fontsize=14, fontweight='bold', color='#2C3E50')
+                       ha='center', fontsize=14, fontweight='bold', color='#2C3E50',
+                       transform=ax.transAxes)
                 ax.text(0.5, 0.95, f'Artefatto: {self.artifact_id}',
-                       ha='center', fontsize=10, style='italic', color='#34495E')
-                ax.plot([0.05, 0.95], [0.93, 0.93], 'k-', linewidth=1, alpha=0.3)
+                       ha='center', fontsize=10, style='italic', color='#34495E',
+                       transform=ax.transAxes)
+                ax.plot([0.05, 0.95], [0.93, 0.93], 'k-', linewidth=1, alpha=0.3,
+                       transform=ax.transAxes)
                 text_start_y = 0.91
             else:
                 ax.text(0.5, 0.97, 'ANALISI MARTELLATURA (continua)',
-                       ha='center', fontsize=12, fontweight='bold', color='#2C3E50')
-                ax.plot([0.05, 0.95], [0.95, 0.95], 'k-', linewidth=1, alpha=0.3)
+                       ha='center', fontsize=12, fontweight='bold', color='#2C3E50',
+                       transform=ax.transAxes)
+                ax.plot([0.05, 0.95], [0.95, 0.95], 'k-', linewidth=1, alpha=0.3,
+                       transform=ax.transAxes)
                 text_start_y = 0.93
 
             # Get lines for this page
@@ -1637,17 +1646,30 @@ class SavignanoComprehensiveReport:
             current_y = text_start_y
             line_height = 0.018
 
-            for line in page_lines:
-                if line.strip():
+            for i, line in enumerate(page_lines):
+                # Render both empty and non-empty lines to preserve spacing
+                # Use Courier New as more reliable monospace font, fallback to sans-serif
+                try:
                     ax.text(0.08, current_y, line, ha='left', va='top',
-                           fontsize=9, family='monospace', color='black')
+                           fontsize=9, family='Courier New', color='black',
+                           transform=ax.transAxes)
+                except:
+                    # Fallback without font specification
+                    ax.text(0.08, current_y, line, ha='left', va='top',
+                           fontsize=9, color='black',
+                           transform=ax.transAxes)
                 current_y -= line_height
+
+                # Debug log for first few lines
+                if page_num == 0 and i < 5:
+                    logger.info(f"Rendered line {i} at y={current_y:.3f}: '{line[:50]}'")
 
             # Footer with page number
             ax.text(0.5, 0.02, f'{self.artifact_id} | Pagina {4 + page_num}',
-                   ha='center', va='bottom', fontsize=8, color='gray')
+                   ha='center', va='bottom', fontsize=8, color='gray',
+                   transform=ax.transAxes)
 
-            pdf.savefig(fig)
+            pdf.savefig(fig, bbox_inches='tight')
             plt.close(fig)
 
     def _create_casting_analysis_page(self, pdf):
@@ -1697,20 +1719,29 @@ class SavignanoComprehensiveReport:
         for page_num in range(total_pages):
             fig = plt.figure(figsize=(8.27, 11.69))  # A4 portrait
             ax = fig.add_subplot(111)
+
+            # Set axis limits BEFORE turning off axis
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
             ax.axis('off')
 
             # Title (only on first page)
             if page_num == 0:
                 ax.text(0.5, 0.97, 'ANALISI FUSIONE',
-                       ha='center', fontsize=14, fontweight='bold', color='#2C3E50')
+                       ha='center', fontsize=14, fontweight='bold', color='#2C3E50',
+                       transform=ax.transAxes)
                 ax.text(0.5, 0.95, f'Artefatto: {self.artifact_id}',
-                       ha='center', fontsize=10, style='italic', color='#34495E')
-                ax.plot([0.05, 0.95], [0.93, 0.93], 'k-', linewidth=1, alpha=0.3)
+                       ha='center', fontsize=10, style='italic', color='#34495E',
+                       transform=ax.transAxes)
+                ax.plot([0.05, 0.95], [0.93, 0.93], 'k-', linewidth=1, alpha=0.3,
+                       transform=ax.transAxes)
                 text_start_y = 0.91
             else:
                 ax.text(0.5, 0.97, 'ANALISI FUSIONE (continua)',
-                       ha='center', fontsize=12, fontweight='bold', color='#2C3E50')
-                ax.plot([0.05, 0.95], [0.95, 0.95], 'k-', linewidth=1, alpha=0.3)
+                       ha='center', fontsize=12, fontweight='bold', color='#2C3E50',
+                       transform=ax.transAxes)
+                ax.plot([0.05, 0.95], [0.95, 0.95], 'k-', linewidth=1, alpha=0.3,
+                       transform=ax.transAxes)
                 text_start_y = 0.93
 
             # Get lines for this page
@@ -1722,18 +1753,31 @@ class SavignanoComprehensiveReport:
             current_y = text_start_y
             line_height = 0.018
 
-            for line in page_lines:
-                if line.strip():
+            for i, line in enumerate(page_lines):
+                # Render both empty and non-empty lines to preserve spacing
+                # Use Courier New as more reliable monospace font, fallback to sans-serif
+                try:
                     ax.text(0.08, current_y, line, ha='left', va='top',
-                           fontsize=9, family='monospace', color='black')
+                           fontsize=9, family='Courier New', color='black',
+                           transform=ax.transAxes)
+                except:
+                    # Fallback without font specification
+                    ax.text(0.08, current_y, line, ha='left', va='top',
+                           fontsize=9, color='black',
+                           transform=ax.transAxes)
                 current_y -= line_height
+
+                # Debug log for first few lines
+                if page_num == 0 and i < 5:
+                    logger.info(f"Rendered casting line {i} at y={current_y:.3f}: '{line[:50]}'")
 
             # Footer with page number (will be adjusted in final numbering)
             # For now, just indicate it's a casting page
             ax.text(0.5, 0.02, f'{self.artifact_id} | Analisi Fusione - Pag. {page_num + 1}',
-                   ha='center', va='bottom', fontsize=8, color='gray')
+                   ha='center', va='bottom', fontsize=8, color='gray',
+                   transform=ax.transAxes)
 
-            pdf.savefig(fig)
+            pdf.savefig(fig, bbox_inches='tight')
             plt.close(fig)
 
     def _analyze_hammering(self) -> str:
