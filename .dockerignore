@@ -1,0 +1,39 @@
+# Node.js (for Claude Code CLI, not for deployment)
+node_modules/
+npm-debug.log
+yarn-error.log
+.npm/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# Development
+.git/
+.github/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentation
+*.md
+!README.md
+docs/
+
+# Local files
+.env
+.env.local
+*.log
