@@ -589,6 +589,10 @@
                 }
             } catch (error) {
                 console.error('Error loading stats:', error);
+                // Set default values on error
+                document.getElementById('statArtifacts').textContent = '0';
+                document.getElementById('statClassifications').textContent = '0';
+                document.getElementById('statTraining').textContent = '0';
             }
         }
 
@@ -608,9 +612,12 @@
                         option.textContent = proj.project_name;
                         select.appendChild(option);
                     });
+                } else {
+                    document.getElementById('statProjects').textContent = '0';
                 }
             } catch (error) {
                 console.error('Error loading projects:', error);
+                document.getElementById('statProjects').textContent = '0';
             }
         }
 

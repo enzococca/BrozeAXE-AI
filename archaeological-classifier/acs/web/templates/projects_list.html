@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Projects - BrozeAXE-AI</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .user-info {
+            float: right;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 14px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .projects-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 20px;
+        }
+
+        .project-card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .project-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+        }
+
+        .project-card h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 20px;
+        }
+
+        .project-card p {
+            color: #666;
+            margin-bottom: 15px;
+            line-height: 1.6;
+        }
+
+        .project-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #667eea;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: #999;
+            text-transform: uppercase;
+        }
+
+        .project-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .project-actions .btn {
+            flex: 1;
+            text-align: center;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            background: white;
+            border-radius: 15px;
+            color: #999;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            background: white;
+            border-radius: 15px;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .create-project-btn {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-size: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.5);
+            cursor: pointer;
+            border: none;
+            transition: all 0.3s;
+        }
+
+        .create-project-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-content h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 25px;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-active {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-archived {
+            background: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h1>📁 I Miei Progetti</h1>
+                    <p>Organizza e gestisci i tuoi progetti archeologici</p>
+                </div>
+                <div class="user-info">
+                    <span id="userName">Loading...</span>
+                    <button class="btn btn-secondary" onclick="window.location.href='/web/dashboard'">← Dashboard</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="projectsList" class="loading">
+            <div class="spinner"></div>
+            <p>Caricamento progetti...</p>
+        </div>
+    </div>
+
+    <button class="create-project-btn" onclick="showCreateModal()" title="Crea nuovo progetto">+</button>
+
+    <!-- Create Project Modal -->
+    <div id="createModal" class="modal">
+        <div class="modal-content">
+            <h2>Crea Nuovo Progetto</h2>
+            <form id="createForm" onsubmit="createProject(event)">
+                <div class="form-group">
+                    <label>Project ID *</label>
+                    <input type="text" id="projectId" required placeholder="es: Savignano2025">
+                </div>
+                <div class="form-group">
+                    <label>Nome Progetto *</label>
+                    <input type="text" id="projectName" required placeholder="es: Asce di Savignano">
+                </div>
+                <div class="form-group">
+                    <label>Descrizione</label>
+                    <textarea id="projectDesc" placeholder="Descrivi il progetto..."></textarea>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal()">Annulla</button>
+                    <button type="submit" class="btn btn-primary">Crea Progetto</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/web/static/js/auth.js"></script>
+    <script>
+        let projects = [];
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!AuthHelper.isAuthenticated()) {
+                window.location.href = '/web/login';
+                return;
+            }
+
+            const user = AuthHelper.getCurrentUser();
+            if (user) {
+                document.getElementById('userName').textContent = user.full_name || user.username;
+            }
+
+            await loadProjects();
+        });
+
+        async function loadProjects() {
+            try {
+                const response = await AuthHelper.authenticatedFetch('/web/api/projects');
+                const data = await response.json();
+
+                if (data.projects) {
+                    projects = data.projects;
+                    renderProjects(projects);
+                } else {
+                    throw new Error('Invalid response format');
+                }
+            } catch (error) {
+                console.error('Error loading projects:', error);
+                document.getElementById('projectsList').innerHTML = `
+                    <div class="empty-state">
+                        <h3>Errore nel caricamento</h3>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        function renderProjects(projects) {
+            const container = document.getElementById('projectsList');
+
+            if (projects.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h3>Nessun progetto</h3>
+                        <p>Inizia creando il tuo primo progetto</p>
+                        <button class="btn btn-primary" onclick="showCreateModal()">+ Crea Progetto</button>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="projects-grid">
+                    ${projects.map(proj => `
+                        <div class="project-card" onclick="openProject('${proj.project_id}')">
+                            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
+                                <h3>📁 ${proj.project_name}</h3>
+                                <span class="status-badge status-${proj.status || 'active'}">
+                                    ${proj.status || 'active'}
+                                </span>
+                            </div>
+                            <p style="color: #999; font-size: 12px; margin-bottom: 5px;">
+                                ID: ${proj.project_id}
+                            </p>
+                            <p>${proj.description || 'Nessuna descrizione'}</p>
+                            <div class="project-stats">
+                                <div class="stat">
+                                    <div class="stat-value">${proj.stats?.total_artifacts || 0}</div>
+                                    <div class="stat-label">Artifacts</div>
+                                </div>
+                                <div class="stat">
+                                    <div class="stat-value">${proj.stats?.total_classifications || 0}</div>
+                                    <div class="stat-label">Classificazioni</div>
+                                </div>
+                                <div class="stat">
+                                    <div class="stat-value">${proj.stats?.validated_classifications || 0}</div>
+                                    <div class="stat-label">Validate</div>
+                                </div>
+                            </div>
+                            <div class="project-actions" onclick="event.stopPropagation()">
+                                <button class="btn btn-primary" onclick="goToUpload('${proj.project_id}')">
+                                    📤 Upload
+                                </button>
+                                <button class="btn btn-primary" onclick="goToReport('${proj.project_id}')">
+                                    📊 Report
+                                </button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function showCreateModal() {
+            document.getElementById('createModal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('createModal').classList.remove('active');
+            document.getElementById('createForm').reset();
+        }
+
+        async function createProject(event) {
+            event.preventDefault();
+
+            const projectData = {
+                project_id: document.getElementById('projectId').value,
+                project_name: document.getElementById('projectName').value,
+                description: document.getElementById('projectDesc').value
+            };
+
+            try {
+                const response = await AuthHelper.authenticatedFetch('/web/api/projects', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(projectData)
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    alert('Progetto creato con successo!');
+                    closeModal();
+                    await loadProjects();
+                } else {
+                    alert('Errore: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Errore: ' + error.message);
+            }
+        }
+
+        function openProject(projectId) {
+            // Store current project in session
+            sessionStorage.setItem('currentProject', projectId);
+            window.location.href = `/web/project/${projectId}`;
+        }
+
+        function goToUpload(projectId) {
+            sessionStorage.setItem('currentProject', projectId);
+            window.location.href = `/web/upload?project=${projectId}`;
+        }
+
+        function goToReport(projectId) {
+            sessionStorage.setItem('currentProject', projectId);
+            window.location.href = `/web/savignano-comprehensive-report?project=${projectId}`;
+        }
+    </script>
+</body>
+</html>

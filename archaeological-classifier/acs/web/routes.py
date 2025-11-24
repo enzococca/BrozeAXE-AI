@@ -1934,7 +1934,7 @@ def get_technical_drawing_view(artifact_id, view_type):
 @web_bp.route('/projects-page')
 def projects_page():
     """Projects management page."""
-    return render_template('projects.html')
+    return render_template('projects_list.html')
 
 
 @web_bp.route('/drawings')
