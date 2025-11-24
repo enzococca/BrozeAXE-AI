@@ -546,12 +546,55 @@
         <div id="users-section" class="content-section">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                 <h2 style="color: #667eea;">User Management</h2>
-                <p style="color: #666; font-size: 14px;">View all system users</p>
+                <button class="btn btn-primary" onclick="showAddUserModal()">+ Add User</button>
             </div>
             <div id="usersList" class="loading">
                 <div class="spinner"></div>
                 <p>Caricamento utenti...</p>
             </div>
+        </div>
+    </div>
+
+    <!-- Add User Modal -->
+    <div id="addUserModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+        <div style="background: white; border-radius: 15px; padding: 30px; max-width: 500px; width: 90%; box-shadow: 0 10px 40px rgba(0,0,0,0.2);">
+            <h2 style="color: #667eea; margin-bottom: 20px;">Add New User</h2>
+            <form id="addUserForm" onsubmit="createUser(event)">
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">Username *</label>
+                    <input type="text" id="newUsername" required
+                           style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;">
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">Email *</label>
+                    <input type="email" id="newEmail" required
+                           style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;">
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">Full Name</label>
+                    <input type="text" id="newFullName"
+                           style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;">
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">Password *</label>
+                    <input type="password" id="newPassword" required minlength="6"
+                           style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;">
+                </div>
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 5px; font-weight: 500;">Role *</label>
+                    <select id="newRole" required
+                            style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;">
+                        <option value="viewer">Viewer</option>
+                        <option value="archaeologist">Archaeologist</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                    <button type="button" class="btn" onclick="hideAddUserModal()"
+                            style="background: #ccc;">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create User</button>
+                </div>
+            </form>
         </div>
     </div>
 
@@ -778,6 +821,51 @@
 
             // TODO: Implement training data endpoint
             listEl.innerHTML = '<div class="empty-state"><p>Training data endpoint coming soon...</p></div>';
+        }
+
+        function showAddUserModal() {
+            document.getElementById('addUserModal').style.display = 'flex';
+        }
+
+        function hideAddUserModal() {
+            document.getElementById('addUserModal').style.display = 'none';
+            document.getElementById('addUserForm').reset();
+        }
+
+        async function createUser(event) {
+            event.preventDefault();
+
+            const userData = {
+                username: document.getElementById('newUsername').value,
+                email: document.getElementById('newEmail').value,
+                password: document.getElementById('newPassword').value,
+                full_name: document.getElementById('newFullName').value || undefined,
+                role: document.getElementById('newRole').value
+            };
+
+            try {
+                const response = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${AuthHelper.getToken()}`
+                    },
+                    body: JSON.stringify(userData)
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    alert('User created successfully!');
+                    hideAddUserModal();
+                    await loadUsers(); // Reload users list
+                } else {
+                    alert('Error: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error creating user:', error);
+                alert('Error: ' + error.message);
+            }
         }
 
         async function loadUsers() {
