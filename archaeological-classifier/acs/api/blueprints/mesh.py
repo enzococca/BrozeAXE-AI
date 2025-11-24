@@ -10,6 +10,7 @@ from werkzeug.utils import secure_filename
 import os
 import time
 from acs.core.mesh_processor import MeshProcessor
+from acs.core.database import Database
 from acs.core.auth import login_required, role_required
 from acs.core.file_validator import (
     FileValidator,
@@ -19,8 +20,9 @@ from acs.core.file_validator import (
 
 mesh_bp = Blueprint('mesh', __name__)
 
-# Global mesh processor instance
+# Global instances
 processor = MeshProcessor()
+db = Database()
 
 
 @mesh_bp.route('/upload', methods=['POST'])
@@ -280,6 +282,91 @@ def export_features():
             'filepath': output_path,
             'format': format_type,
             'n_artifacts': len(processor.meshes)
+        })
+
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@mesh_bp.route('/artifacts', methods=['GET'])
+@login_required
+def get_artifacts():
+    """
+    Get paginated list of artifacts from database.
+
+    Query Parameters:
+        page (int): Page number (default: 1)
+        per_page (int): Items per page (default: 20, max: 100)
+
+    Returns:
+        JSON with paginated artifacts and metadata:
+        - artifacts: List of artifact objects
+        - total: Total number of artifacts
+        - page: Current page
+        - per_page: Items per page
+        - pages: Total number of pages
+    """
+    try:
+        # Get pagination parameters
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
+
+        # Validate parameters
+        if page < 1:
+            page = 1
+        if per_page < 1:
+            per_page = 20
+        elif per_page > 100:
+            per_page = 100  # Max 100 items per page
+
+        # Get paginated artifacts
+        result = db.get_artifacts_paginated(page=page, per_page=per_page)
+
+        return jsonify({
+            'status': 'success',
+            **result
+        })
+
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
+
+
+@mesh_bp.route('/artifacts/<artifact_id>', methods=['GET'])
+@login_required
+def get_artifact(artifact_id):
+    """
+    Get details for a specific artifact.
+
+    Args:
+        artifact_id: ID of the artifact
+
+    Returns:
+        JSON with artifact details including features
+    """
+    try:
+        artifact = db.get_artifact(artifact_id)
+
+        if not artifact:
+            return jsonify({
+                'error': f'Artifact {artifact_id} not found'
+            }), 404
+
+        # Get features if available
+        try:
+            features = db.get_features(artifact_id)
+            artifact['features'] = features
+        except:
+            artifact['features'] = {}
+
+        return jsonify({
+            'status': 'success',
+            'artifact': artifact
         })
 
     except Exception as e:

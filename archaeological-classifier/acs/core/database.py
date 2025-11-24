@@ -214,6 +214,50 @@ class ArtifactDatabase:
             cursor.execute('SELECT * FROM artifacts ORDER BY upload_date DESC')
             return [dict(row) for row in cursor.fetchall()]
 
+    def get_artifacts_paginated(self, page: int = 1, per_page: int = 20) -> Dict:
+        """
+        Get paginated artifacts.
+
+        Args:
+            page: Page number (1-indexed)
+            per_page: Number of items per page
+
+        Returns:
+            Dictionary with:
+            - artifacts: List of artifacts for current page
+            - total: Total number of artifacts
+            - page: Current page
+            - per_page: Items per page
+            - pages: Total number of pages
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Get total count
+            cursor.execute('SELECT COUNT(*) as count FROM artifacts')
+            total = cursor.fetchone()['count']
+
+            # Calculate pagination
+            pages = (total + per_page - 1) // per_page  # Ceiling division
+            offset = (page - 1) * per_page
+
+            # Get paginated results
+            cursor.execute('''
+                SELECT * FROM artifacts
+                ORDER BY upload_date DESC
+                LIMIT ? OFFSET ?
+            ''', (per_page, offset))
+
+            artifacts = [dict(row) for row in cursor.fetchall()]
+
+            return {
+                'artifacts': artifacts,
+                'total': total,
+                'page': page,
+                'per_page': per_page,
+                'pages': pages
+            }
+
     # ========== FEATURE OPERATIONS ==========
 
     def add_features(self, artifact_id: str, features: Dict[str, float]):
