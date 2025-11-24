@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Report Generati - ACS</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Report Generati</h1>
+            <p class="subtitle">Archaeological Axe Classification System (ACS)</p>
+        </header>
+
+        <nav>
+            <a href="/" class="nav-link">Upload</a>
+            <a href="/reports" class="nav-link active">Report Generati</a>
+        </nav>
+
+        <main>
+            <div class="reports-section">
+                {% if reports %}
+                    <p class="description">{{ reports|length }} report generati</p>
+
+                    <table class="reports-table">
+                        <thead>
+                            <tr>
+                                <th>ID Artefatto</th>
+                                <th>Nome File</th>
+                                <th>Dimensione</th>
+                                <th>Azioni</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for report in reports %}
+                            <tr>
+                                <td><strong>{{ report.artifact_id }}</strong></td>
+                                <td>{{ report.filename }}</td>
+                                <td>{{ report.size }}</td>
+                                <td>
+                                    <a href="/download/{{ report.artifact_id }}"
+                                       class="btn-small" download>
+                                        Scarica
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    <div class="empty-state">
+                        <p>Nessun report generato ancora.</p>
+                        <a href="/" class="btn-primary">Genera il tuo primo report</a>
+                    </div>
+                {% endif %}
+            </div>
+        </main>
+
+        <footer>
+            <p>&copy; 2024 Archaeological Axe Classification System | BrozeAXE-AI</p>
+        </footer>
+    </div>
+</body>
+</html>

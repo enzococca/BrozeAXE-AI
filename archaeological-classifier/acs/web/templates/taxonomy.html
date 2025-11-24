@@ -1,0 +1,289 @@
+{% extends "base.html" %}
+
+{% block title %}Taxonomy Management - Archaeological Classifier{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1>Taxonomy Management</h1>
+        <p class="subtitle">Define and manage formal taxonomic classes</p>
+    </div>
+
+    <div class="taxonomy-container">
+        <div class="card">
+            <h2>Define New Class</h2>
+            <div class="form-group">
+                <label>Class Name</label>
+                <input type="text" id="class-name" class="form-input" placeholder="e.g., Savignano Type A">
+            </div>
+            <div class="form-group">
+                <label>Reference Artifacts (comma-separated IDs)</label>
+                <input type="text" id="reference-ids" class="form-input" placeholder="e.g., AXE_001, AXE_002, AXE_003">
+            </div>
+            <div class="form-group">
+                <label>Tolerance Factor</label>
+                <input type="number" id="tolerance-factor" class="form-input" value="0.15" step="0.05" min="0.05" max="0.5">
+            </div>
+            <button onclick="defineClass()" class="btn btn-primary">Define Class</button>
+        </div>
+
+        <div class="card full-width">
+            <h2>Defined Classes ({{ classes|length }})</h2>
+            <div class="classes-grid">
+                {% if classes %}
+                    {% for class in classes %}
+                    <div class="class-card">
+                        <div class="class-header">
+                            <h3>{{ class.name }}</h3>
+                            <span class="class-badge">{{ class.n_samples }} samples</span>
+                        </div>
+                        <div class="class-body">
+                            <p class="class-description">{{ class.description }}</p>
+                            <div class="class-stats">
+                                <div class="stat-item">
+                                    <span class="stat-label">Parameters:</span>
+                                    <span class="stat-value">{{ class.n_parameters }}</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Threshold:</span>
+                                    <span class="stat-value">{{ (class.confidence_threshold * 100)|int }}%</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">Created:</span>
+                                    <span class="stat-value">{{ class.created_date[:10] }}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="class-actions">
+                            <button onclick="viewClassDetails('{{ class.class_id }}')" class="btn btn-sm btn-outline">
+                                View Details
+                            </button>
+                            <button onclick="classifyWithClass('{{ class.class_id }}')" class="btn btn-sm btn-secondary">
+                                Classify
+                            </button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-muted">No classes defined yet. Create your first class above.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Classify Artifact</h2>
+            <div class="form-group">
+                <label>Artifact ID</label>
+                <input type="text" id="classify-artifact-id" class="form-input" placeholder="e.g., AXE_097">
+            </div>
+            <button onclick="classifyArtifact()" class="btn btn-success">Classify</button>
+            <div id="classification-results" class="results-container"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal for class details -->
+<div id="class-modal" class="modal">
+    <div class="modal-content">
+        <span class="modal-close" onclick="closeModal()">&times;</span>
+        <div id="modal-body"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function defineClass() {
+    const className = document.getElementById('class-name').value.trim();
+    const referenceIds = document.getElementById('reference-ids').value
+        .split(',')
+        .map(id => id.trim())
+        .filter(id => id);
+    const toleranceFactor = parseFloat(document.getElementById('tolerance-factor').value);
+
+    if (!className) {
+        alert('Please enter a class name');
+        return;
+    }
+
+    if (referenceIds.length < 2) {
+        alert('Please provide at least 2 reference artifact IDs');
+        return;
+    }
+
+    try {
+        const response = await fetch('/web/define-class', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                class_name: className,
+                reference_ids: referenceIds,
+                tolerance_factor: toleranceFactor
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            alert('✓ Class "' + className + '" created successfully!');
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+async function classifyArtifact() {
+    const artifactId = document.getElementById('classify-artifact-id').value.trim();
+
+    if (!artifactId) {
+        alert('Please enter an artifact ID');
+        return;
+    }
+
+    const resultsDiv = document.getElementById('classification-results');
+    resultsDiv.innerHTML = '<p class="loading">Classifying...</p>';
+
+    try {
+        const response = await fetch('/web/classify-artifact', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({artifact_id: artifactId})
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            displayClassificationResults(data.results);
+        } else {
+            resultsDiv.innerHTML = `<p class="error">Error: ${data.error}</p>`;
+        }
+    } catch (error) {
+        resultsDiv.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+    }
+}
+
+let currentArtifactId = null;
+
+function displayClassificationResults(results) {
+    const resultsDiv = document.getElementById('classification-results');
+
+    if (!results || results.length === 0) {
+        resultsDiv.innerHTML = '<p class="text-muted">No classification results</p>';
+        return;
+    }
+
+    let html = '<div class="success-message">✓ Classification complete</div>';
+    html += '<h3>Results (Top 5):</h3>';
+    html += '<div class="classification-list">';
+
+    results.slice(0, 5).forEach((result, i) => {
+        const confidencePercent = (result.confidence * 100).toFixed(1);
+        const statusClass = result.is_member ? 'success' : 'warning';
+
+        html += `
+            <div class="classification-item ${statusClass}" id="result-${i}">
+                <div class="classification-rank">#${i + 1}</div>
+                <div class="classification-details">
+                    <h4>${result.class_name}</h4>
+                    <div class="classification-stats">
+                        <span class="confidence-badge">${confidencePercent}%</span>
+                        <span class="member-badge ${result.is_member ? 'member' : 'non-member'}">
+                            ${result.is_member ? '✓ Member' : '✗ Non-member'}
+                        </span>
+                    </div>
+                    <button onclick="validateClassification('${result.class_name}', ${result.confidence}, ${i})"
+                            class="btn btn-sm btn-success"
+                            style="margin-top: 10px;"
+                            id="validate-btn-${i}">
+                        ✓ Validate & Add to Training
+                    </button>
+                    <div id="validation-message-${i}" style="margin-top: 5px;"></div>
+                </div>
+            </div>
+        `;
+    });
+
+    html += '</div>';
+    resultsDiv.innerHTML = html;
+}
+
+async function validateClassification(className, confidence, index) {
+    const artifactId = document.getElementById('classify-artifact-id').value.trim();
+
+    if (!artifactId) {
+        alert('Artifact ID not found');
+        return;
+    }
+
+    const btn = document.getElementById(`validate-btn-${index}`);
+    const messageDiv = document.getElementById(`validation-message-${index}`);
+
+    btn.disabled = true;
+    btn.textContent = 'Validating...';
+    messageDiv.innerHTML = '';
+
+    try {
+        const response = await fetch(`/web/classifications/${artifactId}/validate`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                class_name: className,
+                confidence: confidence
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            btn.style.background = '#48bb78';
+            btn.textContent = '✓ Validated!';
+            messageDiv.innerHTML = `<div style="color: #22543d; background: #c6f6d5; padding: 8px; border-radius: 4px; font-size: 12px;">
+                Successfully added to training set!<br>
+                <a href="/web/classify-management" style="color: #2d3748; font-weight: bold;">Go to Classification Management →</a>
+            </div>`;
+
+            // Refresh ML status if on the same page
+            if (typeof refreshMLStatus === 'function') {
+                setTimeout(refreshMLStatus, 1000);
+            }
+        } else {
+            btn.disabled = false;
+            btn.textContent = '✓ Validate & Add to Training';
+            messageDiv.innerHTML = `<div style="color: #742a2a; background: #fed7d7; padding: 8px; border-radius: 4px; font-size: 12px;">
+                Error: ${data.error}
+            </div>`;
+        }
+    } catch (error) {
+        btn.disabled = false;
+        btn.textContent = '✓ Validate & Add to Training';
+        messageDiv.innerHTML = `<div style="color: #742a2a; background: #fed7d7; padding: 8px; border-radius: 4px; font-size: 12px;">
+            Error: ${error.message}
+        </div>`;
+    }
+}
+
+function viewClassDetails(classId) {
+    // Would fetch full class details via API
+    alert('View details for class: ' + classId);
+}
+
+function classifyWithClass(classId) {
+    document.getElementById('classify-artifact-id').focus();
+}
+
+function closeModal() {
+    document.getElementById('class-modal').style.display = 'none';
+}
+
+// Close modal when clicking outside
+window.onclick = function(event) {
+    const modal = document.getElementById('class-modal');
+    if (event.target == modal) {
+        closeModal();
+    }
+}
+</script>
+{% endblock %}

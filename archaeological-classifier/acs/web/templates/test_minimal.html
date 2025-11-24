@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test CSS</title>
+    <link rel="stylesheet" href="/web/static/css/style.css">
+    <style>
+        /* Inline test style */
+        body { margin: 0; padding: 20px; }
+        .test-box {
+            background: red;
+            color: white;
+            padding: 20px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-box">
+        <h1>TEST 1: Se vedi ROSSO, inline CSS funziona ✅</h1>
+    </div>
+
+    <div class="card">
+        <h1>TEST 2: Se questa card ha sfondo bianco e shadow, external CSS funziona ✅</h1>
+        <p>Questo usa la classe .card dal file style.css esterno</p>
+    </div>
+
+    <button class="btn btn-primary">TEST 3: Questo button dovrebbe essere BLU</button>
+
+    <script>
+        // Check if CSS is loaded
+        const card = document.querySelector('.card');
+        const computedStyle = window.getComputedStyle(card);
+        const bgColor = computedStyle.backgroundColor;
+
+        console.log('Card background-color:', bgColor);
+
+        if (bgColor === 'rgb(255, 255, 255)' || bgColor === 'white') {
+            alert('✅ CSS CARICATO! Background: ' + bgColor);
+        } else {
+            alert('❌ CSS NON CARICATO o problema parsing');
+        }
+    </script>
+</body>
+</html>

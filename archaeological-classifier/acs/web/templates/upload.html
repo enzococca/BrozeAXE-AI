@@ -1,0 +1,412 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Meshes - Archaeological Classifier{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1>Upload 3D Meshes</h1>
+        <p class="subtitle">Upload OBJ, PLY, or STL files for analysis</p>
+    </div>
+
+    <div class="upload-container">
+        <div class="card">
+            <h2>Upload Files</h2>
+
+            <!-- Project Selection -->
+            <div class="form-group" style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                <label for="project-select" style="font-weight: bold; margin-bottom: 10px; display: block;">
+                    📁 Select Project (optional)
+                </label>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <select id="project-select" class="form-control" style="flex: 1;">
+                        <option value="">-- No Project (General Upload) --</option>
+                    </select>
+                    <button onclick="showCreateProjectDialog()" class="btn btn-primary" type="button">
+                        + New Project
+                    </button>
+                </div>
+                <small style="color: #666; margin-top: 5px; display: block;">
+                    Artifacts will be associated with the selected project for better organization
+                </small>
+            </div>
+
+            <div class="upload-zone" id="upload-zone">
+                <div class="upload-icon">📦</div>
+                <p class="upload-text">Drag and drop files here or click to browse</p>
+                <p class="upload-hint">Supported formats: OBJ, PLY, STL</p>
+                <input type="file" id="file-input" multiple accept=".obj,.ply,.stl" hidden>
+                <button onclick="document.getElementById('file-input').click()" class="btn btn-primary">
+                    Choose Files
+                </button>
+            </div>
+
+            <div id="file-list" class="file-list"></div>
+
+            <!-- Savignano Features Section -->
+            <div class="form-group" style="margin-top: 20px; padding: 15px; background: #f0f4ff; border-radius: 8px; border-left: 4px solid #667eea;">
+                <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                    <input type="checkbox" id="enable-savignano" onchange="toggleSavignanoOptions()" style="margin-right: 10px;">
+                    <label for="enable-savignano" style="font-weight: bold; margin: 0;">
+                        🗡️ Enable Savignano Analysis (Bronze Age Axes)
+                    </label>
+                </div>
+                <small style="color: #666; display: block; margin-bottom: 15px;">
+                    Extract specialized morphometric features for Bronze Age axes (tallone, incavo, margini rialzati, tagliente)
+                </small>
+
+                <div id="savignano-options" style="display: none;">
+                    <div style="margin-bottom: 15px;">
+                        <label style="font-weight: 600; margin-bottom: 8px; display: block;">
+                            ⚖️ Weights (Optional but Recommended)
+                        </label>
+
+                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                            <label style="display: flex; align-items: center;">
+                                <input type="radio" name="weight-mode" value="none" checked onchange="updateWeightMode()" style="margin-right: 5px;">
+                                No weights
+                            </label>
+                            <label style="display: flex; align-items: center;">
+                                <input type="radio" name="weight-mode" value="manual" onchange="updateWeightMode()" style="margin-right: 5px;">
+                                Manual input
+                            </label>
+                            <label style="display: flex; align-items: center;">
+                                <input type="radio" name="weight-mode" value="file" onchange="updateWeightMode()" style="margin-right: 5px;">
+                                From file
+                            </label>
+                        </div>
+
+                        <!-- Manual weight input (shown in file list when enabled) -->
+                        <div id="weight-file-input" style="display: none;">
+                            <label style="display: block; margin-bottom: 5px; font-size: 14px;">
+                                Upload weights file (Excel, CSV, JSON, or DOCX):
+                            </label>
+                            <input type="file" id="weights-file" accept=".xlsx,.xls,.csv,.json,.docx" class="form-control" style="max-width: 400px;">
+                            <small style="color: #666; display: block; margin-top: 5px;">
+                                Excel/CSV: columns 'artifact_id' and 'weight' | JSON: {"974": 387.0} | DOCX: text patterns like "974: 387g"
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="upload-actions">
+                <button onclick="uploadFiles()" id="upload-btn" class="btn btn-success" disabled>
+                    Upload Selected Files
+                </button>
+                <button onclick="clearFiles()" class="btn btn-outline">
+                    Clear All
+                </button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Upload Progress</h2>
+            <div id="progress-container">
+                <p class="text-muted">No uploads in progress</p>
+            </div>
+        </div>
+
+        <div class="card full-width">
+            <h2>Recently Uploaded</h2>
+            <div id="recent-uploads">
+                <p class="text-muted">No files uploaded yet</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let selectedFiles = [];
+let fileWeights = {};  // Store manual weights {filename: weight}
+
+const uploadZone = document.getElementById('upload-zone');
+const fileInput = document.getElementById('file-input');
+const fileList = document.getElementById('file-list');
+const uploadBtn = document.getElementById('upload-btn');
+
+// Drag and drop handlers
+uploadZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadZone.classList.add('drag-over');
+});
+
+uploadZone.addEventListener('dragleave', () => {
+    uploadZone.classList.remove('drag-over');
+});
+
+uploadZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadZone.classList.remove('drag-over');
+
+    const files = Array.from(e.dataTransfer.files);
+    addFiles(files);
+});
+
+fileInput.addEventListener('change', (e) => {
+    const files = Array.from(e.target.files);
+    addFiles(files);
+});
+
+function addFiles(files) {
+    const validExtensions = ['.obj', '.ply', '.stl'];
+
+    files.forEach(file => {
+        const ext = '.' + file.name.split('.').pop().toLowerCase();
+        if (validExtensions.includes(ext)) {
+            selectedFiles.push(file);
+        } else {
+            alert(`Invalid file type: ${file.name}. Only OBJ, PLY, STL allowed.`);
+        }
+    });
+
+    updateFileList();
+}
+
+function updateFileList() {
+    if (selectedFiles.length === 0) {
+        fileList.innerHTML = '';
+        uploadBtn.disabled = true;
+        return;
+    }
+
+    uploadBtn.disabled = false;
+
+    fileList.innerHTML = '<h3>Selected Files (' + selectedFiles.length + ')</h3>';
+
+    const weightMode = document.querySelector('input[name="weight-mode"]:checked')?.value || 'none';
+    const showManualWeight = weightMode === 'manual';
+
+    selectedFiles.forEach((file, index) => {
+        const fileItem = document.createElement('div');
+        fileItem.className = 'file-item';
+
+        let weightInput = '';
+        if (showManualWeight) {
+            const currentWeight = fileWeights[file.name] || '';
+            weightInput = `
+                <input type="number"
+                       placeholder="Weight (g)"
+                       value="${currentWeight}"
+                       onchange="updateWeight('${file.name}', this.value)"
+                       style="width: 100px; padding: 4px 8px; margin-left: 10px; border: 1px solid #ddd; border-radius: 4px;"
+                       step="0.1"
+                       min="0">
+            `;
+        }
+
+        fileItem.innerHTML = `
+            <span class="file-name">📄 ${file.name}</span>
+            <span class="file-size">${formatFileSize(file.size)}</span>
+            ${weightInput}
+            <button onclick="removeFile(${index})" class="btn-remove">✕</button>
+        `;
+        fileList.appendChild(fileItem);
+    });
+}
+
+function removeFile(index) {
+    selectedFiles.splice(index, 1);
+    updateFileList();
+}
+
+function clearFiles() {
+    selectedFiles = [];
+    fileInput.value = '';
+    updateFileList();
+}
+
+async function uploadFiles() {
+    if (selectedFiles.length === 0) return;
+
+    const progressContainer = document.getElementById('progress-container');
+    progressContainer.innerHTML = '<h3>Uploading...</h3>';
+
+    const results = [];
+
+    // Check Savignano options
+    const enableSavignano = document.getElementById('enable-savignano')?.checked || false;
+    const weightMode = document.querySelector('input[name="weight-mode"]:checked')?.value || 'none';
+
+    // Prepare weights file if provided
+    let weightsFileData = null;
+    if (enableSavignano && weightMode === 'file') {
+        const weightsFileInput = document.getElementById('weights-file');
+        if (weightsFileInput.files.length > 0) {
+            weightsFileData = weightsFileInput.files[0];
+        }
+    }
+
+    for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+
+        const progressItem = document.createElement('div');
+        progressItem.className = 'progress-item';
+        progressItem.innerHTML = `
+            <div class="progress-info">
+                <span>${file.name}</span>
+                <span class="progress-status">Uploading...</span>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" style="width: 0%"></div>
+            </div>
+        `;
+        progressContainer.appendChild(progressItem);
+
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('artifact_id', file.name.split('.')[0]);
+
+            // Add project_id if selected
+            const projectSelect = document.getElementById('project-select');
+            if (projectSelect.value) {
+                formData.append('project_id', projectSelect.value);
+            }
+
+            // Add Savignano options
+            if (enableSavignano) {
+                formData.append('enable_savignano', 'true');
+
+                // Add weight if available
+                if (weightMode === 'manual' && fileWeights[file.name]) {
+                    formData.append('weight', fileWeights[file.name]);
+                }
+
+                // Add weights file (only on first iteration to avoid duplicate uploads)
+                if (weightMode === 'file' && weightsFileData && i === 0) {
+                    formData.append('weights_file', weightsFileData);
+                }
+            }
+
+            const response = await fetch('/web/upload-mesh', {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                progressItem.querySelector('.progress-status').textContent = '✓ Success';
+                progressItem.querySelector('.progress-fill').style.width = '100%';
+                progressItem.querySelector('.progress-fill').classList.add('success');
+                results.push({success: true, file: file.name, id: result.artifact_id});
+            } else {
+                progressItem.querySelector('.progress-status').textContent = '✗ Error';
+                progressItem.querySelector('.progress-fill').classList.add('error');
+                results.push({success: false, file: file.name, error: result.error});
+            }
+        } catch (error) {
+            progressItem.querySelector('.progress-status').textContent = '✗ Error';
+            progressItem.querySelector('.progress-fill').classList.add('error');
+            results.push({success: false, file: file.name, error: error.message});
+        }
+    }
+
+    // Show summary
+    const successful = results.filter(r => r.success).length;
+    const failed = results.filter(r => !r.success).length;
+
+    alert(`Upload complete!\n✓ Successful: ${successful}\n✗ Failed: ${failed}`);
+
+    clearFiles();
+    fileWeights = {};  // Reset weights
+
+    // Refresh recent uploads
+    setTimeout(() => {
+        window.location.href = '/web/artifacts';
+    }, 1000);
+}
+
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+// Savignano-specific functions
+function toggleSavignanoOptions() {
+    const enabled = document.getElementById('enable-savignano').checked;
+    document.getElementById('savignano-options').style.display = enabled ? 'block' : 'none';
+}
+
+function updateWeightMode() {
+    const mode = document.querySelector('input[name="weight-mode"]:checked').value;
+    document.getElementById('weight-file-input').style.display = mode === 'file' ? 'block' : 'none';
+    updateFileList();  // Refresh file list to show/hide weight inputs
+}
+
+function updateWeight(filename, weight) {
+    if (weight && weight > 0) {
+        fileWeights[filename] = parseFloat(weight);
+    } else {
+        delete fileWeights[filename];
+    }
+}
+
+// Load projects on page load
+async function loadProjects() {
+    try {
+        const response = await fetch('/web/projects');
+        const data = await response.json();
+
+        if (response.ok && data.projects) {
+            const select = document.getElementById('project-select');
+            data.projects.forEach(project => {
+                const option = document.createElement('option');
+                option.value = project.project_id;
+                option.textContent = `${project.project_name || project.name} (${project.stats?.total_artifacts || 0} artifacts)`;
+                select.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('Failed to load projects:', error);
+    }
+}
+
+// Create new project dialog
+async function showCreateProjectDialog() {
+    const projectId = prompt('Enter Project ID (e.g., "bronzeaxes2025"):');
+    if (!projectId) return;
+
+    const projectName = prompt('Enter Project Name:');
+    if (!projectName) return;
+
+    const description = prompt('Enter Project Description (optional):') || '';
+
+    try {
+        const response = await fetch('/web/projects', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                project_id: projectId,
+                name: projectName,
+                description: description
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            alert(`✓ Project "${projectName}" created successfully!`);
+            // Reload projects
+            document.getElementById('project-select').innerHTML = '<option value="">-- No Project (General Upload) --</option>';
+            await loadProjects();
+            // Select the new project
+            document.getElementById('project-select').value = projectId;
+        } else {
+            alert(`✗ Failed to create project: ${data.error || 'Unknown error'}`);
+        }
+    } catch (error) {
+        alert(`✗ Error: ${error.message}`);
+    }
+}
+
+// Load projects when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    loadProjects();
+});
+</script>
+{% endblock %}

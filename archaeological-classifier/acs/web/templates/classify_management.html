@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Classification Management - Archaeological Classifier</title>
+    <link rel="stylesheet" href="{{ url_for('web.static', filename='css/style.css') }}">
+    <style>
+        .management-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .section-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            padding: 30px;
+            margin-bottom: 30px;
+        }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .section-title {
+            font-size: 24px;
+            font-weight: 600;
+            color: #2d3748;
+        }
+
+        .class-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .class-card {
+            background: #f7fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 20px;
+            transition: all 0.3s;
+        }
+
+        .class-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+        }
+
+        .class-name {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 8px;
+        }
+
+        .class-meta {
+            display: flex;
+            gap: 15px;
+            margin: 10px 0;
+            font-size: 13px;
+            color: #718096;
+        }
+
+        .class-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #5568d3;
+        }
+
+        .btn-secondary {
+            background: #e2e8f0;
+            color: #4a5568;
+        }
+
+        .btn-secondary:hover {
+            background: #cbd5e0;
+        }
+
+        .btn-success {
+            background: #48bb78;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #38a169;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #2d3748;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .artifact-selector {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 2px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 15px;
+        }
+
+        .artifact-item {
+            padding: 8px;
+            margin: 5px 0;
+            border-radius: 4px;
+            transition: background 0.2s;
+        }
+
+        .artifact-item:hover {
+            background: #edf2f7;
+        }
+
+        .artifact-item label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        .artifact-item input[type="checkbox"] {
+            margin-right: 10px;
+        }
+
+        .ml-status {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .status-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .status-box.success {
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+        }
+
+        .status-box.warning {
+            background: linear-gradient(135deg, #f6ad55 0%, #ed8936 100%);
+        }
+
+        .status-value {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .status-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 10000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+            width: 90%;
+        }
+
+        .modal-header {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #2d3748;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            justify-content: flex-end;
+        }
+
+        .param-editor {
+            background: #f7fafc;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 10px 0;
+        }
+
+        .param-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .success-message {
+            background: #c6f6d5;
+            color: #22543d;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 15px 0;
+            border-left: 4px solid #48bb78;
+        }
+
+        .error-message {
+            background: #fed7d7;
+            color: #742a2a;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 15px 0;
+            border-left: 4px solid #f56565;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎯 Classification Management</h1>
+            <p>Manage taxonomy classes, create custom types, and train ML models</p>
+            <a href="/" class="back-link">← Back to Dashboard</a>
+        </div>
+
+        <div class="management-container">
+            <!-- Section 1: Taxonomy Classes -->
+            <div class="section-card">
+                <div class="section-header">
+                    <h2 class="section-title">📚 Taxonomy Classes</h2>
+                    <button class="btn btn-primary" onclick="refreshClasses()">🔄 Refresh</button>
+                </div>
+                <div id="classes-grid" class="class-grid">
+                    <p>Loading classes...</p>
+                </div>
+            </div>
+
+            <!-- Section 2: Create Custom Class -->
+            <div class="section-card">
+                <div class="section-header">
+                    <h2 class="section-title">➕ Create Custom Class from Reference Group</h2>
+                </div>
+                <p style="color: #718096; margin-bottom: 20px;">
+                    Select 2-5 similar artifacts to define a new typological class. The system will automatically calculate optimal parameters based on their morphometric features.
+                </p>
+
+                <div class="form-group">
+                    <label class="form-label">Class Name</label>
+                    <input type="text" id="new-class-name" class="form-input" placeholder="e.g., Savignano Type A">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Tolerance Factor (0.1 = strict, 0.3 = loose)</label>
+                    <input type="number" id="tolerance-factor" class="form-input" value="0.15" min="0.05" max="0.5" step="0.05">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Select Reference Artifacts (min 2)</label>
+                    <div id="artifact-selector" class="artifact-selector">
+                        <p>Loading artifacts...</p>
+                    </div>
+                </div>
+
+                <button class="btn btn-success" onclick="createCustomClass()" style="width: 100%; padding: 12px;">
+                    ✓ Create Custom Class
+                </button>
+                <div id="create-class-message"></div>
+            </div>
+
+            <!-- Section 3: ML Training -->
+            <div class="section-card">
+                <div class="section-header">
+                    <h2 class="section-title">🤖 Machine Learning Training</h2>
+                    <button class="btn btn-secondary" onclick="refreshMLStatus()">🔄 Refresh Status</button>
+                </div>
+
+                <div id="ml-status" class="ml-status">
+                    <div class="status-box">
+                        <div class="status-value">-</div>
+                        <div class="status-label">Training Samples</div>
+                    </div>
+                    <div class="status-box">
+                        <div class="status-value">-</div>
+                        <div class="status-label">Classes</div>
+                    </div>
+                    <div class="status-box">
+                        <div class="status-value">-</div>
+                        <div class="status-label">Model Status</div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Algorithm</label>
+                    <select id="ml-algorithm" class="form-input">
+                        <option value="random_forest">Random Forest (Recommended)</option>
+                        <option value="gradient_boosting">Gradient Boosting</option>
+                        <option value="svm">Support Vector Machine</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Validation Split (20% recommended)</label>
+                    <input type="number" id="validation-split" class="form-input" value="0.2" min="0.1" max="0.4" step="0.05">
+                </div>
+
+                <button id="train-btn" class="btn btn-success" onclick="trainMLModel()" style="width: 100%; padding: 12px;" disabled>
+                    🚀 Train ML Model
+                </button>
+                <div id="ml-requirement-message" style="margin-top: 15px; padding: 15px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 6px; display: none;">
+                    <strong>⚠️ Training Requirements:</strong><br>
+                    <ul style="margin: 10px 0 0 20px; color: #856404;">
+                        <li>Classify at least <strong>5-10 artifacts</strong></li>
+                        <li>Validate the classifications</li>
+                        <li>Minimum <strong>2 artifacts per class</strong></li>
+                    </ul>
+                    <p style="margin: 10px 0 0 0; color: #856404; font-size: 13px;">
+                        Go to <a href="/web/classify" style="color: #667eea; font-weight: bold;">Classify Artifacts</a> to start
+                    </p>
+                </div>
+                <div id="ml-training-message"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for editing class parameters -->
+    <div id="edit-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">Edit Class Parameters</div>
+            <div id="modal-body"></div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeEditModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="saveClassModifications()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentClasses = [];
+        let currentEditClass = null;
+        let artifacts = [];
+
+        // Load initial data
+        document.addEventListener('DOMContentLoaded', () => {
+            refreshClasses();
+            loadArtifacts();
+            refreshMLStatus();
+        });
+
+        async function refreshClasses() {
+            try {
+                const response = await fetch('/web/taxonomy/classes');
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    currentClasses = data.classes;
+                    displayClasses(data.classes);
+                }
+            } catch (error) {
+                console.error('Error loading classes:', error);
+            }
+        }
+
+        function displayClasses(classes) {
+            const grid = document.getElementById('classes-grid');
+
+            if (classes.length === 0) {
+                grid.innerHTML = '<p>No classes defined yet.</p>';
+                return;
+            }
+
+            grid.innerHTML = classes.map(cls => `
+                <div class="class-card">
+                    <div class="class-name">${cls.name}</div>
+                    <p style="color: #718096; font-size: 13px; margin: 8px 0;">${cls.description}</p>
+                    <div class="class-meta">
+                        <span>📊 ${cls.n_morphometric_params} params</span>
+                        <span>📝 ${cls.n_samples} samples</span>
+                        <span>🎯 ${(cls.confidence_threshold * 100).toFixed(0)}%</span>
+                    </div>
+                    <div style="font-size: 11px; color: #a0aec0; margin-top: 8px;">
+                        Created: ${new Date(cls.created_date).toLocaleDateString()}<br>
+                        By: ${cls.created_by || 'system'}
+                    </div>
+                    <div class="class-actions">
+                        <button class="btn btn-secondary" onclick="viewClassDetails('${cls.class_id}')">View Details</button>
+                        <button class="btn btn-primary" onclick="editClass('${cls.class_id}')">Edit</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function viewClassDetails(classId) {
+            try {
+                const response = await fetch(`/web/taxonomy/classes/${classId}`);
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    const cls = data.class;
+                    let details = `<h3>${cls.name}</h3><p>${cls.description}</p>`;
+                    details += '<h4>Morphometric Parameters:</h4><ul>';
+
+                    for (const [name, param] of Object.entries(cls.morphometric_params)) {
+                        details += `<li><strong>${name}:</strong> ${param.value.toFixed(2)} (${param.min_threshold.toFixed(2)} - ${param.max_threshold.toFixed(2)})</li>`;
+                    }
+                    details += '</ul>';
+
+                    alert(details); // You can replace this with a nicer modal
+                }
+            } catch (error) {
+                console.error('Error loading class details:', error);
+            }
+        }
+
+        async function editClass(classId) {
+            try {
+                const response = await fetch(`/web/taxonomy/classes/${classId}`);
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    currentEditClass = data.class;
+                    showEditModal(data.class);
+                }
+            } catch (error) {
+                console.error('Error loading class for edit:', error);
+            }
+        }
+
+        function showEditModal(cls) {
+            const modal = document.getElementById('edit-modal');
+            const body = document.getElementById('modal-body');
+
+            let html = `
+                <p><strong>Class:</strong> ${cls.name}</p>
+                <p style="font-size: 13px; color: #718096;">Modify parameter ranges below. A justification is required.</p>
+
+                <h4>Morphometric Parameters</h4>
+            `;
+
+            for (const [name, param] of Object.entries(cls.morphometric_params)) {
+                html += `
+                    <div class="param-editor">
+                        <strong>${name}</strong>
+                        <div class="param-row">
+                            <div>
+                                <label style="font-size: 12px;">Min</label>
+                                <input type="number" class="form-input" value="${param.min_threshold}"
+                                       data-param="${name}" data-field="min_threshold" step="0.1">
+                            </div>
+                            <div>
+                                <label style="font-size: 12px;">Ideal</label>
+                                <input type="number" class="form-input" value="${param.value}"
+                                       data-param="${name}" data-field="value" step="0.1">
+                            </div>
+                            <div>
+                                <label style="font-size: 12px;">Max</label>
+                                <input type="number" class="form-input" value="${param.max_threshold}"
+                                       data-param="${name}" data-field="max_threshold" step="0.1">
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            html += `
+                <div class="form-group" style="margin-top: 20px;">
+                    <label class="form-label">Justification (required)</label>
+                    <textarea id="edit-justification" class="form-input" rows="3"
+                              placeholder="Explain why these changes are needed..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Your Name</label>
+                    <input type="text" id="edit-operator" class="form-input" value="user">
+                </div>
+            `;
+
+            body.innerHTML = html;
+            modal.classList.add('active');
+        }
+
+        function closeEditModal() {
+            document.getElementById('edit-modal').classList.remove('active');
+        }
+
+        async function saveClassModifications() {
+            const justification = document.getElementById('edit-justification').value.trim();
+            const operator = document.getElementById('edit-operator').value.trim();
+
+            if (!justification) {
+                alert('Justification is required');
+                return;
+            }
+
+            // Collect changes
+            const changes = { morphometric: {} };
+            const inputs = document.querySelectorAll('.param-editor input[data-param]');
+
+            inputs.forEach(input => {
+                const param = input.dataset.param;
+                const field = input.dataset.field;
+                const value = parseFloat(input.value);
+
+                if (!changes.morphometric[param]) {
+                    changes.morphometric[param] = {};
+                }
+                changes.morphometric[param][field] = value;
+            });
+
+            try {
+                const response = await fetch(`/web/taxonomy/classes/${currentEditClass.class_id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        parameter_changes: changes,
+                        justification: justification,
+                        operator: operator
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    alert('Class parameters updated successfully!');
+                    closeEditModal();
+                    refreshClasses();
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                console.error('Error saving changes:', error);
+                alert('Failed to save changes');
+            }
+        }
+
+        async function loadArtifacts() {
+            try {
+                const response = await fetch('/web/statistics');
+                const data = await response.json();
+                artifacts = data.meshes?.artifacts || [];
+
+                const selector = document.getElementById('artifact-selector');
+                if (artifacts.length === 0) {
+                    selector.innerHTML = '<p>No artifacts loaded</p>';
+                    return;
+                }
+
+                selector.innerHTML = artifacts.map(id => `
+                    <div class="artifact-item">
+                        <label>
+                            <input type="checkbox" class="artifact-checkbox" value="${id}">
+                            <span>${id}</span>
+                        </label>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading artifacts:', error);
+            }
+        }
+
+        async function createCustomClass() {
+            const className = document.getElementById('new-class-name').value.trim();
+            const tolerance = parseFloat(document.getElementById('tolerance-factor').value);
+            const checkboxes = document.querySelectorAll('.artifact-checkbox:checked');
+            const selectedIds = Array.from(checkboxes).map(cb => cb.value);
+
+            const messageDiv = document.getElementById('create-class-message');
+
+            if (!className) {
+                messageDiv.innerHTML = '<div class="error-message">Please enter a class name</div>';
+                return;
+            }
+
+            if (selectedIds.length < 2) {
+                messageDiv.innerHTML = '<div class="error-message">Please select at least 2 reference artifacts</div>';
+                return;
+            }
+
+            messageDiv.innerHTML = '<p>Creating class...</p>';
+
+            try {
+                const response = await fetch('/web/taxonomy/classes', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        class_name: className,
+                        artifact_ids: selectedIds,
+                        tolerance_factor: tolerance
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    messageDiv.innerHTML = `<div class="success-message">✓ ${data.message}</div>`;
+                    document.getElementById('new-class-name').value = '';
+                    document.querySelectorAll('.artifact-checkbox').forEach(cb => cb.checked = false);
+                    refreshClasses();
+                } else {
+                    messageDiv.innerHTML = `<div class="error-message">Error: ${data.error}</div>`;
+                }
+            } catch (error) {
+                console.error('Error creating class:', error);
+                messageDiv.innerHTML = '<div class="error-message">Failed to create class</div>';
+            }
+        }
+
+        async function refreshMLStatus() {
+            try {
+                const response = await fetch('/web/ml/status');
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    const mlStatus = data.ml_status;
+                    const statusBoxes = document.querySelectorAll('.status-box');
+
+                    // Training samples
+                    statusBoxes[0].querySelector('.status-value').textContent = mlStatus.training_data.total_samples || 0;
+                    statusBoxes[0].className = 'status-box' + (mlStatus.training_data.total_samples >= 5 ? ' success' : ' warning');
+
+                    // Classes
+                    statusBoxes[1].querySelector('.status-value').textContent = mlStatus.training_data.n_classes || 0;
+
+                    // Model status
+                    statusBoxes[2].querySelector('.status-value').textContent = mlStatus.is_trained ? '✓' : '✗';
+                    statusBoxes[2].querySelector('.status-label').textContent = mlStatus.is_trained ? 'Trained' : 'Not Trained';
+                    statusBoxes[2].className = 'status-box' + (mlStatus.is_trained ? ' success' : ' warning');
+
+                    // Enable/disable train button and show/hide requirement message
+                    const trainBtn = document.getElementById('train-btn');
+                    const requirementMsg = document.getElementById('ml-requirement-message');
+
+                    trainBtn.disabled = !mlStatus.available_for_training;
+
+                    if (!mlStatus.available_for_training) {
+                        requirementMsg.style.display = 'block';
+                    } else {
+                        requirementMsg.style.display = 'none';
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading ML status:', error);
+            }
+        }
+
+        async function trainMLModel() {
+            const algorithm = document.getElementById('ml-algorithm').value;
+            const validationSplit = parseFloat(document.getElementById('validation-split').value);
+            const messageDiv = document.getElementById('ml-training-message');
+            const trainBtn = document.getElementById('train-btn');
+
+            trainBtn.disabled = true;
+            trainBtn.innerHTML = '<span class="loading"></span> Training...';
+            messageDiv.innerHTML = '<p>Training model, this may take a minute...</p>';
+
+            try {
+                const response = await fetch('/web/ml/train', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        algorithm: algorithm,
+                        validation_split: validationSplit
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    const results = data.results;
+                    messageDiv.innerHTML = `
+                        <div class="success-message">
+                            <strong>✓ Model trained successfully!</strong><br>
+                            Accuracy: ${(results.accuracy * 100).toFixed(1)}%<br>
+                            Training samples: ${results.n_train}<br>
+                            Validation samples: ${results.n_test}
+                        </div>
+                    `;
+                    refreshMLStatus();
+                } else {
+                    messageDiv.innerHTML = `<div class="error-message">Error: ${data.error}</div>`;
+                }
+            } catch (error) {
+                console.error('Error training model:', error);
+                messageDiv.innerHTML = '<div class="error-message">Failed to train model</div>';
+            } finally {
+                trainBtn.disabled = false;
+                trainBtn.innerHTML = '🚀 Train ML Model';
+            }
+        }
+    </script>
+</body>
+</html>

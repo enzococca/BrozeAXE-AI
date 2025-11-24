@@ -1,0 +1,342 @@
+{% extends "base.html" %}
+
+{% block title %}Gestione Progetti - ACS{% endblock %}
+
+{% block extra_head %}
+<style>
+.projects-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.project-card {
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.project-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.project-name {
+    font-size: 20px;
+    font-weight: bold;
+    color: #2d3748;
+}
+
+.project-status {
+    padding: 5px 15px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.status-active {
+    background: #c6f6d5;
+    color: #22543d;
+}
+
+.status-archived {
+    background: #fed7d7;
+    color: #742a2a;
+}
+
+.project-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 15px;
+    margin-top: 15px;
+}
+
+.stat-box {
+    background: #f7fafc;
+    padding: 10px;
+    border-radius: 4px;
+    text-align: center;
+}
+
+.stat-number {
+    font-size: 24px;
+    font-weight: bold;
+    color: #2b6cb0;
+}
+
+.stat-label {
+    font-size: 12px;
+    color: #718096;
+    margin-top: 5px;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.btn-primary {
+    background: #007bff;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #0056b3;
+}
+
+.btn-secondary {
+    background: #6c757d;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background: #545b62;
+}
+
+.btn-danger {
+    background: #dc3545;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #c82333;
+}
+
+.create-project-form {
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 30px;
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+    color: #2d3748;
+}
+
+.form-group input,
+.form-group textarea {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #cbd5e0;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.form-group textarea {
+    resize: vertical;
+    min-height: 80px;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #718096;
+}
+
+.empty-state-icon {
+    font-size: 64px;
+    margin-bottom: 20px;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="projects-container">
+    <h1>Gestione Progetti</h1>
+    <p>Organizza i tuoi reperti archeologici in progetti separati</p>
+
+    <!-- Create New Project Form -->
+    <div class="create-project-form" id="createForm" style="display: none;">
+        <h3>Crea Nuovo Progetto</h3>
+        <div class="form-group">
+            <label for="projectId">ID Progetto *</label>
+            <input type="text" id="projectId" placeholder="es. savignano_2024" required>
+        </div>
+        <div class="form-group">
+            <label for="projectName">Nome Progetto *</label>
+            <input type="text" id="projectName" placeholder="es. Asce di Savignano sul Panaro" required>
+        </div>
+        <div class="form-group">
+            <label for="projectDescription">Descrizione</label>
+            <textarea id="projectDescription" placeholder="Descrizione del progetto..."></textarea>
+        </div>
+        <div class="action-buttons">
+            <button class="btn btn-primary" onclick="createProject()">Crea Progetto</button>
+            <button class="btn btn-secondary" onclick="toggleCreateForm()">Annulla</button>
+        </div>
+    </div>
+
+    <div style="margin-bottom: 20px;">
+        <button class="btn btn-primary" onclick="toggleCreateForm()">+ Nuovo Progetto</button>
+        <button class="btn btn-secondary" onclick="loadProjects()">🔄 Aggiorna</button>
+    </div>
+
+    <!-- Projects List -->
+    <div id="projectsList">
+        <div class="empty-state">
+            <div class="empty-state-icon">📁</div>
+            <p>Caricamento progetti...</p>
+        </div>
+    </div>
+</div>
+
+<script>
+// Load projects on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadProjects();
+});
+
+function toggleCreateForm() {
+    const form = document.getElementById('createForm');
+    form.style.display = form.style.display === 'none' ? 'block' : 'none';
+}
+
+async function loadProjects() {
+    try {
+        const response = await fetch('/web/projects');
+        const data = await response.json();
+
+        const projectsList = document.getElementById('projectsList');
+
+        if (data.projects.length === 0) {
+            projectsList.innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">📁</div>
+                    <p>Nessun progetto trovato. Crea il tuo primo progetto!</p>
+                </div>
+            `;
+            return;
+        }
+
+        projectsList.innerHTML = data.projects.map(project => `
+            <div class="project-card">
+                <div class="project-header">
+                    <div class="project-name">${project.project_name}</div>
+                    <span class="project-status status-${project.status}">${project.status}</span>
+                </div>
+                <p style="color: #718096; margin: 10px 0;">${project.description || 'Nessuna descrizione'}</p>
+                <div class="project-stats">
+                    <div class="stat-box">
+                        <div class="stat-number">${project.stats.total_artifacts}</div>
+                        <div class="stat-label">Reperti</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-number">${project.stats.total_classifications}</div>
+                        <div class="stat-label">Classificazioni</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-number">${project.stats.validated_classifications}</div>
+                        <div class="stat-label">Validati</div>
+                    </div>
+                </div>
+                <div class="action-buttons">
+                    <button class="btn btn-primary" onclick="viewProject('${project.project_id}')">Apri</button>
+                    <button class="btn btn-secondary" onclick="exportProject('${project.project_id}')">Esporta</button>
+                    ${project.status === 'active' ?
+                        `<button class="btn btn-danger" onclick="archiveProject('${project.project_id}')">Archivia</button>` :
+                        ''}
+                </div>
+            </div>
+        `).join('');
+
+    } catch (error) {
+        console.error('Error loading projects:', error);
+        alert('Errore nel caricamento dei progetti');
+    }
+}
+
+async function createProject() {
+    const projectId = document.getElementById('projectId').value.trim();
+    const projectName = document.getElementById('projectName').value.trim();
+    const projectDescription = document.getElementById('projectDescription').value.trim();
+
+    if (!projectId || !projectName) {
+        alert('ID e Nome del progetto sono obbligatori');
+        return;
+    }
+
+    try {
+        const response = await fetch('/web/projects', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                project_id: projectId,
+                name: projectName,
+                description: projectDescription
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            alert('Progetto creato con successo!');
+            toggleCreateForm();
+            document.getElementById('projectId').value = '';
+            document.getElementById('projectName').value = '';
+            document.getElementById('projectDescription').value = '';
+            loadProjects();
+        } else {
+            alert('Errore: ' + data.error);
+        }
+    } catch (error) {
+        console.error('Error creating project:', error);
+        alert('Errore nella creazione del progetto');
+    }
+}
+
+async function viewProject(projectId) {
+    window.location.href = `/web/artifacts?project=${projectId}`;
+}
+
+async function exportProject(projectId) {
+    alert(`Export funzionalità in arrivo per ${projectId}`);
+}
+
+async function archiveProject(projectId) {
+    if (!confirm('Sei sicuro di voler archiviare questo progetto?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/web/projects/${projectId}`, {
+            method: 'DELETE'
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            alert('Progetto archiviato con successo');
+            loadProjects();
+        } else {
+            alert('Errore: ' + data.error);
+        }
+    } catch (error) {
+        console.error('Error archiving project:', error);
+        alert('Errore nell\'archiviazione del progetto');
+    }
+}
+</script>
+{% endblock %}

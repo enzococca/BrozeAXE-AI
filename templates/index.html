@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ACS - Archaeological Axe Classification System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Sistema di Classificazione Asce Archeologiche</h1>
+            <p class="subtitle">Archaeological Axe Classification System (ACS)</p>
+        </header>
+
+        <nav>
+            <a href="/" class="nav-link active">Upload</a>
+            <a href="/reports" class="nav-link">Report Generati</a>
+        </nav>
+
+        <main>
+            <div class="upload-section">
+                <h2>Genera Nuovo Report</h2>
+                <p class="description">
+                    Carica un file mesh 3D (.obj) di un'ascia archeologica tipo Savignano per generare
+                    un report morfometrico completo con analisi AI.
+                </p>
+
+                <form id="upload-form" enctype="multipart/form-data">
+                    <div class="form-group">
+                        <label for="artifact_id">ID Artefatto:</label>
+                        <input type="text" id="artifact_id" name="artifact_id"
+                               placeholder="es. axe974 (opzionale - generato automaticamente dal nome file)">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="language">Lingua Report:</label>
+                        <select id="language" name="language">
+                            <option value="it" selected>Italiano</option>
+                            <option value="en">English</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group file-upload">
+                        <label for="mesh_file" class="file-label">
+                            <span id="file-name">Seleziona file mesh (.obj)</span>
+                            <input type="file" id="mesh_file" name="mesh_file" accept=".obj" required>
+                        </label>
+                    </div>
+
+                    <button type="submit" class="btn-primary" id="submit-btn">
+                        Genera Report
+                    </button>
+                </form>
+
+                <div id="progress" class="progress-section" style="display: none;">
+                    <div class="spinner"></div>
+                    <p id="progress-text">Caricamento e analisi in corso...</p>
+                </div>
+
+                <div id="result" class="result-section" style="display: none;"></div>
+            </div>
+
+            <div class="info-section">
+                <h3>Caratteristiche del Report</h3>
+                <ul>
+                    <li>Analisi morfometrica completa (tallone, corpo, tagliente)</li>
+                    <li>Visualizzazioni tecniche (prospetto, profilo, sezioni)</li>
+                    <li>Analisi AI con interpretazione morfologica</li>
+                    <li>Analisi martellamento e fusione</li>
+                    <li>Confronto statistico PCA</li>
+                    <li>Report PDF professionale multi-pagina</li>
+                </ul>
+            </div>
+        </main>
+
+        <footer>
+            <p>&copy; 2024 Archaeological Axe Classification System | BrozeAXE-AI</p>
+        </footer>
+    </div>
+
+    <script>
+        // File input display
+        const fileInput = document.getElementById('mesh_file');
+        const fileName = document.getElementById('file-name');
+
+        fileInput.addEventListener('change', function() {
+            if (this.files && this.files[0]) {
+                fileName.textContent = this.files[0].name;
+            } else {
+                fileName.textContent = 'Seleziona file mesh (.obj)';
+            }
+        });
+
+        // Form submission
+        const form = document.getElementById('upload-form');
+        const submitBtn = document.getElementById('submit-btn');
+        const progress = document.getElementById('progress');
+        const progressText = document.getElementById('progress-text');
+        const result = document.getElementById('result');
+
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const formData = new FormData(form);
+
+            // Show progress
+            submitBtn.disabled = true;
+            progress.style.display = 'block';
+            result.style.display = 'none';
+            progressText.textContent = 'Caricamento file...';
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    result.className = 'result-section success';
+                    result.innerHTML = `
+                        <h3>✓ Report Generato con Successo!</h3>
+                        <p>Artefatto: <strong>${data.artifact_id}</strong></p>
+                        <a href="${data.pdf_url}" class="btn-primary" download>
+                            Scarica Report PDF
+                        </a>
+                        <a href="/reports" class="btn-secondary">
+                            Vedi Tutti i Report
+                        </a>
+                    `;
+                } else {
+                    result.className = 'result-section error';
+                    result.innerHTML = `
+                        <h3>✗ Errore</h3>
+                        <p>${data.message || 'Errore sconosciuto durante la generazione del report'}</p>
+                    `;
+                }
+
+                result.style.display = 'block';
+
+            } catch (error) {
+                result.className = 'result-section error';
+                result.innerHTML = `
+                    <h3>✗ Errore di Connessione</h3>
+                    <p>${error.message}</p>
+                `;
+                result.style.display = 'block';
+            } finally {
+                progress.style.display = 'none';
+                submitBtn.disabled = false;
+                form.reset();
+                fileName.textContent = 'Seleziona file mesh (.obj)';
+            }
+        });
+    </script>
+</body>
+</html>

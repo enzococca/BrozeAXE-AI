@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(lsof:*)",
+      "Bash(kill:*)",
+      "Bash(chmod:*)",
+      "Bash(python:*)"
+    ],
+    "deny": []
+  }
+}

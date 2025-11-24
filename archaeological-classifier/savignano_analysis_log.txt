@@ -1,0 +1,403 @@
+INFO:acs.savignano.morphometric_extractor:axe940: Loading mesh from /Users/enzo/.acs/savignano_meshes/axe940.obj
+INFO:acs.savignano.morphometric_extractor:axe940: Mesh loaded successfully. Vertices: 5722470, Faces: 1907490
+INFO:acs.savignano.morphometric_extractor:axe940: Max dimension before scaling: 179.2108
+INFO:acs.savignano.morphometric_extractor:axe940: Starting feature extraction...
+INFO:acs.savignano.morphometric_extractor:axe940: Orientamento identificato. Tallone=8.65, Tagliente=-8.25
+INFO:acs.savignano.morphometric_extractor:axe940: Inizio estrazione parametri morfometrici...
+INFO:acs.savignano.morphometric_extractor:axe940: Analizzando tallone...
+INFO:acs.savignano.morphometric_extractor:axe940: Incavo rilevato - L=53.19mm, P=4.59mm, Profilo=rettangolare
+INFO:acs.savignano.morphometric_extractor:axe940: Tallone - L=76.54mm, S=34.61mm, Incavo=True
+INFO:acs.savignano.morphometric_extractor:axe940: Analizzando margini rialzati...
+INFO:acs.savignano.morphometric_extractor:axe940: Analizzando corpo...
+INFO:acs.savignano.morphometric_extractor:axe940: Corpo - Lmin=104.74mm, Smax(con margini)=58.18mm, Smax(senza margini)=47.24mm
+INFO:acs.savignano.morphometric_extractor:axe940: Analizzando tagliente...
+INFO:acs.savignano.morphometric_extractor:axe940: Tagliente - L=91.94mm, Forma=lunato, Arco=2382.47mm, Corda=11.23mm, Espanso=False
+INFO:acs.savignano.morphometric_extractor:axe940: Estrazione completata. Estratti 20 parametri.
+INFO:acs.savignano.morphometric_extractor:axe940: Feature extraction completed successfully
+Traceback (most recent call last):
+  File "/Users/enzo/Documents/BrozeAXE-AI/archaeological-classifier/analyze_and_save_savignano.py", line 48, in process_single_axe
+    db.add_features(artifact_id, {'savignano': features})
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/enzo/Documents/BrozeAXE-AI/archaeological-classifier/acs/core/database.py", line 222, in add_features
+    ''', (artifact_id, feature_name, json.dumps(feature_value), extraction_date))
+                                     ~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/__init__.py", line 231, in dumps
+    return _default_encoder.encode(obj)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/encoder.py", line 261, in iterencode
+    return _iterencode(o, 0)
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/encoder.py", line 180, in default
+    raise TypeError(f'Object of type {o.__class__.__name__} '
+                    f'is not JSON serializable')
+TypeError: Object of type bool is not JSON serializable
+INFO:acs.savignano.morphometric_extractor:axe942: Loading mesh from /Users/enzo/.acs/savignano_meshes/axe942.obj
+INFO:acs.savignano.morphometric_extractor:axe942: Mesh loaded successfully. Vertices: 5188143, Faces: 1729381
+INFO:acs.savignano.morphometric_extractor:axe942: Max dimension before scaling: 172.4458
+INFO:acs.savignano.morphometric_extractor:axe942: Starting feature extraction...
+INFO:acs.savignano.morphometric_extractor:axe942: Orientamento identificato. Tallone=8.43, Tagliente=-8.26
+INFO:acs.savignano.morphometric_extractor:axe942: Inizio estrazione parametri morfometrici...
+INFO:acs.savignano.morphometric_extractor:axe942: Analizzando tallone...
+INFO:acs.savignano.morphometric_extractor:axe942: Incavo rilevato - L=61.84mm, P=4.90mm, Profilo=rettangolare
+INFO:acs.savignano.morphometric_extractor:axe942: Tallone - L=94.16mm, S=31.12mm, Incavo=True
+INFO:acs.savignano.morphometric_extractor:axe942: Analizzando margini rialzati...
+INFO:acs.savignano.morphometric_extractor:axe942: Margini rialzati - Presenti=True, L=6.21mm, Smax=0.53mm
+INFO:acs.savignano.morphometric_extractor:axe942: Analizzando corpo...
+INFO:acs.savignano.morphometric_extractor:axe942: Corpo - Lmin=119.91mm, Smax(con margini)=57.33mm, Smax(senza margini)=43.42mm
+INFO:acs.savignano.morphometric_extractor:axe942: Analizzando tagliente...
+INFO:acs.savignano.morphometric_extractor:axe942: Tagliente - L=98.17mm, Forma=lunato, Arco=719.29mm, Corda=14.23mm, Espanso=False
+INFO:acs.savignano.morphometric_extractor:axe942: Estrazione completata. Estratti 20 parametri.
+INFO:acs.savignano.morphometric_extractor:axe942: Feature extraction completed successfully
+Traceback (most recent call last):
+  File "/Users/enzo/Documents/BrozeAXE-AI/archaeological-classifier/analyze_and_save_savignano.py", line 48, in process_single_axe
+    db.add_features(artifact_id, {'savignano': features})
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/enzo/Documents/BrozeAXE-AI/archaeological-classifier/acs/core/database.py", line 222, in add_features
+    ''', (artifact_id, feature_name, json.dumps(feature_value), extraction_date))
+                                     ~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/__init__.py", line 231, in dumps
+    return _default_encoder.encode(obj)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/encoder.py", line 261, in iterencode
+    return _iterencode(o, 0)
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/encoder.py", line 180, in default
+    raise TypeError(f'Object of type {o.__class__.__name__} '
+                    f'is not JSON serializable')
+TypeError: Object of type bool is not JSON serializable
+INFO:acs.savignano.morphometric_extractor:axe957: Loading mesh from /Users/enzo/.acs/savignano_meshes/axe957.obj
+INFO:acs.savignano.morphometric_extractor:axe957: Mesh loaded successfully. Vertices: 5505495, Faces: 1835165
+INFO:acs.savignano.morphometric_extractor:axe957: Max dimension before scaling: 171.7320
+INFO:acs.savignano.morphometric_extractor:axe957: Starting feature extraction...
+INFO:acs.savignano.morphometric_extractor:axe957: Orientamento identificato. Tallone=8.13, Tagliente=-7.89
+INFO:acs.savignano.morphometric_extractor:axe957: Inizio estrazione parametri morfometrici...
+INFO:acs.savignano.morphometric_extractor:axe957: Analizzando tallone...
+INFO:acs.savignano.morphometric_extractor:axe957: Incavo rilevato - L=38.48mm, P=4.99mm, Profilo=rettangolare
+INFO:acs.savignano.morphometric_extractor:axe957: Tallone - L=74.78mm, S=34.28mm, Incavo=True
+INFO:acs.savignano.morphometric_extractor:axe957: Analizzando margini rialzati...
+INFO:acs.savignano.morphometric_extractor:axe957: Analizzando corpo...
+INFO:acs.savignano.morphometric_extractor:axe957: Corpo - Lmin=112.22mm, Smax(con margini)=56.10mm, Smax(senza margini)=42.83mm
+INFO:acs.savignano.morphometric_extractor:axe957: Analizzando tagliente...
+INFO:acs.savignano.morphometric_extractor:axe957: Tagliente - L=90.32mm, Forma=lunato, Arco=29.80mm, Corda=12.02mm, Espanso=False
+INFO:acs.savignano.morphometric_extractor:axe957: Estrazione completata. Estratti 20 parametri.
+INFO:acs.savignano.morphometric_extractor:axe957: Feature extraction completed successfully
+Traceback (most recent call last):
+  File "/Users/enzo/Documents/BrozeAXE-AI/archaeological-classifier/analyze_and_save_savignano.py", line 48, in process_single_axe
+    db.add_features(artifact_id, {'savignano': features})
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/enzo/Documents/BrozeAXE-AI/archaeological-classifier/acs/core/database.py", line 222, in add_features
+    ''', (artifact_id, feature_name, json.dumps(feature_value), extraction_date))
+                                     ~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/__init__.py", line 231, in dumps
+    return _default_encoder.encode(obj)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/encoder.py", line 261, in iterencode
+    return _iterencode(o, 0)
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/encoder.py", line 180, in default
+    raise TypeError(f'Object of type {o.__class__.__name__} '
+                    f'is not JSON serializable')
+TypeError: Object of type bool is not JSON serializable
+INFO:acs.savignano.morphometric_extractor:axe965: Loading mesh from /Users/enzo/.acs/savignano_meshes/axe965.obj
+INFO:acs.savignano.morphometric_extractor:axe965: Mesh loaded successfully. Vertices: 4966197, Faces: 1655399
+INFO:acs.savignano.morphometric_extractor:axe965: Max dimension before scaling: 167.6377
+INFO:acs.savignano.morphometric_extractor:axe965: Starting feature extraction...
+INFO:acs.savignano.morphometric_extractor:axe965: Orientamento identificato. Tallone=8.58, Tagliente=-7.99
+INFO:acs.savignano.morphometric_extractor:axe965: Inizio estrazione parametri morfometrici...
+INFO:acs.savignano.morphometric_extractor:axe965: Analizzando tallone...
+INFO:acs.savignano.morphometric_extractor:axe965: Incavo rilevato - L=25.30mm, P=3.32mm, Profilo=rettangolare
+INFO:acs.savignano.morphometric_extractor:axe965: Tallone - L=73.64mm, S=30.41mm, Incavo=True
+INFO:acs.savignano.morphometric_extractor:axe965: Analizzando margini rialzati...
+INFO:acs.savignano.morphometric_extractor:axe965: Margini rialzati - Presenti=True, L=6.07mm, Smax=1.28mm
+INFO:acs.savignano.morphometric_extractor:axe965: Analizzando corpo...
+INFO:acs.savignano.morphometric_extractor:axe965: Corpo - Lmin=105.96mm, Smax(con margini)=55.89mm, Smax(senza margini)=45.62mm
+INFO:acs.savignano.morphometric_extractor:axe965: Analizzando tagliente...
+INFO:acs.savignano.morphometric_extractor:axe965: Tagliente - L=72.17mm, Forma=lunato, Arco=17.01mm, Corda=3.26mm, Espanso=False
+INFO:acs.savignano.morphometric_extractor:axe965: Estrazione completata. Estratti 20 parametri.
+INFO:acs.savignano.morphometric_extractor:axe965: Feature extraction completed successfully
+Traceback (most recent call last):
+  File "/Users/enzo/Documents/BrozeAXE-AI/archaeological-classifier/analyze_and_save_savignano.py", line 48, in process_single_axe
+    db.add_features(artifact_id, {'savignano': features})
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/enzo/Documents/BrozeAXE-AI/archaeological-classifier/acs/core/database.py", line 222, in add_features
+    ''', (artifact_id, feature_name, json.dumps(feature_value), extraction_date))
+                                     ~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/__init__.py", line 231, in dumps
+    return _default_encoder.encode(obj)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/encoder.py", line 261, in iterencode
+    return _iterencode(o, 0)
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/encoder.py", line 180, in default
+    raise TypeError(f'Object of type {o.__class__.__name__} '
+                    f'is not JSON serializable')
+TypeError: Object of type bool is not JSON serializable
+INFO:acs.savignano.morphometric_extractor:axe971: Loading mesh from /Users/enzo/.acs/savignano_meshes/axe971.obj
+INFO:acs.savignano.morphometric_extractor:axe971: Mesh loaded successfully. Vertices: 4842867, Faces: 1614289
+INFO:acs.savignano.morphometric_extractor:axe971: Max dimension before scaling: 164.3807
+INFO:acs.savignano.morphometric_extractor:axe971: Starting feature extraction...
+INFO:acs.savignano.morphometric_extractor:axe971: Orientamento identificato. Tallone=8.89, Tagliente=-9.24
+INFO:acs.savignano.morphometric_extractor:axe971: Inizio estrazione parametri morfometrici...
+INFO:acs.savignano.morphometric_extractor:axe971: Analizzando tallone...
+INFO:acs.savignano.morphometric_extractor:axe971: Incavo rilevato - L=48.94mm, P=5.52mm, Profilo=rettangolare
+INFO:acs.savignano.morphometric_extractor:axe971: Tallone - L=96.97mm, S=30.88mm, Incavo=True
+INFO:acs.savignano.morphometric_extractor:axe971: Analizzando margini rialzati...
+INFO:acs.savignano.morphometric_extractor:axe971: Analizzando corpo...
+INFO:acs.savignano.morphometric_extractor:axe971: Corpo - Lmin=108.33mm, Smax(con margini)=53.24mm, Smax(senza margini)=41.49mm
+INFO:acs.savignano.morphometric_extractor:axe971: Analizzando tagliente...
+INFO:acs.savignano.morphometric_extractor:axe971: Tagliente - L=74.20mm, Forma=lunato, Arco=6.13mm, Corda=1.86mm, Espanso=False
+INFO:acs.savignano.morphometric_extractor:axe971: Estrazione completata. Estratti 20 parametri.
+INFO:acs.savignano.morphometric_extractor:axe971: Feature extraction completed successfully
+Traceback (most recent call last):
+  File "/Users/enzo/Documents/BrozeAXE-AI/archaeological-classifier/analyze_and_save_savignano.py", line 48, in process_single_axe
+    db.add_features(artifact_id, {'savignano': features})
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/enzo/Documents/BrozeAXE-AI/archaeological-classifier/acs/core/database.py", line 222, in add_features
+    ''', (artifact_id, feature_name, json.dumps(feature_value), extraction_date))
+                                     ~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/__init__.py", line 231, in dumps
+    return _default_encoder.encode(obj)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/encoder.py", line 261, in iterencode
+    return _iterencode(o, 0)
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/encoder.py", line 180, in default
+    raise TypeError(f'Object of type {o.__class__.__name__} '
+                    f'is not JSON serializable')
+TypeError: Object of type bool is not JSON serializable
+INFO:acs.savignano.morphometric_extractor:axe978: Loading mesh from /Users/enzo/.acs/savignano_meshes/axe978.obj
+INFO:acs.savignano.morphometric_extractor:axe978: Mesh loaded successfully. Vertices: 4841142, Faces: 1613714
+INFO:acs.savignano.morphometric_extractor:axe978: Max dimension before scaling: 171.9154
+INFO:acs.savignano.morphometric_extractor:axe978: Starting feature extraction...
+INFO:acs.savignano.morphometric_extractor:axe978: Orientamento identificato. Tallone=8.20, Tagliente=-7.96
+INFO:acs.savignano.morphometric_extractor:axe978: Inizio estrazione parametri morfometrici...
+INFO:acs.savignano.morphometric_extractor:axe978: Analizzando tallone...
+INFO:acs.savignano.morphometric_extractor:axe978: Incavo rilevato - L=41.62mm, P=4.24mm, Profilo=rettangolare
+INFO:acs.savignano.morphometric_extractor:axe978: Tallone - L=85.41mm, S=29.64mm, Incavo=True
+INFO:acs.savignano.morphometric_extractor:axe978: Analizzando margini rialzati...
+INFO:acs.savignano.morphometric_extractor:axe978: Analizzando corpo...
+INFO:acs.savignano.morphometric_extractor:axe978: Corpo - Lmin=123.77mm, Smax(con margini)=49.94mm, Smax(senza margini)=41.16mm
+INFO:acs.savignano.morphometric_extractor:axe978: Analizzando tagliente...
+INFO:acs.savignano.morphometric_extractor:axe978: Tagliente - L=99.36mm, Forma=lunato, Arco=46.76mm, Corda=26.91mm, Espanso=False
+INFO:acs.savignano.morphometric_extractor:axe978: Estrazione completata. Estratti 20 parametri.
+INFO:acs.savignano.morphometric_extractor:axe978: Feature extraction completed successfully
+Traceback (most recent call last):
+  File "/Users/enzo/Documents/BrozeAXE-AI/archaeological-classifier/analyze_and_save_savignano.py", line 48, in process_single_axe
+    db.add_features(artifact_id, {'savignano': features})
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/enzo/Documents/BrozeAXE-AI/archaeological-classifier/acs/core/database.py", line 222, in add_features
+    ''', (artifact_id, feature_name, json.dumps(feature_value), extraction_date))
+                                     ~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/__init__.py", line 231, in dumps
+    return _default_encoder.encode(obj)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/encoder.py", line 261, in iterencode
+    return _iterencode(o, 0)
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/encoder.py", line 180, in default
+    raise TypeError(f'Object of type {o.__class__.__name__} '
+                    f'is not JSON serializable')
+TypeError: Object of type bool is not JSON serializable
+INFO:acs.savignano.morphometric_extractor:axe979: Loading mesh from /Users/enzo/.acs/savignano_meshes/axe979.obj
+INFO:acs.savignano.morphometric_extractor:axe979: Mesh loaded successfully. Vertices: 5090544, Faces: 1696848
+INFO:acs.savignano.morphometric_extractor:axe979: Max dimension before scaling: 164.4796
+INFO:acs.savignano.morphometric_extractor:axe979: Starting feature extraction...
+INFO:acs.savignano.morphometric_extractor:axe979: Orientamento identificato. Tallone=8.84, Tagliente=-8.63
+INFO:acs.savignano.morphometric_extractor:axe979: Inizio estrazione parametri morfometrici...
+INFO:acs.savignano.morphometric_extractor:axe979: Analizzando tallone...
+INFO:acs.savignano.morphometric_extractor:axe979: Incavo rilevato - L=42.66mm, P=3.55mm, Profilo=rettangolare
+INFO:acs.savignano.morphometric_extractor:axe979: Tallone - L=72.50mm, S=31.41mm, Incavo=True
+INFO:acs.savignano.morphometric_extractor:axe979: Analizzando margini rialzati...
+INFO:acs.savignano.morphometric_extractor:axe979: Analizzando corpo...
+INFO:acs.savignano.morphometric_extractor:axe979: Corpo - Lmin=100.83mm, Smax(con margini)=56.38mm, Smax(senza margini)=45.31mm
+INFO:acs.savignano.morphometric_extractor:axe979: Analizzando tagliente...
+INFO:acs.savignano.morphometric_extractor:axe979: Tagliente - L=70.91mm, Forma=lunato, Arco=332.97mm, Corda=30.61mm, Espanso=False
+INFO:acs.savignano.morphometric_extractor:axe979: Estrazione completata. Estratti 20 parametri.
+INFO:acs.savignano.morphometric_extractor:axe979: Feature extraction completed successfully
+Traceback (most recent call last):
+  File "/Users/enzo/Documents/BrozeAXE-AI/archaeological-classifier/analyze_and_save_savignano.py", line 48, in process_single_axe
+    db.add_features(artifact_id, {'savignano': features})
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/enzo/Documents/BrozeAXE-AI/archaeological-classifier/acs/core/database.py", line 222, in add_features
+    ''', (artifact_id, feature_name, json.dumps(feature_value), extraction_date))
+                                     ~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/__init__.py", line 231, in dumps
+    return _default_encoder.encode(obj)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/encoder.py", line 261, in iterencode
+    return _iterencode(o, 0)
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/encoder.py", line 180, in default
+    raise TypeError(f'Object of type {o.__class__.__name__} '
+                    f'is not JSON serializable')
+TypeError: Object of type bool is not JSON serializable
+INFO:acs.savignano.morphometric_extractor:axe992: Loading mesh from /Users/enzo/.acs/savignano_meshes/axe992.obj
+INFO:acs.savignano.morphometric_extractor:axe992: Mesh loaded successfully. Vertices: 5269686, Faces: 1756562
+INFO:acs.savignano.morphometric_extractor:axe992: Max dimension before scaling: 171.0693
+INFO:acs.savignano.morphometric_extractor:axe992: Starting feature extraction...
+INFO:acs.savignano.morphometric_extractor:axe992: Orientamento identificato. Tallone=8.90, Tagliente=-8.88
+INFO:acs.savignano.morphometric_extractor:axe992: Inizio estrazione parametri morfometrici...
+INFO:acs.savignano.morphometric_extractor:axe992: Analizzando tallone...
+INFO:acs.savignano.morphometric_extractor:axe992: Incavo rilevato - L=56.50mm, P=4.34mm, Profilo=rettangolare
+INFO:acs.savignano.morphometric_extractor:axe992: Tallone - L=79.12mm, S=32.08mm, Incavo=True
+INFO:acs.savignano.morphometric_extractor:axe992: Analizzando margini rialzati...
+INFO:acs.savignano.morphometric_extractor:axe992: Analizzando corpo...
+INFO:acs.savignano.morphometric_extractor:axe992: Corpo - Lmin=112.19mm, Smax(con margini)=56.70mm, Smax(senza margini)=43.52mm
+INFO:acs.savignano.morphometric_extractor:axe992: Analizzando tagliente...
+INFO:acs.savignano.morphometric_extractor:axe992: Tagliente - L=88.88mm, Forma=lunato, Arco=54.12mm, Corda=6.78mm, Espanso=False
+INFO:acs.savignano.morphometric_extractor:axe992: Estrazione completata. Estratti 20 parametri.
+INFO:acs.savignano.morphometric_extractor:axe992: Feature extraction completed successfully
+Traceback (most recent call last):
+  File "/Users/enzo/Documents/BrozeAXE-AI/archaeological-classifier/analyze_and_save_savignano.py", line 48, in process_single_axe
+    db.add_features(artifact_id, {'savignano': features})
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/enzo/Documents/BrozeAXE-AI/archaeological-classifier/acs/core/database.py", line 222, in add_features
+    ''', (artifact_id, feature_name, json.dumps(feature_value), extraction_date))
+                                     ~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/__init__.py", line 231, in dumps
+    return _default_encoder.encode(obj)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/encoder.py", line 261, in iterencode
+    return _iterencode(o, 0)
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/encoder.py", line 180, in default
+    raise TypeError(f'Object of type {o.__class__.__name__} '
+                    f'is not JSON serializable')
+TypeError: Object of type bool is not JSON serializable
+======================================================================
+SAVIGNANO ANALYSIS - GPU ACCELERATED (Apple Accelerate)
+======================================================================
+
+Processing 10 axes...
+Using Apple Silicon hardware acceleration (12 cores + GPU)
+
+
+📊 PROGRESS: 1/10
+  ⚠️  axe936: Already has Savignano features - SKIPPING
+
+
+📊 PROGRESS: 2/10
+
+======================================================================
+Processing: axe940
+======================================================================
+  🔬 Extracting features...
+  ✓ Extracted 23 parameters
+  💾 Saving to database...
+  ❌ Error processing axe940: Object of type bool is not JSON serializable
+
+
+📊 PROGRESS: 3/10
+
+======================================================================
+Processing: axe942
+======================================================================
+  🔬 Extracting features...
+  ✓ Extracted 23 parameters
+  💾 Saving to database...
+  ❌ Error processing axe942: Object of type bool is not JSON serializable
+
+
+📊 PROGRESS: 4/10
+
+======================================================================
+Processing: axe957
+======================================================================
+  🔬 Extracting features...
+  ✓ Extracted 23 parameters
+  💾 Saving to database...
+  ❌ Error processing axe957: Object of type bool is not JSON serializable
+
+
+📊 PROGRESS: 5/10
+
+======================================================================
+Processing: axe965
+======================================================================
+  🔬 Extracting features...
+  ✓ Extracted 23 parameters
+  💾 Saving to database...
+  ❌ Error processing axe965: Object of type bool is not JSON serializable
+
+
+📊 PROGRESS: 6/10
+
+======================================================================
+Processing: axe971
+======================================================================
+  🔬 Extracting features...
+  ✓ Extracted 23 parameters
+  💾 Saving to database...
+  ❌ Error processing axe971: Object of type bool is not JSON serializable
+
+
+📊 PROGRESS: 7/10
+  ⚠️  axe974: Already has Savignano features - SKIPPING
+
+
+📊 PROGRESS: 8/10
+
+======================================================================
+Processing: axe978
+======================================================================
+  🔬 Extracting features...
+  ✓ Extracted 23 parameters
+  💾 Saving to database...
+  ❌ Error processing axe978: Object of type bool is not JSON serializable
+
+
+📊 PROGRESS: 9/10
+
+======================================================================
+Processing: axe979
+======================================================================
+  🔬 Extracting features...
+  ✓ Extracted 23 parameters
+  💾 Saving to database...
+  ❌ Error processing axe979: Object of type bool is not JSON serializable
+
+
+📊 PROGRESS: 10/10
+
+======================================================================
+Processing: axe992
+======================================================================
+  🔬 Extracting features...
+  ✓ Extracted 23 parameters
+  💾 Saving to database...
+  ❌ Error processing axe992: Object of type bool is not JSON serializable
+
+
+======================================================================
+FINAL SUMMARY
+======================================================================
+
+✅ Successfully processed: 2/10
+   ✓ axe936
+   ✓ axe974
+
+❌ Failed: 8
+   ✗ axe940
+   ✗ axe942
+   ✗ axe957
+   ✗ axe965
+   ✗ axe971
+   ✗ axe978
+   ✗ axe979
+   ✗ axe992
+
+======================================================================
+✅ ANALYSIS COMPLETE!
+======================================================================
+
+Next steps:
+1. Run: python3 test_drawing_generation.py
+2. Technical drawings will be generated in IT and EN

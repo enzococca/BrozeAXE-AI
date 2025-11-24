@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Savignano - Report Archeologico Completo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        h1 {
+            color: #667eea;
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 40px;
+            font-size: 1.1em;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 10px;
+            color: #333;
+            font-weight: 600;
+            font-size: 1.1em;
+        }
+
+        select, input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 1em;
+            transition: all 0.3s;
+        }
+
+        select:focus, input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .btn-primary {
+            width: 100%;
+            padding: 18px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.2em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+
+        .btn-primary:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        #status {
+            margin-top: 30px;
+            padding: 20px;
+            border-radius: 10px;
+            display: none;
+        }
+
+        #status.success {
+            background-color: #d4edda;
+            border: 2px solid #c3e6cb;
+            color: #155724;
+        }
+
+        #status.error {
+            background-color: #f8d7da;
+            border: 2px solid #f5c6cb;
+            color: #721c24;
+        }
+
+        #status.processing {
+            background-color: #d1ecf1;
+            border: 2px solid #bee5eb;
+            color: #0c5460;
+        }
+
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+            display: none;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        #downloads {
+            margin-top: 20px;
+            display: none;
+        }
+
+        .download-link {
+            display: inline-block;
+            margin: 10px 10px 0 0;
+            padding: 12px 24px;
+            background: #28a745;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: background 0.3s;
+        }
+
+        .download-link:hover {
+            background: #218838;
+        }
+
+        .feature-list {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+        }
+
+        .feature-list h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+
+        .feature-list ul {
+            list-style-position: inside;
+            color: #555;
+        }
+
+        .feature-list li {
+            padding: 5px 0;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-top: 20px;
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Report Archeologico Completo</h1>
+        <p class="subtitle">Sistema Integrato Savignano - Analisi Professionale</p>
+
+        <div class="feature-list">
+            <h3>🎯 Contenuti del Report</h3>
+            <ul>
+                <li>✅ Rendering 3D realistici dalla mesh (frontale, profilo, sezioni)</li>
+                <li>✅ Visualizzazione dell'incavo (socket)</li>
+                <li>✅ Tabella completa delle misurazioni</li>
+                <li>✅ Interpretazione AI e classificazione</li>
+                <li>✅ Analisi del martellamento (hammering)</li>
+                <li>✅ Analisi della tecnica di fusione (casting)</li>
+                <li>✅ Analisi statistica PCA e clustering</li>
+                <li>✅ Analisi comparativa con altre asce</li>
+                <li>📄 Export PDF professionale multi-pagina</li>
+            </ul>
+        </div>
+
+        <form id="reportForm">
+            <div class="form-group">
+                <label for="artifact">🔨 Seleziona Ascia:</label>
+                <select id="artifact" required>
+                    <option value="">-- Scegli un'ascia --</option>
+                    <option value="axe974">axe974 - Matrix A (Raised Flanges)</option>
+                    <option value="axe936">axe936 - Matrix A (Decorated)</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="language">🌐 Lingua Report:</label>
+                <select id="language" required>
+                    <option value="it">🇮🇹 Italiano (Italian)</option>
+                    <option value="en">🇬🇧 English</option>
+                </select>
+            </div>
+
+            <button type="submit" class="btn-primary" id="generateBtn">
+                📊 Genera Report Completo
+            </button>
+        </form>
+
+        <div class="loader" id="loader"></div>
+
+        <div id="status"></div>
+
+        <div id="downloads"></div>
+
+        <a href="/web/" class="back-link">← Torna alla Home</a>
+    </div>
+
+    <script>
+        const form = document.getElementById('reportForm');
+        const statusDiv = document.getElementById('status');
+        const loader = document.getElementById('loader');
+        const generateBtn = document.getElementById('generateBtn');
+        const downloadsDiv = document.getElementById('downloads');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const artifactId = document.getElementById('artifact').value;
+            const language = document.getElementById('language').value;
+
+            if (!artifactId) {
+                alert('Seleziona un\'ascia');
+                return;
+            }
+
+            // Show processing status
+            statusDiv.className = 'processing';
+            statusDiv.style.display = 'block';
+            statusDiv.innerHTML = '<strong>⏳ Generazione in corso...</strong><br>Questo processo può richiedere 60-90 secondi.<br>Rendering 3D mesh, analisi AI, PCA, comparazioni...';
+            loader.style.display = 'block';
+            generateBtn.disabled = true;
+            downloadsDiv.style.display = 'none';
+
+            try {
+                const response = await fetch(`/api/savignano/generate-comprehensive-report/${artifactId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        language: language
+                    })
+                });
+
+                const data = await response.json();
+
+                loader.style.display = 'none';
+                generateBtn.disabled = false;
+
+                if (data.status === 'success') {
+                    statusDiv.className = 'success';
+                    statusDiv.innerHTML = `
+                        <strong>✅ Report generato con successo!</strong><br>
+                        Report completo: ${data.report.pdf}<br>
+                        Lingua: ${data.language.toUpperCase()}
+                    `;
+
+                    // Show download links
+                    downloadsDiv.style.display = 'block';
+                    downloadsDiv.innerHTML = `
+                        <strong>📥 Download:</strong><br>
+                        <a href="/api/savignano/download-comprehensive-report/${artifactId}?language=${language}" class="download-link">📄 Download Report Completo (PDF)</a>
+                    `;
+                } else {
+                    statusDiv.className = 'error';
+                    statusDiv.innerHTML = `<strong>❌ Errore:</strong><br>${data.error || 'Errore sconosciuto'}`;
+                }
+            } catch (error) {
+                loader.style.display = 'none';
+                generateBtn.disabled = false;
+                statusDiv.className = 'error';
+                statusDiv.style.display = 'block';
+                statusDiv.innerHTML = `<strong>❌ Errore di rete:</strong><br>${error.message}`;
+            }
+        });
+    </script>
+</body>
+</html>

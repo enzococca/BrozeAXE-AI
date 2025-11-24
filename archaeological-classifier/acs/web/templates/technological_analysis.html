@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Technological Analysis - Archaeological Classifier</title>
+    <link rel="stylesheet" href="{{ url_for('web.static', filename='css/style.css') }}">
+    <style>
+        .tech-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .tech-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+        }
+
+        .tech-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .tech-card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            transition: all 0.3s;
+        }
+
+        .tech-card:hover {
+            box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+            transform: translateY(-2px);
+        }
+
+        .tech-card-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .tech-icon {
+            font-size: 36px;
+            margin-right: 15px;
+        }
+
+        .tech-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #2d3748;
+        }
+
+        .tech-metric {
+            margin: 15px 0;
+            padding: 12px;
+            background: #f7fafc;
+            border-left: 4px solid #667eea;
+            border-radius: 4px;
+        }
+
+        .tech-metric-label {
+            font-size: 13px;
+            color: #718096;
+            font-weight: 500;
+            margin-bottom: 5px;
+        }
+
+        .tech-metric-value {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2d3748;
+        }
+
+        .progress-bar {
+            height: 8px;
+            background: #e2e8f0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.5s ease;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin: 5px 5px 5px 0;
+        }
+
+        .badge-success {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+
+        .badge-warning {
+            background: #feebc8;
+            color: #7c2d12;
+        }
+
+        .badge-info {
+            background: #bee3f8;
+            color: #2c5282;
+        }
+
+        .badge-danger {
+            background: #fed7d7;
+            color: #742a2a;
+        }
+
+        .ai-interpretation {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-top: 30px;
+        }
+
+        .ai-interpretation-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .ai-interpretation-content {
+            font-size: 15px;
+            line-height: 1.7;
+            color: #2d3748;
+            white-space: pre-wrap;
+        }
+
+        .technical-report {
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 25px;
+            border-radius: 12px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            overflow-x: auto;
+            margin: 30px 0;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px;
+            font-size: 18px;
+            color: #718096;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid #e2e8f0;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .error-message {
+            background: #fed7d7;
+            color: #742a2a;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #f56565;
+        }
+
+        .back-button {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            text-decoration: none;
+            display: inline-block;
+            margin-top: 15px;
+            transition: all 0.2s;
+        }
+
+        .back-button:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .method-description {
+            background: #f7fafc;
+            border-left: 4px solid #48bb78;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 15px 0;
+        }
+
+        .section-divider {
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #e2e8f0, transparent);
+            margin: 40px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="tech-container">
+            <div class="tech-header">
+                <h1 style="margin: 0 0 10px 0;">🔬 Technological Analysis</h1>
+                <p style="margin: 0; opacity: 0.9;" id="artifact-title">Loading artifact...</p>
+                <a href="/web/artifacts" class="back-button">← Back to Artifacts</a>
+            </div>
+
+            <div id="loading" class="loading">
+                <div class="loading-spinner"></div>
+                <p>Analyzing artifact technology...</p>
+            </div>
+
+            <div id="error-container" style="display: none;"></div>
+
+            <div id="results-container" style="display: none;">
+                <!-- Production Method Summary -->
+                <div class="tech-card" style="grid-column: 1 / -1;">
+                    <div class="tech-card-header">
+                        <div class="tech-icon">🏭</div>
+                        <div>
+                            <div class="tech-title">Production Method</div>
+                            <div id="production-method-name" style="color: #667eea; font-size: 16px; margin-top: 5px;">-</div>
+                        </div>
+                    </div>
+                    <div id="production-description" class="method-description">-</div>
+                    <div id="production-confidence" class="tech-metric">
+                        <div class="tech-metric-label">Confidence</div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="production-confidence-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div id="secondary-methods-container"></div>
+                </div>
+
+                <!-- Detailed Analysis Grid -->
+                <div class="tech-grid">
+                    <!-- Hammering Analysis -->
+                    <div class="tech-card">
+                        <div class="tech-card-header">
+                            <div class="tech-icon">🔨</div>
+                            <div class="tech-title">Hammering Marks</div>
+                        </div>
+                        <div id="hammering-detected" class="badge">-</div>
+                        <div id="hammering-metrics"></div>
+                    </div>
+
+                    <!-- Casting Analysis -->
+                    <div class="tech-card">
+                        <div class="tech-card-header">
+                            <div class="tech-icon">🏺</div>
+                            <div class="tech-title">Casting Features</div>
+                        </div>
+                        <div id="casting-detected" class="badge">-</div>
+                        <div id="casting-metrics"></div>
+                    </div>
+
+                    <!-- Wear Analysis -->
+                    <div class="tech-card">
+                        <div class="tech-card-header">
+                            <div class="tech-icon">⚠️</div>
+                            <div class="tech-title">Wear Patterns</div>
+                        </div>
+                        <div id="wear-detected" class="badge">-</div>
+                        <div id="wear-metrics"></div>
+                    </div>
+
+                    <!-- Surface Treatment -->
+                    <div class="tech-card">
+                        <div class="tech-card-header">
+                            <div class="tech-icon">✨</div>
+                            <div class="tech-title">Surface Treatment</div>
+                        </div>
+                        <div id="treatment-type" class="badge">-</div>
+                        <div id="treatment-metrics"></div>
+                    </div>
+
+                    <!-- Edge Condition -->
+                    <div class="tech-card">
+                        <div class="tech-card-header">
+                            <div class="tech-icon">🔪</div>
+                            <div class="tech-title">Edge Condition</div>
+                        </div>
+                        <div id="edge-sharpness" class="badge">-</div>
+                        <div id="edge-metrics"></div>
+                    </div>
+                </div>
+
+                <div class="section-divider"></div>
+
+                <!-- Technical Report -->
+                <div>
+                    <h2 style="color: #2d3748; margin-bottom: 15px;">📋 Technical Report</h2>
+                    <div class="technical-report" id="technical-report">Loading...</div>
+                </div>
+
+                <div class="section-divider"></div>
+
+                <!-- AI Interpretation -->
+                <div class="ai-interpretation">
+                    <div class="ai-interpretation-header">
+                        <div class="tech-icon">🤖</div>
+                        <div class="tech-title">AI Archaeological Interpretation</div>
+                    </div>
+                    <div id="ai-interpretation-content" class="ai-interpretation-content">
+                        Generating AI interpretation...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Get artifact ID from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const artifactId = urlParams.get('id');
+
+        if (!artifactId) {
+            showError('No artifact ID provided');
+        } else {
+            document.getElementById('artifact-title').textContent = `Artifact: ${artifactId}`;
+            loadAnalysis(artifactId);
+        }
+
+        async function loadAnalysis(artifactId) {
+            try {
+                const response = await fetch(`/web/technological-analysis/${artifactId}`);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Analysis failed');
+                }
+
+                displayResults(data);
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+
+        function displayResults(data) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('results-container').style.display = 'block';
+
+            const features = data.technological_features;
+
+            // Production Method
+            displayProductionMethod(features.production_method);
+
+            // Hammering
+            displayHammering(features.hammering);
+
+            // Casting
+            displayCasting(features.casting);
+
+            // Wear
+            displayWear(features.wear);
+
+            // Surface Treatment
+            displayTreatment(features.surface_treatment);
+
+            // Edge Analysis
+            displayEdge(features.edge_analysis);
+
+            // Technical Report
+            document.getElementById('technical-report').textContent = data.technical_report;
+
+            // AI Interpretation
+            if (data.ai_interpretation) {
+                document.getElementById('ai-interpretation-content').textContent = data.ai_interpretation;
+            } else {
+                document.getElementById('ai-interpretation-content').innerHTML =
+                    '<em style="color: #718096;">AI interpretation not available. Configure ANTHROPIC_API_KEY to enable.</em>';
+            }
+        }
+
+        function displayProductionMethod(prod) {
+            document.getElementById('production-method-name').textContent =
+                prod.primary_method.replace(/_/g, ' ').toUpperCase();
+            document.getElementById('production-description').textContent = prod.technique_description;
+
+            const confidence = (prod.confidence * 100).toFixed(0);
+            document.getElementById('production-confidence-bar').style.width = confidence + '%';
+
+            if (prod.secondary_methods && prod.secondary_methods.length > 0) {
+                const badges = prod.secondary_methods.map(m =>
+                    `<span class="badge badge-info">${m.replace(/_/g, ' ')}</span>`
+                ).join('');
+                document.getElementById('secondary-methods-container').innerHTML =
+                    `<div style="margin-top: 15px;"><strong>Secondary Methods:</strong><br>${badges}</div>`;
+            }
+        }
+
+        function displayHammering(hammer) {
+            const detectedBadge = document.getElementById('hammering-detected');
+            if (hammer.detected) {
+                detectedBadge.textContent = '✓ Detected';
+                detectedBadge.className = 'badge badge-success';
+
+                document.getElementById('hammering-metrics').innerHTML = `
+                    ${createMetric('Intensity', (hammer.intensity * 100).toFixed(0) + '%', hammer.intensity)}
+                    ${createMetric('Pattern Regularity', (hammer.pattern_regularity * 100).toFixed(0) + '%', hammer.pattern_regularity)}
+                    ${createMetric('Affected Area', (hammer.affected_area_pct * 100).toFixed(0) + '%', hammer.affected_area_pct)}
+                `;
+            } else {
+                detectedBadge.textContent = '✗ Not Detected';
+                detectedBadge.className = 'badge badge-warning';
+                document.getElementById('hammering-metrics').innerHTML = '<p style="color: #718096; font-size: 13px;">No significant hammering marks detected</p>';
+            }
+        }
+
+        function displayCasting(casting) {
+            const detectedBadge = document.getElementById('casting-detected');
+            if (casting.likely_cast) {
+                detectedBadge.textContent = '✓ Likely Cast';
+                detectedBadge.className = 'badge badge-success';
+
+                document.getElementById('casting-metrics').innerHTML = `
+                    ${createMetric('Confidence', (casting.confidence * 100).toFixed(0) + '%', casting.confidence)}
+                    ${createMetric('Surface Smoothness', (casting.surface_smoothness * 100).toFixed(0) + '%', casting.surface_smoothness)}
+                    ${createMetric('Mold Seam Probability', (casting.mold_seam_probability * 100).toFixed(0) + '%', casting.mold_seam_probability)}
+                `;
+            } else {
+                detectedBadge.textContent = '? Uncertain';
+                detectedBadge.className = 'badge badge-warning';
+                document.getElementById('casting-metrics').innerHTML = '<p style="color: #718096; font-size: 13px;">Casting features unclear</p>';
+            }
+        }
+
+        function displayWear(wear) {
+            const detectedBadge = document.getElementById('wear-detected');
+            if (wear.detected) {
+                const severityClass = wear.severity === 'heavy' ? 'badge-danger' :
+                                    wear.severity === 'moderate' ? 'badge-warning' : 'badge-info';
+                detectedBadge.textContent = `${wear.severity.toUpperCase()} Wear`;
+                detectedBadge.className = `badge ${severityClass}`;
+
+                document.getElementById('wear-metrics').innerHTML = `
+                    <div class="tech-metric">
+                        <div class="tech-metric-label">Type</div>
+                        <div class="tech-metric-value">${wear.type.replace(/_/g, ' ')}</div>
+                    </div>
+                    ${createMetric('Edge Rounding', (wear.edge_rounding * 100).toFixed(0) + '%', wear.edge_rounding)}
+                    ${createMetric('Asymmetric Wear', (wear.asymmetric_wear * 100).toFixed(0) + '%', wear.asymmetric_wear)}
+                    <div class="tech-metric">
+                        <div class="tech-metric-label">Location</div>
+                        <div class="tech-metric-value">${wear.wear_location.replace(/_/g, ' ')}</div>
+                    </div>
+                `;
+            } else {
+                detectedBadge.textContent = '✗ No Wear';
+                detectedBadge.className = 'badge badge-success';
+                document.getElementById('wear-metrics').innerHTML = '<p style="color: #718096; font-size: 13px;">No significant wear detected</p>';
+            }
+        }
+
+        function displayTreatment(treatment) {
+            document.getElementById('treatment-type').textContent = treatment.type.replace(/_/g, ' ').toUpperCase();
+            document.getElementById('treatment-type').className = `badge badge-${
+                treatment.quality === 'high' ? 'success' :
+                treatment.quality === 'medium' ? 'info' : 'warning'
+            }`;
+
+            document.getElementById('treatment-metrics').innerHTML = `
+                <div class="tech-metric">
+                    <div class="tech-metric-label">Quality</div>
+                    <div class="tech-metric-value">${treatment.quality.toUpperCase()}</div>
+                </div>
+                ${createMetric('Smoothness', (treatment.smoothness_score * 100).toFixed(0) + '%', treatment.smoothness_score)}
+                <div class="tech-metric">
+                    <div class="tech-metric-label">Polished</div>
+                    <div class="tech-metric-value">${treatment.likely_polished ? 'YES' : 'NO'}</div>
+                </div>
+            `;
+        }
+
+        function displayEdge(edge) {
+            const sharpnessClass = edge.sharpness === 'very_sharp' || edge.sharpness === 'sharp' ? 'badge-success' :
+                                 edge.sharpness === 'moderate' ? 'badge-info' : 'badge-warning';
+            document.getElementById('edge-sharpness').textContent = edge.sharpness.replace(/_/g, ' ').toUpperCase();
+            document.getElementById('edge-sharpness').className = `badge ${sharpnessClass}`;
+
+            document.getElementById('edge-metrics').innerHTML = `
+                <div class="tech-metric">
+                    <div class="tech-metric-label">Edge Angle</div>
+                    <div class="tech-metric-value">${edge.edge_angle_estimate.toFixed(1)}°</div>
+                </div>
+                <div class="tech-metric">
+                    <div class="tech-metric-label">Damage Level</div>
+                    <div class="tech-metric-value">${edge.damage_level.toUpperCase()}</div>
+                </div>
+                <div class="tech-metric">
+                    <div class="tech-metric-label">Resharpened</div>
+                    <div class="tech-metric-value">${edge.resharpened ? 'YES ✓' : 'NO'}</div>
+                </div>
+                <div class="tech-metric">
+                    <div class="tech-metric-label">Usable</div>
+                    <div class="tech-metric-value">${edge.usable ? 'YES ✓' : 'NO ✗'}</div>
+                </div>
+            `;
+        }
+
+        function createMetric(label, value, percentage) {
+            const percent = (percentage * 100).toFixed(0);
+            return `
+                <div class="tech-metric">
+                    <div class="tech-metric-label">${label}</div>
+                    <div class="tech-metric-value">${value}</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${percent}%"></div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function showError(message) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error-container').style.display = 'block';
+            document.getElementById('error-container').innerHTML = `
+                <div class="error-message">
+                    <h3>Analysis Error</h3>
+                    <p>${message}</p>
+                    <a href="/web/artifacts" class="back-button" style="background: #742a2a; color: white;">← Back to Artifacts</a>
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+include README.md
+include LICENSE
+include requirements.txt
+include INSTALL.md
+include QUICKSTART.md
+recursive-include examples *.py
+recursive-include docs *.md

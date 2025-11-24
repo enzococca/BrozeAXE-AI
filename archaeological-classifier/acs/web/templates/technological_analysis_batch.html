@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Batch Technological Analysis - Archaeological Classifier</title>
+    <link rel="stylesheet" href="{{ url_for('web.static', filename='css/style.css') }}">
+    <style>
+        .batch-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .batch-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            position: relative;
+        }
+
+        .back-button {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: white;
+            text-decoration: none;
+            padding: 8px 16px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 6px;
+            transition: background 0.2s;
+        }
+
+        .back-button:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .selection-panel {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .artifact-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 10px;
+            margin: 15px 0;
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #e2e8f0;
+            padding: 15px;
+            border-radius: 8px;
+        }
+
+        .artifact-checkbox-label {
+            display: flex;
+            align-items: center;
+            padding: 8px 12px;
+            background: #f7fafc;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .artifact-checkbox-label:hover {
+            background: #edf2f7;
+            transform: translateY(-1px);
+        }
+
+        .artifact-checkbox-label input {
+            margin-right: 8px;
+        }
+
+        .artifact-checkbox-label.checked {
+            background: #e6fffa;
+            border: 1px solid #81e6d9;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border-radius: 8px;
+            border: none;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #48bb78;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #38a169;
+        }
+
+        .btn-tertiary {
+            background: #4299e1;
+            color: white;
+        }
+
+        .btn-tertiary:hover {
+            background: #3182ce;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+            font-size: 18px;
+            color: #667eea;
+        }
+
+        .loading-spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .results-container {
+            margin-top: 30px;
+        }
+
+        .summary-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .summary-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .summary-card h3 {
+            margin: 0 0 15px 0;
+            color: #2d3748;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #f7fafc;
+        }
+
+        .stat-row:last-child {
+            border-bottom: none;
+        }
+
+        .stat-label {
+            color: #718096;
+            font-size: 14px;
+        }
+
+        .stat-value {
+            color: #2d3748;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .report-section {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            margin-top: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .report-text {
+            background: #1a202c;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            overflow-x: auto;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .export-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .badge-success {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+
+        .badge-warning {
+            background: #feebc8;
+            color: #7c2d12;
+        }
+
+        .badge-info {
+            background: #bee3f8;
+            color: #2c5282;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #e2e8f0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            transition: width 0.3s;
+        }
+    </style>
+</head>
+<body>
+    <div class="batch-container">
+        <div class="batch-header">
+            <h1 style="margin: 0 0 10px 0;">📊 Batch Technological Analysis</h1>
+            <p style="margin: 0; opacity: 0.9;">Analyze multiple artifacts and compare technological features</p>
+            <a href="/web/artifacts" class="back-button">← Back to Artifacts</a>
+        </div>
+
+        <div class="selection-panel">
+            <h2 style="margin: 0 0 15px 0;">Select Artifacts to Analyze</h2>
+            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                <button onclick="selectAll()" class="btn btn-secondary">Select All</button>
+                <button onclick="deselectAll()" class="btn btn-secondary">Deselect All</button>
+                <span style="padding: 12px; color: #718096; font-weight: 600;">
+                    Selected: <span id="selected-count">0</span>
+                </span>
+            </div>
+
+            <div class="artifact-grid" id="artifact-grid">
+                <p style="color: #a0aec0;">Loading artifacts...</p>
+            </div>
+
+            <div class="action-buttons">
+                <button onclick="runAnalysis()" class="btn btn-primary" id="analyze-btn" disabled>
+                    🔬 Analyze Selected
+                </button>
+                <button onclick="runAnalysisAll()" class="btn btn-tertiary">
+                    🔬 Analyze All Artifacts
+                </button>
+            </div>
+        </div>
+
+        <div id="loading" class="loading" style="display: none;">
+            <div class="loading-spinner"></div>
+            <p>Analyzing artifacts... This may take a few minutes.</p>
+        </div>
+
+        <div id="results-container" class="results-container" style="display: none;">
+            <h2>Analysis Results</h2>
+
+            <div class="summary-cards" id="summary-cards">
+                <!-- Will be populated by JavaScript -->
+            </div>
+
+            <div class="report-section">
+                <h3 style="margin: 0 0 15px 0;">📋 Detailed Report</h3>
+                <div class="report-text" id="report-text">
+                    <!-- Report will appear here -->
+                </div>
+                <div class="export-buttons">
+                    <button onclick="downloadReport('csv')" class="btn btn-secondary">
+                        📥 Download CSV
+                    </button>
+                    <button onclick="downloadReport('report')" class="btn btn-secondary">
+                        📥 Download Text Report
+                    </button>
+                    <button onclick="downloadReport('json')" class="btn btn-secondary">
+                        📥 Download JSON
+                    </button>
+                    <button onclick="downloadPDFReport()" class="btn btn-primary" style="margin-left: 10px;">
+                        📄 Generate PDF Report (with 3D renders)
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedArtifacts = new Set();
+        let currentResults = null;
+
+        // Load available artifacts
+        async function loadArtifacts() {
+            try {
+                const response = await fetch('/web/artifacts-list');
+                const data = await response.json();
+
+                const grid = document.getElementById('artifact-grid');
+                grid.innerHTML = '';
+
+                if (data.artifacts && data.artifacts.length > 0) {
+                    data.artifacts.forEach(artifact => {
+                        const label = document.createElement('label');
+                        label.className = 'artifact-checkbox-label';
+                        label.innerHTML = `
+                            <input type="checkbox" value="${artifact.id}" onchange="updateSelection()">
+                            <span>${artifact.id}</span>
+                        `;
+                        grid.appendChild(label);
+                    });
+                } else {
+                    grid.innerHTML = '<p style="color: #a0aec0;">No artifacts loaded</p>';
+                }
+            } catch (error) {
+                console.error('Error loading artifacts:', error);
+                document.getElementById('artifact-grid').innerHTML =
+                    '<p style="color: #e53e3e;">Error loading artifacts</p>';
+            }
+        }
+
+        function updateSelection() {
+            const checkboxes = document.querySelectorAll('.artifact-checkbox-label input[type="checkbox"]');
+            selectedArtifacts.clear();
+
+            checkboxes.forEach(cb => {
+                const label = cb.closest('.artifact-checkbox-label');
+                if (cb.checked) {
+                    selectedArtifacts.add(cb.value);
+                    label.classList.add('checked');
+                } else {
+                    label.classList.remove('checked');
+                }
+            });
+
+            document.getElementById('selected-count').textContent = selectedArtifacts.size;
+            document.getElementById('analyze-btn').disabled = selectedArtifacts.size === 0;
+        }
+
+        function selectAll() {
+            const checkboxes = document.querySelectorAll('.artifact-checkbox-label input[type="checkbox"]');
+            checkboxes.forEach(cb => cb.checked = true);
+            updateSelection();
+        }
+
+        function deselectAll() {
+            const checkboxes = document.querySelectorAll('.artifact-checkbox-label input[type="checkbox"]');
+            checkboxes.forEach(cb => cb.checked = false);
+            updateSelection();
+        }
+
+        async function runAnalysis() {
+            if (selectedArtifacts.size === 0) {
+                alert('Please select at least one artifact');
+                return;
+            }
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('results-container').style.display = 'none';
+
+            try {
+                const response = await fetch('/web/technological-analysis-batch', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        artifact_ids: Array.from(selectedArtifacts),
+                        format: 'json'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    currentResults = data.batch_results;
+                    displayResults(data.batch_results);
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        async function runAnalysisAll() {
+            if (!confirm('Analyze ALL artifacts? This may take several minutes.')) {
+                return;
+            }
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('results-container').style.display = 'none';
+
+            try {
+                const response = await fetch('/web/technological-analysis-batch', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({format: 'json'})
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    currentResults = data.batch_results;
+                    displayResults(data.batch_results);
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+
+        function displayResults(results) {
+            document.getElementById('results-container').style.display = 'block';
+
+            const summary = results.summary;
+            const summaryHTML = `
+                <div class="summary-card">
+                    <h3>📈 Overview</h3>
+                    <div class="stat-row">
+                        <span class="stat-label">Total Analyzed</span>
+                        <span class="stat-value">${results.total_analyzed}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Successful</span>
+                        <span class="stat-value">${results.successful}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Failed</span>
+                        <span class="stat-value">${results.failed}</span>
+                    </div>
+                </div>
+
+                <div class="summary-card">
+                    <h3>🏭 Production Methods</h3>
+                    ${generateProductionMethodsHTML(summary.production_methods, results.successful)}
+                </div>
+
+                <div class="summary-card">
+                    <h3>🔨 Hammering</h3>
+                    <div class="stat-row">
+                        <span class="stat-label">Detected</span>
+                        <span class="stat-value">${summary.hammering_stats.detected_count}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Avg Intensity</span>
+                        <span class="stat-value">${summary.hammering_stats.avg_intensity.toFixed(4)}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Max Intensity</span>
+                        <span class="stat-value">${summary.hammering_stats.max_intensity.toFixed(4)}</span>
+                    </div>
+                </div>
+
+                <div class="summary-card">
+                    <h3>⚠️ Wear Patterns</h3>
+                    <div class="stat-row">
+                        <span class="stat-label">With Wear</span>
+                        <span class="stat-value">${summary.wear_stats.detected_count}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Heavy Wear</span>
+                        <span class="stat-value">${summary.wear_stats.heavy_count}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Avg Rounding</span>
+                        <span class="stat-value">${summary.wear_stats.avg_edge_rounding.toFixed(4)}</span>
+                    </div>
+                </div>
+
+                <div class="summary-card">
+                    <h3>🔪 Edge Condition</h3>
+                    <div class="stat-row">
+                        <span class="stat-label">Sharp Edges</span>
+                        <span class="stat-value">${summary.edge_stats.sharp_count}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Usable</span>
+                        <span class="stat-value">${summary.edge_stats.usable_count}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Avg Angle</span>
+                        <span class="stat-value">${summary.edge_stats.avg_angle.toFixed(2)}°</span>
+                    </div>
+                </div>
+
+                <div class="summary-card">
+                    <h3>🏺 Casting</h3>
+                    <div class="stat-row">
+                        <span class="stat-label">Likely Cast</span>
+                        <span class="stat-value">${summary.casting_stats.likely_cast_count}</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Avg Confidence</span>
+                        <span class="stat-value">${summary.casting_stats.avg_confidence.toFixed(4)}</span>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('summary-cards').innerHTML = summaryHTML;
+
+            // Generate text report (we'll fetch it separately)
+            generateTextReport();
+        }
+
+        function generateProductionMethodsHTML(methods, total) {
+            let html = '';
+            const sorted = Object.entries(methods).sort((a, b) => b[1] - a[1]);
+
+            sorted.forEach(([method, count]) => {
+                const percentage = total > 0 ? (count / total * 100) : 0;
+                html += `
+                    <div class="stat-row">
+                        <span class="stat-label">${method.toUpperCase()}</span>
+                        <span class="stat-value">${count} (${percentage.toFixed(1)}%)</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${percentage}%"></div>
+                    </div>
+                `;
+            });
+
+            return html || '<p style="color: #a0aec0; font-size: 14px;">No data</p>';
+        }
+
+        async function generateTextReport() {
+            try {
+                const artifactIds = currentResults ? Object.keys(currentResults.results) : [];
+                const response = await fetch('/web/technological-analysis-batch', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        artifact_ids: artifactIds,
+                        format: 'report'
+                    })
+                });
+
+                const text = await response.text();
+                document.getElementById('report-text').textContent = text;
+            } catch (error) {
+                document.getElementById('report-text').textContent = 'Error generating report: ' + error.message;
+            }
+        }
+
+        async function downloadReport(format) {
+            if (!currentResults) {
+                alert('No results to download');
+                return;
+            }
+
+            const artifactIds = Object.keys(currentResults.results);
+
+            try {
+                const response = await fetch('/web/technological-analysis-batch', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        artifact_ids: artifactIds,
+                        format: format
+                    })
+                });
+
+                if (format === 'json') {
+                    const data = await response.json();
+                    const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'technological_analysis_batch.json';
+                    a.click();
+                } else {
+                    const blob = await response.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = format === 'csv' ? 'technological_analysis_batch.csv' : 'technological_analysis_batch.txt';
+                    a.click();
+                }
+            } catch (error) {
+                alert('Error downloading report: ' + error.message);
+            }
+        }
+
+        async function downloadPDFReport() {
+            if (!currentResults) {
+                alert('No results to download');
+                return;
+            }
+
+            const artifactIds = Object.keys(currentResults.results);
+
+            // Show loading state
+            const btn = event.target;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '⏳ Generating PDF with 3D renders...';
+            btn.disabled = true;
+
+            try {
+                const response = await fetch('/web/generate-batch-tech-report', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        artifact_ids: artifactIds
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'batch_technological_report.pdf';
+                a.click();
+                URL.revokeObjectURL(url);
+            } catch (error) {
+                alert('Error generating PDF report: ' + error.message);
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        // Load artifacts on page load
+        window.onload = function() {
+            loadArtifacts();
+        };
+    </script>
+</body>
+</html>

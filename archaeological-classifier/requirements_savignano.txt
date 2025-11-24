@@ -1,0 +1,18 @@
+# Savignano Technical Drawings - Required Dependencies
+# Install with: pip3 install -r requirements_savignano.txt
+
+# 3D Mesh Processing
+trimesh>=4.0.0
+
+# Plotting and Visualization
+matplotlib>=3.7.0
+
+# Scientific Computing
+scipy>=1.11.0
+numpy>=1.24.0
+
+# Data Processing
+pandas>=2.0.0
+
+# Web Framework (già installato)
+flask>=3.0.0

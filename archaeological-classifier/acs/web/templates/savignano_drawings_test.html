@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Savignano Technical Drawings - Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+        .card {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 25px;
+        }
+        label {
+            display: block;
+            color: #333;
+            font-weight: 600;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+        select, input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        select:focus, input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .button-group {
+            display: flex;
+            gap: 15px;
+            margin-top: 30px;
+        }
+        button {
+            flex: 1;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.4);
+        }
+        .btn-secondary {
+            background: #f8f9fa;
+            color: #667eea;
+            border: 2px solid #667eea;
+        }
+        .btn-secondary:hover {
+            background: #667eea;
+            color: white;
+        }
+        #loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        #result {
+            margin-top: 30px;
+            padding: 20px;
+            border-radius: 10px;
+            display: none;
+        }
+        .success {
+            background: #d4edda;
+            border: 2px solid #28a745;
+            color: #155724;
+        }
+        .error {
+            background: #f8d7da;
+            border: 2px solid #dc3545;
+            color: #721c24;
+        }
+        .download-links {
+            margin-top: 20px;
+        }
+        .download-link {
+            display: inline-block;
+            margin-right: 15px;
+            margin-top: 10px;
+            padding: 10px 20px;
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+        .download-link:hover {
+            background: #764ba2;
+            transform: translateY(-2px);
+        }
+        .info-badge {
+            display: inline-block;
+            padding: 5px 15px;
+            background: #667eea;
+            color: white;
+            border-radius: 20px;
+            font-size: 0.9em;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎨 Technical Drawings Generator</h1>
+        <p class="subtitle">Savignano Bronze Age Axes - Multilingual PDF Export</p>
+
+        <div class="card">
+            <div class="form-group">
+                <label for="artifact">
+                    Select Artifact
+                    <span class="info-badge">Test Ready</span>
+                </label>
+                <select id="artifact">
+                    <option value="axe974">axe974 - Matrix A (Raised Flanges)</option>
+                    <option value="axe936">axe936 - Matrix B</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="language">
+                    Language / Lingua
+                    <span class="info-badge">IT | EN</span>
+                </label>
+                <select id="language">
+                    <option value="it">🇮🇹 Italiano</option>
+                    <option value="en">🇬🇧 English</option>
+                </select>
+            </div>
+
+            <div class="button-group">
+                <button class="btn-primary" onclick="generateDrawings()">
+                    🎨 Generate Technical Drawings
+                </button>
+                <button class="btn-secondary" onclick="window.location.href='/'">
+                    ← Back to Dashboard
+                </button>
+            </div>
+        </div>
+
+        <div id="loading">
+            <div class="spinner"></div>
+            <p>Generating technical drawings...<br>This may take 30-60 seconds.</p>
+        </div>
+
+        <div id="result"></div>
+    </div>
+
+    <script>
+        async function generateDrawings() {
+            const artifactId = document.getElementById('artifact').value;
+            const language = document.getElementById('language').value;
+
+            // Show loading
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('result').style.display = 'none';
+
+            try {
+                const response = await fetch(`/api/savignano/generate-drawings/${artifactId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        language: language,
+                        export_pdf: true,
+                        include_png: true
+                    })
+                });
+
+                const data = await response.json();
+
+                document.getElementById('loading').style.display = 'none';
+
+                if (data.status === 'success') {
+                    showSuccess(data, artifactId, language);
+                } else {
+                    showError(data.error || 'Unknown error');
+                }
+            } catch (error) {
+                document.getElementById('loading').style.display = 'none';
+                showError(error.message);
+            }
+        }
+
+        function showSuccess(data, artifactId, language) {
+            const result = document.getElementById('result');
+            result.className = 'success';
+            result.innerHTML = `
+                <h3>✅ Technical Drawings Generated Successfully!</h3>
+                <p>${data.message}</p>
+                <div class="download-links">
+                    <h4>Download Files:</h4>
+                    <a href="/api/savignano/download-drawing/${artifactId}/pdf?language=${language}"
+                       class="download-link" download>
+                        📄 Download PDF
+                    </a>
+                    <a href="/api/savignano/download-drawing/${artifactId}/front?language=${language}"
+                       class="download-link" download>
+                        🖼️ Front View
+                    </a>
+                    <a href="/api/savignano/download-drawing/${artifactId}/profile?language=${language}"
+                       class="download-link" download>
+                        📐 Profile
+                    </a>
+                    <a href="/api/savignano/download-drawing/${artifactId}/sections?language=${language}"
+                       class="download-link" download>
+                        ✂️ Sections
+                    </a>
+                </div>
+            `;
+            result.style.display = 'block';
+        }
+
+        function showError(error) {
+            const result = document.getElementById('result');
+            result.className = 'error';
+            result.innerHTML = `
+                <h3>❌ Error</h3>
+                <p>${error}</p>
+            `;
+            result.style.display = 'block';
+        }
+    </script>
+</body>
+</html>

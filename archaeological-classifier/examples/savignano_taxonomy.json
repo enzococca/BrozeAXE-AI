@@ -1,0 +1,25 @@
+{
+  "classes": {},
+  "version_history": [],
+  "classification_log": [
+    {
+      "timestamp": "2025-11-04T08:26:12.375728",
+      "object_id": "AXE_001",
+      "best_match": null,
+      "confidence": 0.0
+    },
+    {
+      "timestamp": "2025-11-04T08:26:12.375743",
+      "object_id": "AXE_002",
+      "best_match": null,
+      "confidence": 0.0
+    },
+    {
+      "timestamp": "2025-11-04T08:26:12.375747",
+      "object_id": "AXE_003",
+      "best_match": null,
+      "confidence": 0.0
+    }
+  ],
+  "exported_at": "2025-11-04T08:26:12.375750"
+}

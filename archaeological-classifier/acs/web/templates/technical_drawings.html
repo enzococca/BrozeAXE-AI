@@ -1,0 +1,379 @@
+{% extends "base.html" %}
+
+{% block title %}Disegni Tecnici - ACS{% endblock %}
+
+{% block extra_head %}
+<style>
+.drawings-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.control-panel {
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.control-row {
+    display: flex;
+    gap: 15px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+}
+
+.form-group {
+    flex: 1;
+    min-width: 200px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+    color: #2d3748;
+}
+
+.form-group select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #cbd5e0;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.btn-primary {
+    background: #007bff;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #0056b3;
+}
+
+.btn-success {
+    background: #28a745;
+    color: white;
+}
+
+.btn-success:hover {
+    background: #218838;
+}
+
+.drawing-viewer {
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 20px;
+    text-align: center;
+}
+
+.drawing-image {
+    max-width: 100%;
+    height: auto;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.loading {
+    padding: 60px 20px;
+    color: #718096;
+}
+
+.loading-spinner {
+    display: inline-block;
+    width: 40px;
+    height: 40px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #007bff;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.view-selector {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    margin: 20px 0;
+}
+
+.view-btn {
+    padding: 12px;
+    background: #f7fafc;
+    border: 2px solid #cbd5e0;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.view-btn:hover {
+    background: #edf2f7;
+    border-color: #007bff;
+}
+
+.view-btn.active {
+    background: #007bff;
+    color: white;
+    border-color: #007bff;
+}
+
+.info-box {
+    background: #f7fafc;
+    border-left: 4px solid #007bff;
+    padding: 15px;
+    margin-bottom: 20px;
+    border-radius: 4px;
+}
+
+.info-box h4 {
+    margin: 0 0 10px 0;
+    color: #2d3748;
+}
+
+.info-box p {
+    margin: 5px 0;
+    color: #4a5568;
+    font-size: 14px;
+}
+
+.download-section {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #e2e8f0;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="drawings-container">
+    <h1>🎨 Disegni Tecnici Archeologici</h1>
+    <p>Genera documentazione grafica professionale secondo convenzioni archeologiche standard per asce dell'Età del Bronzo</p>
+
+    <div class="info-box">
+        <h4>📐 Standard Archeologici Italiani</h4>
+        <p><strong>Viste generate:</strong> Profilo longitudinale, Sezioni trasversali (max/min), Vista frontale, Vista posteriore</p>
+        <p><strong>Stile:</strong> Ombreggiatura parallela fine, scala metrica, layout professionale</p>
+    </div>
+
+    <!-- Control Panel -->
+    <div class="control-panel">
+        <h3>Selezione Reperto</h3>
+        <div class="control-row">
+            <div class="form-group">
+                <label for="artifactSelect">Reperto</label>
+                <select id="artifactSelect">
+                    <option value="">-- Seleziona un reperto --</option>
+                </select>
+            </div>
+            <button class="btn btn-primary" onclick="generateDrawing()">🎨 Genera Disegno Completo</button>
+        </div>
+    </div>
+
+    <!-- View Selector -->
+    <div id="viewSelector" style="display: none;">
+        <h3>Seleziona Vista</h3>
+        <div class="view-selector">
+            <button class="view-btn active" onclick="selectView('complete_sheet')">
+                📄 Foglio Completo
+            </button>
+            <button class="view-btn" onclick="selectView('longitudinal_profile')">
+                ↔️ Profilo Longitudinale
+            </button>
+            <button class="view-btn" onclick="selectView('cross_section_max')">
+                ⭕ Sezione Max
+            </button>
+            <button class="view-btn" onclick="selectView('cross_section_min')">
+                ⭕ Sezione Min
+            </button>
+            <button class="view-btn" onclick="selectView('front_view')">
+                👁️ Vista Frontale
+            </button>
+            <button class="view-btn" onclick="selectView('back_view')">
+                👁️ Vista Posteriore
+            </button>
+        </div>
+    </div>
+
+    <!-- Drawing Viewer -->
+    <div class="drawing-viewer">
+        <div id="drawingContent">
+            <div style="padding: 60px 20px; color: #718096;">
+                <div style="font-size: 64px; margin-bottom: 20px;">📐</div>
+                <p>Seleziona un reperto e clicca su "Genera Disegno Completo" per iniziare</p>
+            </div>
+        </div>
+
+        <div class="download-section" id="downloadSection" style="display: none;">
+            <button class="btn btn-success" onclick="downloadDrawing()">
+                💾 Scarica Disegno
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentArtifact = null;
+let currentView = 'complete_sheet';
+
+// Load artifacts on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadArtifacts();
+
+    // Check if artifact is pre-selected via URL parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const preselectedArtifact = urlParams.get('artifact');
+
+    if (preselectedArtifact) {
+        setTimeout(() => {
+            document.getElementById('artifactSelect').value = preselectedArtifact;
+            generateDrawing();
+        }, 500);
+    }
+});
+
+async function loadArtifacts() {
+    try {
+        const response = await fetch('/web/statistics');
+        const data = await response.json();
+
+        const select = document.getElementById('artifactSelect');
+        select.innerHTML = '<option value="">-- Seleziona un reperto --</option>';
+
+        if (data.meshes && data.meshes.artifacts) {
+            data.meshes.artifacts.forEach(artifactId => {
+                const option = document.createElement('option');
+                option.value = artifactId;
+                option.textContent = artifactId;
+                select.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('Error loading artifacts:', error);
+    }
+}
+
+async function generateDrawing() {
+    const artifactId = document.getElementById('artifactSelect').value;
+
+    if (!artifactId) {
+        alert('Seleziona un reperto');
+        return;
+    }
+
+    currentArtifact = artifactId;
+
+    // Show loading
+    document.getElementById('drawingContent').innerHTML = `
+        <div class="loading">
+            <div class="loading-spinner"></div>
+            <p style="margin-top: 20px;">Generazione disegno tecnico in corso...</p>
+            <p style="font-size: 12px; color: #a0aec0;">Questo può richiedere alcuni secondi</p>
+        </div>
+    `;
+
+    // Show view selector
+    document.getElementById('viewSelector').style.display = 'block';
+
+    try {
+        await loadView(currentView);
+    } catch (error) {
+        console.error('Error generating drawing:', error);
+        document.getElementById('drawingContent').innerHTML = `
+            <div style="padding: 40px; color: #e53e3e;">
+                <p>❌ Errore nella generazione del disegno</p>
+                <p style="font-size: 12px; margin-top: 10px;">${error.message}</p>
+            </div>
+        `;
+    }
+}
+
+async function selectView(viewType) {
+    if (!currentArtifact) {
+        alert('Prima genera un disegno completo');
+        return;
+    }
+
+    currentView = viewType;
+
+    // Update active button
+    document.querySelectorAll('.view-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    event.target.classList.add('active');
+
+    await loadView(viewType);
+}
+
+async function loadView(viewType) {
+    // Show loading
+    document.getElementById('drawingContent').innerHTML = `
+        <div class="loading">
+            <div class="loading-spinner"></div>
+            <p style="margin-top: 20px;">Caricamento vista...</p>
+        </div>
+    `;
+
+    try {
+        const url = `/web/technical-drawing/${currentArtifact}/${viewType}`;
+
+        // Create image element
+        const img = new Image();
+        img.className = 'drawing-image';
+
+        img.onload = function() {
+            document.getElementById('drawingContent').innerHTML = '';
+            document.getElementById('drawingContent').appendChild(img);
+            document.getElementById('downloadSection').style.display = 'block';
+        };
+
+        img.onerror = function() {
+            document.getElementById('drawingContent').innerHTML = `
+                <div style="padding: 40px; color: #e53e3e;">
+                    <p>❌ Errore nel caricamento dell'immagine</p>
+                </div>
+            `;
+        };
+
+        img.src = url;
+
+    } catch (error) {
+        throw error;
+    }
+}
+
+function downloadDrawing() {
+    if (!currentArtifact || !currentView) {
+        alert('Nessun disegno da scaricare');
+        return;
+    }
+
+    const url = `/web/technical-drawing/${currentArtifact}/${currentView}`;
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${currentArtifact}_${currentView}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+</script>
+{% endblock %}

@@ -1,0 +1,93 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "archaeological-classifier"
+version = "0.1.0"
+description = "Advanced 3D mesh analysis and formal taxonomy system for archaeological artifacts"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "Enzo Ferroni", email = "enzo@example.com"}
+]
+keywords = [
+    "archaeology",
+    "3d-analysis",
+    "morphometrics",
+    "taxonomy",
+    "classification",
+    "mesh-processing",
+    "AI"
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
+    "scikit-learn>=1.3.0",
+    "trimesh>=4.0.0",
+    "networkx>=3.0",
+    "flask>=3.0.0",
+    "flask-cors>=4.0.0",
+    "werkzeug>=3.0.0",
+    "pydantic>=2.0.0",
+    "mcp>=0.1.0",
+    "click>=8.1.0",
+    "pandas>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.0.0",
+    "mypy>=1.5.0",
+]
+efa = [
+    "pyefd>=1.5.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/archaeological-classifier"
+Documentation = "https://github.com/yourusername/archaeological-classifier#readme"
+Repository = "https://github.com/yourusername/archaeological-classifier.git"
+Issues = "https://github.com/yourusername/archaeological-classifier/issues"
+
+[project.scripts]
+acs-cli = "acs.cli:cli"
+acs-server = "acs.api.app:run_server"
+acs-mcp = "acs.mcp.server:main"
+
+[tool.setuptools]
+packages = ["acs"]
+
+[tool.setuptools.package-data]
+acs = ["py.typed"]
+
+[tool.black]
+line-length = 100
+target-version = ["py39", "py310", "py311", "py312"]
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]

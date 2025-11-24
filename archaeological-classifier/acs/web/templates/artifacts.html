@@ -1,0 +1,583 @@
+{% extends "base.html" %}
+
+{% block title %}Artifacts Browser - Archaeological Classifier{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1>Artifacts Browser</h1>
+        <p class="subtitle">Browse and manage loaded 3D artifacts</p>
+    </div>
+
+    <div class="artifacts-container">
+        <div class="artifacts-header">
+            <h2>Loaded Artifacts ({{ artifacts|length }})</h2>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <input type="text" id="search-input" class="form-input" placeholder="Search artifacts..." onkeyup="filterArtifacts()" style="flex: 1;">
+                <button id="select-all-btn" class="btn btn-secondary" onclick="toggleSelectAll()">
+                    Select All
+                </button>
+                <button id="analyze-selected-btn" class="btn btn-primary" onclick="analyzeSelected()" style="display: none;">
+                    🤖 Analyze Selected
+                </button>
+                <button id="assign-project-btn" class="btn btn-secondary" onclick="assignToProject()" style="display: none;">
+                    📁 Assign to Project
+                </button>
+            </div>
+        </div>
+
+        <div class="artifacts-grid" id="artifacts-grid">
+            {% if artifacts %}
+                {% for artifact in artifacts %}
+                <div class="artifact-card" data-id="{{ artifact.id }}" data-classified="{{ artifact.classified|lower }}">
+                    <div style="position: absolute; top: 10px; right: 10px;">
+                        <input type="checkbox" class="artifact-checkbox" value="{{ artifact.id }}"
+                               onchange="updateSelectionUI()" style="width: 20px; height: 20px; cursor: pointer;">
+                    </div>
+                    <div style="position: absolute; top: 10px; left: 10px;">
+                        {% if artifact.classified %}
+                        <span style="background: #10b981; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">
+                            ✓ CLASSIFIED
+                        </span>
+                        {% else %}
+                        <span style="background: #f59e0b; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">
+                            ⚠ UNCLASSIFIED
+                        </span>
+                        {% endif %}
+                    </div>
+                    <div class="artifact-icon">📦</div>
+                    <h3>{{ artifact.id }}</h3>
+                    <div class="artifact-stats">
+                        <div class="stat-row">
+                            <span>Volume:</span>
+                            <span>{{ "%.2f"|format(artifact.volume or 0) }} mm³</span>
+                        </div>
+                        <div class="stat-row">
+                            <span>Length:</span>
+                            <span>{{ "%.2f"|format(artifact.length or 0) }} mm</span>
+                        </div>
+                        <div class="stat-row">
+                            <span>Width:</span>
+                            <span>{{ "%.2f"|format(artifact.width or 0) }} mm</span>
+                        </div>
+                        <div class="stat-row">
+                            <span>Vertices:</span>
+                            <span>{{ artifact.n_vertices or 0 }}</span>
+                        </div>
+                        {% if artifact.classified and artifact.class_name %}
+                        <div class="stat-row" style="border-top: 1px solid #e5e7eb; padding-top: 8px; margin-top: 8px;">
+                            <span>Class:</span>
+                            <span style="color: #667eea; font-weight: bold;">{{ artifact.class_name }}</span>
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div style="display: flex; gap: 8px; width: 100%;">
+                        <a href="{{ url_for('web.artifact_detail', artifact_id=artifact.id) }}" class="btn btn-sm btn-primary" style="flex: 1;">
+                            View Details →
+                        </a>
+                        <a href="{{ url_for('web.technological_analysis_page') }}?id={{ artifact.id }}" class="btn btn-sm btn-info" style="flex: 1;">
+                            🔬 Tech Analysis
+                        </a>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <p class="text-muted">No artifacts loaded yet. <a href="{{ url_for('web.upload_page') }}">Upload some meshes</a> to get started.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterArtifacts() {
+    const searchTerm = document.getElementById('search-input').value.toLowerCase();
+    const cards = document.querySelectorAll('.artifact-card');
+
+    cards.forEach(card => {
+        const artifactId = card.getAttribute('data-id').toLowerCase();
+        if (artifactId.includes(searchTerm)) {
+            card.style.display = 'flex';
+        } else {
+            card.style.display = 'none';
+        }
+    });
+}
+
+function toggleSelectAll() {
+    const checkboxes = document.querySelectorAll('.artifact-checkbox');
+    const selectAllBtn = document.getElementById('select-all-btn');
+    const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+
+    checkboxes.forEach(cb => {
+        cb.checked = !allChecked;
+    });
+
+    selectAllBtn.textContent = allChecked ? 'Select All' : 'Deselect All';
+    updateSelectionUI();
+}
+
+function updateSelectionUI() {
+    const checkboxes = document.querySelectorAll('.artifact-checkbox:checked');
+    const analyzeBtn = document.getElementById('analyze-selected-btn');
+    const assignBtn = document.getElementById('assign-project-btn');
+    const selectAllBtn = document.getElementById('select-all-btn');
+
+    if (checkboxes.length > 0) {
+        analyzeBtn.style.display = 'block';
+        analyzeBtn.textContent = `🤖 Analyze ${checkboxes.length} Selected`;
+        assignBtn.style.display = 'block';
+        assignBtn.textContent = `📁 Assign ${checkboxes.length} to Project`;
+    } else {
+        analyzeBtn.style.display = 'none';
+        assignBtn.style.display = 'none';
+    }
+
+    // Update Select All button text
+    const allCheckboxes = document.querySelectorAll('.artifact-checkbox');
+    const allChecked = Array.from(allCheckboxes).every(cb => cb.checked);
+    selectAllBtn.textContent = allChecked ? 'Deselect All' : 'Select All';
+}
+
+async function analyzeSelected() {
+    const checkboxes = document.querySelectorAll('.artifact-checkbox:checked');
+    const artifactIds = Array.from(checkboxes).map(cb => cb.value);
+
+    if (artifactIds.length === 0) {
+        alert('Please select at least one artifact');
+        return;
+    }
+
+    if (artifactIds.length === 1) {
+        // Single artifact - redirect to detail page or AI assistant
+        window.location.href = `/web/ai-assistant#single-analysis`;
+        return;
+    }
+
+    // Multi-artifact analysis with better dialog
+    const contextMessage = `You selected ${artifactIds.length} artifacts for AI analysis.\n\n` +
+        `📍 ARCHAEOLOGICAL CONTEXT (Optional):\n` +
+        `Provide information to help AI understand the artifacts better.\n\n` +
+        `Examples:\n` +
+        `• "Bronze Age axes from Savignano sul Rubicone excavation, Northern Italy"\n` +
+        `• "Late Bronze Age (1300-1200 BC), ceremonial weapons"\n` +
+        `• "Found in burial context, grave goods"\n\n` +
+        `Leave empty if you don't have context information.`;
+
+    const context = prompt(contextMessage);
+    if (context === null) return; // User cancelled
+
+    // Show loading modal
+    showLoadingModal(`Analyzing ${artifactIds.length} artifacts...`);
+
+    try {
+        const response = await fetch('/web/ai-multi-analyze', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                artifact_ids: artifactIds,
+                context: context || ''
+            })
+        });
+
+        const data = await response.json();
+        closeLoadingModal();
+
+        if (response.ok) {
+            displayAnalysisResults(data);
+        } else {
+            alert(`Error: ${data.error || 'Analysis failed'}`);
+        }
+    } catch (error) {
+        closeLoadingModal();
+        alert(`Error: ${error.message}`);
+    }
+}
+
+function showLoadingModal(message) {
+    const modal = document.createElement('div');
+    modal.id = 'loading-modal';
+    modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 10000; display: flex; align-items: center; justify-content: center;';
+
+    modal.innerHTML = `
+        <div style="background: white; padding: 40px; border-radius: 12px; text-align: center;">
+            <div class="spinner" style="margin: 0 auto 20px; width: 50px; height: 50px; border: 4px solid #e2e8f0; border-top-color: #667eea; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+            <p style="font-size: 16px; color: #333;">${message}</p>
+            <p style="font-size: 13px; color: #666;">This may take a minute...</p>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+}
+
+function closeLoadingModal() {
+    const modal = document.getElementById('loading-modal');
+    if (modal) modal.remove();
+}
+
+function displayAnalysisResults(data) {
+    const analysis = data.analysis;
+
+    // Create modal for results
+    const modal = document.createElement('div');
+    modal.id = 'results-modal';
+    modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 20px;';
+
+    // Close modal on outside click
+    modal.onclick = function(e) {
+        if (e.target === modal) {
+            closeResultsModal();
+        }
+    };
+
+    const modalContent = document.createElement('div');
+    modalContent.style.cssText = 'background: white; padding: 30px; border-radius: 12px; max-width: 900px; width: 100%; max-height: 90vh; overflow-y: auto;';
+
+    // Prevent click propagation on content
+    modalContent.onclick = function(e) {
+        e.stopPropagation();
+    };
+
+    let content = `<h2 style="color: #667eea; margin: 0 0 20px 0;">Multi-Artifact Analysis Results</h2>
+    `;
+
+    // Collection Overview
+    if (analysis && analysis.collection_overview) {
+        content += `
+            <div style="background: #f3f4f6; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                <h3 style="color: #374151; margin-top: 0;">📊 Collection Overview</h3>
+                <p style="line-height: 1.6; color: #4b5563;">${analysis.collection_overview}</p>
+            </div>
+        `;
+    } else if (data.raw_text) {
+        // Fallback to raw text formatted nicely
+        content += `
+            <div style="background: #f3f4f6; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                <h3 style="color: #374151; margin-top: 0;">Analysis Results</h3>
+                <div style="line-height: 1.8; color: #4b5563; white-space: pre-wrap;">${data.raw_text}</div>
+            </div>
+        `;
+    }
+
+    // Suggested Groups
+    if (analysis && analysis.suggested_groups && analysis.suggested_groups.length > 0) {
+        content += `<h3 style="color: #374151;">🔗 Suggested Groups (${analysis.suggested_groups.length})</h3>`;
+        analysis.suggested_groups.forEach((group, i) => {
+            content += `
+                <div style="background: #ecfdf5; padding: 15px; margin: 10px 0; border-radius: 8px; border-left: 4px solid #10b981;">
+                    <h4 style="color: #047857; margin-top: 0;">${group.group_name}</h4>
+                    <p><strong>Artifacts:</strong> ${(group.artifact_ids || []).join(', ')}</p>
+                    <p><strong>Diagnostic Features:</strong> ${(group.diagnostic_features || []).join(', ')}</p>
+                    ${group.parameters ? `
+                        <details style="margin-top: 10px;">
+                            <summary style="cursor: pointer; color: #047857; font-weight: bold;">View Recommended Parameters</summary>
+                            <pre style="background: white; padding: 10px; margin-top: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px;">${JSON.stringify(group.parameters, null, 2)}</pre>
+                        </details>
+                    ` : ''}
+                </div>
+            `;
+        });
+    }
+
+    // Individual Analyses
+    if (analysis && analysis.individual_analyses && analysis.individual_analyses.length > 0) {
+        content += `<h3 style="color: #374151; margin-top: 30px;">🔍 Individual Analyses</h3>`;
+        analysis.individual_analyses.forEach((item) => {
+            const confidenceColor = item.confidence === 'High' ? '#10b981' : item.confidence === 'Medium' ? '#f59e0b' : '#ef4444';
+            content += `
+                <div style="background: #fef3c7; padding: 15px; margin: 10px 0; border-radius: 8px; border-left: 4px solid ${confidenceColor};">
+                    <h4 style="margin-top: 0; color: #374151;">${item.artifact_id}</h4>
+                    <p><strong>Group:</strong> ${item.group || 'N/A'}</p>
+                    <p><strong>Classification:</strong> ${item.classification_suggestion || 'N/A'}</p>
+                    <p><strong>Confidence:</strong> <span style="color: ${confidenceColor}; font-weight: bold;">${item.confidence}</span></p>
+                    <p><strong>Reasoning:</strong> ${item.reasoning || 'N/A'}</p>
+                </div>
+            `;
+        });
+    }
+
+    // Batch Recommendation
+    if (analysis && analysis.batch_recommendation) {
+        content += `
+            <div style="background: #dbeafe; padding: 20px; margin: 20px 0; border-radius: 8px; border-left: 4px solid #3b82f6;">
+                <h3 style="color: #1e40af; margin-top: 0;">⚡ Batch Processing Recommendation</h3>
+                <p><strong>Auto-apply:</strong> ${analysis.batch_recommendation.auto_apply ? 'Yes ✓' : 'No ✗'}</p>
+                <p><strong>Workflow:</strong> ${analysis.batch_recommendation.workflow}</p>
+                ${analysis.batch_recommendation.manual_review_needed && analysis.batch_recommendation.manual_review_needed.length > 0 ? `
+                    <p><strong>Manual Review Needed:</strong> ${analysis.batch_recommendation.manual_review_needed.join(', ')}</p>
+                ` : ''}
+            </div>
+        `;
+
+        // Add Apply Parameters button if recommended
+        if (analysis.batch_recommendation.auto_apply && analysis.individual_analyses) {
+            content += `
+                <button id="apply-params-btn" class="btn btn-primary" style="width: 100%; padding: 15px; font-size: 16px; margin-top: 20px;">
+                    ✓ Apply Recommended Parameters and Run Analysis
+                </button>
+            `;
+
+            // Store analysis data for later use
+            window.pendingAnalysis = analysis.individual_analyses;
+        }
+    }
+
+    content += `
+            <button id="close-modal-btn" class="btn btn-secondary" style="width: 100%; margin-top: 15px;">
+                Close
+            </button>
+    `;
+
+    modalContent.innerHTML = content;
+    modal.appendChild(modalContent);
+    document.body.appendChild(modal);
+
+    // Add event listeners AFTER modal is in DOM
+    const closeBtn = document.getElementById('close-modal-btn');
+    if (closeBtn) {
+        closeBtn.onclick = function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            closeResultsModal();
+        };
+    }
+
+    const applyBtn = document.getElementById('apply-params-btn');
+    if (applyBtn) {
+        applyBtn.onclick = function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            confirmAndApplyBatchParameters();
+        };
+    }
+}
+
+function closeResultsModal() {
+    const modal = document.getElementById('results-modal');
+    if (modal) modal.remove();
+}
+
+async function confirmAndApplyBatchParameters() {
+    if (!window.pendingAnalysis) {
+        alert('No pending analysis data');
+        return;
+    }
+
+    if (!confirm('Are you sure you want to apply these parameters and run analysis on all selected artifacts?')) {
+        return;
+    }
+
+    closeResultsModal();
+    showLoadingModal('Applying parameters and running analysis...');
+
+    const artifactsParams = window.pendingAnalysis.map(a => ({
+        artifact_id: a.artifact_id,
+        parameters: a.parameters_to_apply
+    }));
+
+    try {
+        const response = await fetch('/web/ai-apply-batch-analysis', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                confirmed: true,
+                artifacts_params: artifactsParams
+            })
+        });
+
+        const data = await response.json();
+        closeLoadingModal();
+
+        if (response.ok) {
+            alert(`✓ Batch analysis complete!\n\n${data.successful} of ${data.total_processed} artifacts processed successfully.`);
+            location.reload(); // Reload to show updated classifications
+        } else {
+            alert(`Error: ${data.error}`);
+        }
+    } catch (error) {
+        closeLoadingModal();
+        alert(`Error: ${error.message}`);
+    }
+}
+
+async function assignToProject() {
+    const checkboxes = document.querySelectorAll('.artifact-checkbox:checked');
+    const artifactIds = Array.from(checkboxes).map(cb => cb.value);
+
+    if (artifactIds.length === 0) {
+        alert('Please select at least one artifact');
+        return;
+    }
+
+    // Load projects
+    showLoadingModal('Loading projects...');
+
+    try {
+        const response = await fetch('/web/projects?status=all');
+        const data = await response.json();
+        closeLoadingModal();
+
+        if (!response.ok || !data.projects) {
+            alert('Failed to load projects');
+            return;
+        }
+
+        const projects = data.projects;
+
+        if (projects.length === 0) {
+            if (confirm('No projects found. Would you like to create a new project?')) {
+                await createProjectDialog();
+                // Retry after creating project
+                assignToProject();
+            }
+            return;
+        }
+
+        // Show project selection modal
+        const projectOptions = projects.map(p => {
+            const statusLabel = p.status === 'archived' ? ' [ARCHIVED]' : '';
+            const count = p.stats?.total_artifacts || 0;
+            return `<option value="${p.project_id}">${p.project_name} (${count} artifacts)${statusLabel}</option>`;
+        }).join('');
+
+        const modalHTML = `
+            <div style="margin: 20px 0;">
+                <p><strong>Assign ${artifactIds.length} artifact(s) to project:</strong></p>
+                <div style="margin: 15px 0;">
+                    <label for="project-select-assign" style="display: block; margin-bottom: 8px; font-weight: bold;">
+                        Select Project:
+                    </label>
+                    <select id="project-select-assign" class="form-control" style="width: 100%; padding: 8px; font-size: 14px;">
+                        ${projectOptions}
+                    </select>
+                </div>
+                <div style="background: #f3f4f6; padding: 12px; border-radius: 6px; margin-top: 15px;">
+                    <p style="margin: 0; font-size: 13px; color: #666;">
+                        <strong>Selected artifacts:</strong> ${artifactIds.slice(0, 5).join(', ')}${artifactIds.length > 5 ? ` and ${artifactIds.length - 5} more...` : ''}
+                    </p>
+                </div>
+            </div>
+        `;
+
+        const modal = document.createElement('div');
+        modal.id = 'assign-modal';
+        modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 10000; display: flex; align-items: center; justify-content: center;';
+
+        modal.onclick = (e) => {
+            if (e.target === modal) modal.remove();
+        };
+
+        const modalContent = document.createElement('div');
+        modalContent.style.cssText = 'background: white; padding: 30px; border-radius: 12px; max-width: 600px; width: 90%;';
+        modalContent.onclick = (e) => e.stopPropagation();
+
+        modalContent.innerHTML = `
+            <h3 style="margin: 0 0 20px 0; color: #667eea;">📁 Assign to Project</h3>
+            ${modalHTML}
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button id="confirm-assign-btn" class="btn btn-primary" style="flex: 1;">
+                    ✓ Assign to Project
+                </button>
+                <button id="cancel-assign-btn" class="btn btn-secondary" style="flex: 1;">
+                    Cancel
+                </button>
+            </div>
+        `;
+
+        modal.appendChild(modalContent);
+        document.body.appendChild(modal);
+
+        // Event listeners
+        document.getElementById('confirm-assign-btn').onclick = async () => {
+            const projectId = document.getElementById('project-select-assign').value;
+            await executeAssignment(artifactIds, projectId);
+            modal.remove();
+        };
+
+        document.getElementById('cancel-assign-btn').onclick = () => {
+            modal.remove();
+        };
+
+    } catch (error) {
+        closeLoadingModal();
+        alert(`Error: ${error.message}`);
+    }
+}
+
+async function executeAssignment(artifactIds, projectId) {
+    showLoadingModal(`Assigning ${artifactIds.length} artifacts to project...`);
+
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const artifactId of artifactIds) {
+        try {
+            const response = await fetch(`/web/projects/${projectId}/artifacts/${artifactId}`, {
+                method: 'POST'
+            });
+
+            if (response.ok) {
+                successCount++;
+            } else {
+                errorCount++;
+            }
+        } catch (error) {
+            errorCount++;
+        }
+    }
+
+    closeLoadingModal();
+
+    alert(`✓ Assignment Complete!\n\nSuccessful: ${successCount}\nFailed: ${errorCount}`);
+
+    // Reload page to show updated project assignments
+    location.reload();
+}
+
+async function createProjectDialog() {
+    const projectId = prompt('Enter Project ID (e.g., "bronzeaxes2025"):');
+    if (!projectId) return false;
+
+    const projectName = prompt('Enter Project Name:');
+    if (!projectName) return false;
+
+    const description = prompt('Enter Project Description (optional):') || '';
+
+    try {
+        const response = await fetch('/web/projects', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                project_id: projectId,
+                name: projectName,
+                description: description
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            alert(`✓ Project "${projectName}" created successfully!`);
+            return true;
+        } else {
+            alert(`✗ Failed to create project: ${data.error || 'Unknown error'}`);
+            return false;
+        }
+    } catch (error) {
+        alert(`✗ Error: ${error.message}`);
+        return false;
+    }
+}
+</script>
+
+<style>
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.artifact-card {
+    position: relative;
+}
+</style>
+{% endblock %}

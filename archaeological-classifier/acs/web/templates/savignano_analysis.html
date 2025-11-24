@@ -1,0 +1,749 @@
+{% extends "base.html" %}
+
+{% block title %}Savignano Analysis - Archaeological Classifier{% endblock %}
+
+{% block content %}
+<style>
+.savignano-hero {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 40px;
+    border-radius: 12px;
+    margin-bottom: 30px;
+}
+.step-card {
+    background: white;
+    border-radius: 8px;
+    padding: 25px;
+    margin-bottom: 20px;
+    border-left: 5px solid #667eea;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+.step-card.completed {
+    border-left-color: #48bb78;
+    background: #f0fff4;
+}
+.step-card.active {
+    border-left-color: #ed8936;
+    background: #fffaf0;
+}
+.step-number {
+    background: #667eea;
+    color: white;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 18px;
+    margin-right: 15px;
+}
+.progress-bar-custom {
+    width: 100%;
+    height: 30px;
+    background: #e2e8f0;
+    border-radius: 15px;
+    overflow: hidden;
+    margin: 20px 0;
+}
+.progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #667eea, #764ba2);
+    transition: width 0.5s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: bold;
+}
+.result-card {
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 15px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+.metric {
+    text-align: center;
+    padding: 20px;
+}
+.metric-value {
+    font-size: 42px;
+    font-weight: bold;
+    color: #667eea;
+}
+.metric-label {
+    color: #718096;
+    font-size: 14px;
+    margin-top: 5px;
+}
+</style>
+
+<div class="savignano-hero">
+    <h1 style="margin: 0 0 10px 0;">🗡️ Savignano sul Panaro - Complete Archaeological Analysis</h1>
+    <p style="margin: 0; font-size: 18px; opacity: 0.9;">
+        Advanced AI-powered analysis system for the 96 bronze axes hoard
+    </p>
+    <p style="margin: 10px 0 0 0; opacity: 0.8; font-size: 14px;">
+        Bronze Age (Middle/Recent, ca. 1600-1300 BCE) - Modena, Italy
+    </p>
+</div>
+
+<!-- Analysis Status -->
+<div id="analysis-status-section" style="margin-bottom: 30px;">
+    <div class="card">
+        <h2 style="margin: 0 0 20px 0;">📊 Analysis Status</h2>
+        <div id="analysis-status-content">
+            <p style="color: #718096;">No analysis running. Start a new analysis below.</p>
+        </div>
+    </div>
+</div>
+
+<!-- Workflow Steps -->
+<div id="workflow-section">
+    <!-- STEP 1: Upload Meshes -->
+    <div class="step-card" id="step-1">
+        <div style="display: flex; align-items: center; margin-bottom: 20px;">
+            <span class="step-number">1</span>
+            <h3 style="margin: 0; flex: 1;">Upload 3D Meshes</h3>
+            <span id="step-1-status" class="badge badge-secondary">Pending</span>
+        </div>
+        <p style="color: #718096; margin-bottom: 20px;">
+            Upload the 3D scanned meshes of the Savignano axes (.obj, .stl, .ply format).
+            You can upload all 96 axes at once.
+        </p>
+
+        <div style="background: #f7fafc; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+            <label class="form-label" style="font-weight: bold;">3D Mesh Files</label>
+            <input type="file" id="mesh-files" multiple accept=".obj,.stl,.ply" class="form-control" style="margin-bottom: 15px;">
+            <small class="form-text">Select multiple files (Ctrl/Cmd + Click). Supported: .obj, .stl, .ply</small>
+        </div>
+
+        <div style="background: #f7fafc; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+            <label class="form-label" style="font-weight: bold;">Weights Data (Optional)</label>
+
+            <!-- Option 1: No weights -->
+            <div style="margin-bottom: 10px;">
+                <label style="font-weight: normal;">
+                    <input type="radio" name="weights-option" value="none" checked>
+                    No weights (peso = 0)
+                </label>
+            </div>
+
+            <!-- Option 2: Manual input -->
+            <div style="margin-bottom: 10px;">
+                <label style="font-weight: normal;">
+                    <input type="radio" name="weights-option" value="manual">
+                    Manual input (type weight for each file)
+                </label>
+            </div>
+            <div id="manual-weights-container" style="display: none; margin: 10px 0 15px 20px; padding: 15px; background: white; border-radius: 6px; border: 1px solid #e2e8f0;">
+                <p style="color: #718096; font-size: 14px; margin-bottom: 10px;">
+                    Weights will appear here after selecting mesh files
+                </p>
+            </div>
+
+            <!-- Option 3: Excel/CSV file -->
+            <div style="margin-bottom: 10px;">
+                <label style="font-weight: normal;">
+                    <input type="radio" name="weights-option" value="excel">
+                    Upload Excel/CSV file
+                </label>
+            </div>
+            <input type="file" id="weights-excel" accept=".xlsx,.xls,.csv" class="form-control" disabled style="margin-bottom: 10px;">
+            <small class="form-text" id="excel-help" style="display: none; margin-left: 20px;">
+                Excel/CSV format: columns "artifact_id" and "weight" (or "peso")
+            </small>
+
+            <!-- Option 4: DOCX scan notes -->
+            <div style="margin-bottom: 10px;">
+                <label style="font-weight: normal;">
+                    <input type="radio" name="weights-option" value="docx">
+                    Upload DOCX scan notes (auto-extract)
+                </label>
+            </div>
+            <input type="file" id="weights-docx" accept=".docx" class="form-control" disabled style="margin-bottom: 10px;">
+
+            <!-- Option 5: JSON file -->
+            <div style="margin-bottom: 10px;">
+                <label style="font-weight: normal;">
+                    <input type="radio" name="weights-option" value="json">
+                    Upload JSON file
+                </label>
+            </div>
+            <input type="file" id="weights-json" accept=".json" class="form-control" disabled>
+
+            <small class="form-text" style="margin-top: 10px; display: block;">
+                Optional: Provide weight data for more accurate archaeological analysis
+            </small>
+        </div>
+
+        <button class="btn btn-primary btn-lg" onclick="uploadMeshes()" id="upload-btn">
+            📤 Upload & Start Analysis
+        </button>
+        <span id="upload-progress" style="margin-left: 15px; color: #718096;"></span>
+    </div>
+
+    <!-- STEP 2: Configure Analysis -->
+    <div class="step-card" id="step-2" style="display: none;">
+        <div style="display: flex; align-items: center; margin-bottom: 20px;">
+            <span class="step-number">2</span>
+            <h3 style="margin: 0; flex: 1;">Configure Analysis Parameters</h3>
+            <span id="step-2-status" class="badge badge-secondary">Pending</span>
+        </div>
+        <p style="color: #718096; margin-bottom: 20px;">
+            Set analysis parameters for matrix identification and AI interpretation.
+        </p>
+
+        <div class="row">
+            <div class="col-md-6">
+                <div class="form-group">
+                    <label class="form-label">Clustering Method</label>
+                    <select id="clustering-method" class="form-control">
+                        <option value="hierarchical" selected>Hierarchical Clustering (Recommended)</option>
+                        <option value="kmeans">K-Means Clustering</option>
+                    </select>
+                    <small class="form-text">Algorithm for identifying mold groups</small>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="form-group">
+                    <label class="form-label">Maximum Matrices</label>
+                    <input type="number" id="max-clusters" class="form-control" value="15" min="2" max="30">
+                    <small class="form-text">Max number of molds to identify (auto-optimized)</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label style="font-weight: bold; display: block; margin-bottom: 10px;">
+                <input type="checkbox" id="use-ai" checked>
+                Enable AI Archaeological Interpretation (Claude Sonnet 4.5)
+            </label>
+            <small class="form-text">
+                AI provides comprehensive archaeological interpretation of results.
+                Requires Anthropic API key (optional).
+            </small>
+        </div>
+
+        <div class="form-group" id="api-key-section">
+            <label class="form-label">Anthropic API Key (Optional)</label>
+            <input type="password" id="anthropic-api-key" class="form-control" placeholder="sk-ant-...">
+            <small class="form-text">
+                Leave empty to use ANTHROPIC_API_KEY environment variable.
+                <a href="https://console.anthropic.com/" target="_blank">Get API key →</a>
+            </small>
+        </div>
+
+        <button class="btn btn-primary btn-lg" onclick="configureAnalysis()">
+            ⚙️ Configure & Continue
+        </button>
+    </div>
+
+    <!-- STEP 3: Running Analysis -->
+    <div class="step-card" id="step-3" style="display: none;">
+        <div style="display: flex; align-items: center; margin-bottom: 20px;">
+            <span class="step-number">3</span>
+            <h3 style="margin: 0; flex: 1;">Running Analysis</h3>
+            <span id="step-3-status" class="badge badge-warning">Running...</span>
+        </div>
+
+        <div id="analysis-progress">
+            <div class="progress-bar-custom">
+                <div class="progress-bar-fill" id="progress-bar-fill" style="width: 0%;">0%</div>
+            </div>
+            <div id="analysis-log" style="background: #f7fafc; padding: 15px; border-radius: 8px; max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 13px;">
+                <div style="color: #667eea;">🚀 Initializing Savignano analysis workflow...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- STEP 4: Results -->
+    <div class="step-card" id="step-4" style="display: none;">
+        <div style="display: flex; align-items: center; margin-bottom: 20px;">
+            <span class="step-number">4</span>
+            <h3 style="margin: 0; flex: 1;">Analysis Results</h3>
+            <span id="step-4-status" class="badge badge-success">Completed</span>
+        </div>
+
+        <!-- Key Metrics -->
+        <div class="row" style="margin-bottom: 30px;">
+            <div class="col-md-3">
+                <div class="metric">
+                    <div class="metric-value" id="result-n-axes">-</div>
+                    <div class="metric-label">Axes Analyzed</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric">
+                    <div class="metric-value" id="result-n-matrices">-</div>
+                    <div class="metric-label">Matrices Identified</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric">
+                    <div class="metric-value" id="result-total-fusions">-</div>
+                    <div class="metric-label">Total Fusions</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="metric">
+                    <div class="metric-value" id="result-silhouette">-</div>
+                    <div class="metric-label">Quality Score</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Download Files -->
+        <div class="result-card">
+            <h4 style="margin: 0 0 15px 0;">📥 Download Results</h4>
+            <div class="row">
+                <div class="col-md-6">
+                    <h5>Data Files</h5>
+                    <ul style="list-style: none; padding: 0;">
+                        <li style="margin-bottom: 10px;">
+                            <button class="btn btn-sm btn-outline" onclick="downloadFile('features_csv')">
+                                📊 Morphometric Features (CSV)
+                            </button>
+                        </li>
+                        <li style="margin-bottom: 10px;">
+                            <button class="btn btn-sm btn-outline" onclick="downloadFile('matrices_json')">
+                                🔬 Matrices Summary (JSON)
+                            </button>
+                        </li>
+                        <li style="margin-bottom: 10px;">
+                            <button class="btn btn-sm btn-outline" onclick="downloadFile('matrix_assignments_csv')">
+                                🗂️ Matrix Assignments (CSV)
+                            </button>
+                        </li>
+                        <li style="margin-bottom: 10px;">
+                            <button class="btn btn-sm btn-outline" onclick="downloadFile('fusions_json')">
+                                ⚒️ Fusions Analysis (JSON)
+                            </button>
+                        </li>
+                    </ul>
+                </div>
+                <div class="col-md-6">
+                    <h5>Reports & Visualizations</h5>
+                    <ul style="list-style: none; padding: 0;">
+                        <li style="margin-bottom: 10px;">
+                            <button class="btn btn-sm btn-primary" onclick="downloadFile('report_md')">
+                                📄 Archaeological Report (Markdown)
+                            </button>
+                        </li>
+                        <li style="margin-bottom: 10px;">
+                            <button class="btn btn-sm btn-outline" onclick="downloadFile('answers_json')">
+                                ❓ Q&A Answers (JSON)
+                            </button>
+                        </li>
+                        <li style="margin-bottom: 10px;">
+                            <button class="btn btn-sm btn-outline" onclick="downloadFile('dendrogram_png')">
+                                🌳 Dendrogram (PNG)
+                            </button>
+                        </li>
+                        <li style="margin-bottom: 10px;">
+                            <button class="btn btn-sm btn-outline" onclick="downloadFile('pca_png')">
+                                📈 PCA Clusters (PNG)
+                            </button>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Archaeological Questions Summary -->
+        <div class="result-card">
+            <h4 style="margin: 0 0 15px 0;">🔍 Archaeological Questions Answered</h4>
+            <div id="qa-summary">
+                <p style="color: #718096;">Loading Q&A summary...</p>
+            </div>
+        </div>
+
+        <button class="btn btn-secondary" onclick="startNewAnalysis()">
+            🔄 Start New Analysis
+        </button>
+    </div>
+</div>
+
+<!-- Info Panel -->
+<div class="card" style="margin-top: 30px; background: #fffaf0; border-left: 4px solid #ed8936;">
+    <h3 style="margin: 0 0 15px 0; color: #ed8936;">ℹ️ About This Analysis</h3>
+    <p style="margin: 0 0 10px 0; color: #718096;">
+        This system performs a complete archaeological analysis of the Savignano sul Panaro bronze axes hoard, answering 6 key archaeological questions:
+    </p>
+    <ol style="color: #718096; margin: 0;">
+        <li>Number of molds used and their technical characteristics (mono/bivalve, socket, raised edges)</li>
+        <li>Number of casts per mold</li>
+        <li>Post-casting treatments (hammering, central bar, butt)</li>
+        <li>Final finishing techniques (blade and butt)</li>
+        <li>Function of the butt socket (hafting hypothesis)</li>
+        <li>Use-wear intensity and preservation</li>
+    </ol>
+    <p style="margin: 15px 0 0 0; color: #718096;">
+        <strong>Methodology:</strong> Morphometric 3D analysis + Machine Learning clustering + AI interpretation (Claude Sonnet 4.5)
+    </p>
+</div>
+
+<script>
+let currentAnalysisId = null;
+let uploadedFiles = [];
+let manualWeights = {};
+
+// Toggle weights input based on radio selection
+document.querySelectorAll('input[name="weights-option"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+        const value = this.value;
+
+        // Disable all inputs
+        document.getElementById('weights-excel').disabled = (value !== 'excel');
+        document.getElementById('weights-docx').disabled = (value !== 'docx');
+        document.getElementById('weights-json').disabled = (value !== 'json');
+
+        // Show/hide manual weights container
+        document.getElementById('manual-weights-container').style.display = (value === 'manual') ? 'block' : 'none';
+
+        // Show/hide Excel help text
+        document.getElementById('excel-help').style.display = (value === 'excel') ? 'block' : 'none';
+
+        // Generate manual fields if manual selected and files already chosen
+        if (value === 'manual') {
+            generateManualWeightFields();
+        }
+    });
+});
+
+// Generate manual weight input fields when files are selected
+document.getElementById('mesh-files').addEventListener('change', function() {
+    const weightsOption = document.querySelector('input[name="weights-option"]:checked').value;
+    if (weightsOption === 'manual') {
+        generateManualWeightFields();
+    }
+});
+
+function generateManualWeightFields() {
+    const meshFilesInput = document.getElementById('mesh-files');
+    const files = meshFilesInput.files;
+    const container = document.getElementById('manual-weights-container');
+
+    if (files.length === 0) {
+        container.innerHTML = '<p style="color: #718096; font-size: 14px; margin: 0;">Select mesh files first</p>';
+        return;
+    }
+
+    let html = '<p style="color: #4a5568; font-weight: 600; margin-bottom: 12px;">Enter weight (grams) for each axe:</p>';
+    html += '<div style="max-height: 300px; overflow-y: auto;">';
+
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const filename = file.name;
+        const artifactId = filename.replace(/\.(obj|stl|ply)$/i, '');
+
+        html += `
+            <div style="margin-bottom: 12px; padding: 10px; background: #f7fafc; border-radius: 4px; display: flex; align-items: center; gap: 10px;">
+                <span style="flex: 1; color: #4a5568; font-size: 14px;">📄 ${filename}</span>
+                <input type="number"
+                       id="weight-${i}"
+                       data-artifact="${artifactId}"
+                       class="form-control"
+                       placeholder="Weight (g)"
+                       step="0.1"
+                       min="0"
+                       style="width: 150px;"
+                       value="${manualWeights[artifactId] || ''}">
+            </div>
+        `;
+    }
+
+    html += '</div>';
+    html += '<small class="form-text" style="display: block; margin-top: 10px;">Leave empty for unknown weights (peso = 0)</small>';
+
+    container.innerHTML = html;
+
+    // Add event listeners to save values
+    for (let i = 0; i < files.length; i++) {
+        const input = document.getElementById(`weight-${i}`);
+        if (input) {
+            input.addEventListener('change', function() {
+                const artifactId = this.dataset.artifact;
+                const weight = parseFloat(this.value) || 0;
+                manualWeights[artifactId] = weight;
+            });
+        }
+    }
+}
+
+// Toggle AI API key field
+document.getElementById('use-ai').addEventListener('change', function() {
+    document.getElementById('api-key-section').style.display = this.checked ? 'block' : 'none';
+});
+
+async function uploadMeshes() {
+    const meshFilesInput = document.getElementById('mesh-files');
+    const files = meshFilesInput.files;
+
+    if (files.length === 0) {
+        alert('Please select at least one mesh file');
+        return;
+    }
+
+    const uploadBtn = document.getElementById('upload-btn');
+    const progressSpan = document.getElementById('upload-progress');
+
+    uploadBtn.disabled = true;
+    progressSpan.textContent = `Uploading ${files.length} files...`;
+
+    // Prepare FormData
+    const formData = new FormData();
+    for (let file of files) {
+        formData.append('files', file);
+    }
+
+    // Add weights based on selected option
+    const weightsOption = document.querySelector('input[name="weights-option"]:checked').value;
+
+    if (weightsOption === 'manual') {
+        // Collect manual weights as JSON
+        const weightsJson = {};
+        for (let i = 0; i < files.length; i++) {
+            const filename = files[i].name;
+            const artifactId = filename.replace(/\.(obj|stl|ply)$/i, '');
+            weightsJson[artifactId] = manualWeights[artifactId] || 0;
+        }
+        formData.append('weights_json', JSON.stringify(weightsJson));
+
+    } else if (weightsOption === 'excel') {
+        const excelFile = document.getElementById('weights-excel').files[0];
+        if (excelFile) {
+            formData.append('weights_file', excelFile);
+        } else {
+            alert('Please select an Excel/CSV file');
+            uploadBtn.disabled = false;
+            progressSpan.textContent = '';
+            return;
+        }
+
+    } else if (weightsOption === 'docx') {
+        const docxFile = document.getElementById('weights-docx').files[0];
+        if (docxFile) {
+            formData.append('weights_docx', docxFile);
+        } else {
+            alert('Please select a DOCX file');
+            uploadBtn.disabled = false;
+            progressSpan.textContent = '';
+            return;
+        }
+
+    } else if (weightsOption === 'json') {
+        const jsonFile = document.getElementById('weights-json').files[0];
+        if (jsonFile) {
+            formData.append('weights_file', jsonFile);
+        } else {
+            alert('Please select a JSON file');
+            uploadBtn.disabled = false;
+            progressSpan.textContent = '';
+            return;
+        }
+    }
+    // weightsOption === 'none' → no weights sent (peso = 0 for all)
+
+    try {
+        const response = await fetch('/api/savignano/upload-batch', {
+            method: 'POST',
+            body: formData
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            currentAnalysisId = result.analysis_id;
+            uploadedFiles = result.files;
+            progressSpan.textContent = `✓ Uploaded ${result.n_files_uploaded} files successfully`;
+            document.getElementById('step-1-status').textContent = 'Completed';
+            document.getElementById('step-1-status').className = 'badge badge-success';
+            document.getElementById('step-1').classList.add('completed');
+
+            // Show step 2
+            document.getElementById('step-2').style.display = 'block';
+            document.getElementById('step-2').classList.add('active');
+            document.getElementById('step-2-status').textContent = 'Active';
+            document.getElementById('step-2-status').className = 'badge badge-warning';
+        } else {
+            alert('Upload failed: ' + result.error);
+            uploadBtn.disabled = false;
+            progressSpan.textContent = '';
+        }
+    } catch (error) {
+        alert('Upload error: ' + error.message);
+        uploadBtn.disabled = false;
+        progressSpan.textContent = '';
+    }
+}
+
+async function configureAnalysis() {
+    if (!currentAnalysisId) {
+        alert('No analysis session found. Please upload meshes first.');
+        return;
+    }
+
+    const config = {
+        clustering_method: document.getElementById('clustering-method').value,
+        max_clusters: parseInt(document.getElementById('max-clusters').value),
+        use_ai: document.getElementById('use-ai').checked,
+        anthropic_api_key: document.getElementById('anthropic-api-key').value || undefined
+    };
+
+    try {
+        const response = await fetch('/api/savignano/configure', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                analysis_id: currentAnalysisId,
+                config: config
+            })
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            document.getElementById('step-2-status').textContent = 'Completed';
+            document.getElementById('step-2-status').className = 'badge badge-success';
+            document.getElementById('step-2').classList.remove('active');
+            document.getElementById('step-2').classList.add('completed');
+
+            // Show step 3 and run analysis
+            document.getElementById('step-3').style.display = 'block';
+            document.getElementById('step-3').classList.add('active');
+            runAnalysis();
+        } else {
+            alert('Configuration failed: ' + result.error);
+        }
+    } catch (error) {
+        alert('Configuration error: ' + error.message);
+    }
+}
+
+async function runAnalysis() {
+    if (!currentAnalysisId) return;
+
+    const logDiv = document.getElementById('analysis-log');
+    const progressBar = document.getElementById('progress-bar-fill');
+
+    function addLog(message, type = 'info') {
+        const colors = {
+            'info': '#667eea',
+            'success': '#48bb78',
+            'warning': '#ed8936',
+            'error': '#f56565'
+        };
+        const entry = document.createElement('div');
+        entry.style.color = colors[type];
+        entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+        logDiv.appendChild(entry);
+        logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    addLog('Starting comprehensive analysis...', 'info');
+    progressBar.style.width = '10%';
+    progressBar.textContent = '10%';
+
+    try {
+        // Start analysis
+        addLog('Step 1/4: Extracting morphometric features from 3D meshes...', 'info');
+        progressBar.style.width = '30%';
+        progressBar.textContent = '30%';
+
+        const response = await fetch('/api/savignano/run-analysis', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({analysis_id: currentAnalysisId})
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Analysis failed');
+        }
+
+        addLog('Step 2/4: Identifying mold matrices via hierarchical clustering...', 'info');
+        progressBar.style.width = '60%';
+        progressBar.textContent = '60%';
+
+        // Poll for completion (simple version - in production use websockets)
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        addLog('Step 3/4: Estimating fusions per matrix...', 'info');
+        progressBar.style.width = '80%';
+        progressBar.textContent = '80%';
+
+        await new Promise(resolve => setTimeout(resolve, 1500));
+
+        addLog('Step 4/4: Generating archaeological Q&A with AI...', 'info');
+        progressBar.style.width = '95%';
+        progressBar.textContent = '95%';
+
+        // Get results
+        const result = await response.json();
+
+        progressBar.style.width = '100%';
+        progressBar.textContent = '100%';
+        addLog('✓ Analysis completed successfully!', 'success');
+
+        // Show results
+        document.getElementById('step-3-status').textContent = 'Completed';
+        document.getElementById('step-3-status').className = 'badge badge-success';
+        document.getElementById('step-3').classList.remove('active');
+        document.getElementById('step-3').classList.add('completed');
+
+        displayResults(result);
+
+    } catch (error) {
+        addLog('✗ Error: ' + error.message, 'error');
+        alert('Analysis failed: ' + error.message);
+    }
+}
+
+async function displayResults(result) {
+    document.getElementById('step-4').style.display = 'block';
+    document.getElementById('step-4').classList.add('active');
+
+    // Populate metrics
+    const summary = result.results_summary || result.summary || {};
+    document.getElementById('result-n-axes').textContent = summary.n_axes_analyzed || uploadedFiles.length;
+    document.getElementById('result-n-matrices').textContent = summary.n_matrices || result.results_summary?.n_matrices || '-';
+    document.getElementById('result-total-fusions').textContent = summary.total_fusions || result.results_summary?.total_fusions || '-';
+    document.getElementById('result-silhouette').textContent = summary.silhouette_score?.toFixed(2) || '-';
+
+    // Load full results for Q&A
+    try {
+        const fullResults = await fetch(`/api/savignano/results/${currentAnalysisId}`);
+        const fullData = await fullResults.json();
+
+        // Display Q&A summary (simplified)
+        const qaDiv = document.getElementById('qa-summary');
+        qaDiv.innerHTML = `
+            <p style="color: #48bb78; font-weight: bold;">✓ All 6 archaeological questions answered</p>
+            <p style="color: #718096;">Download the Archaeological Report (Markdown) for complete analysis.</p>
+        `;
+    } catch (e) {
+        console.error('Could not load full results:', e);
+    }
+}
+
+function downloadFile(fileType) {
+    if (!currentAnalysisId) {
+        alert('No analysis results available');
+        return;
+    }
+
+    window.location.href = `/api/savignano/download/${currentAnalysisId}/${fileType}`;
+}
+
+function startNewAnalysis() {
+    if (confirm('Start a new analysis? This will clear the current session.')) {
+        location.reload();
+    }
+}
+</script>
+
+{% endblock %}

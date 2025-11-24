@@ -1,0 +1,975 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Archaeological Classifier{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <div class="page-header">
+        <h1>Dashboard</h1>
+        <p class="subtitle">Overview of your archaeological analysis project</p>
+    </div>
+
+    <!-- Current Project Section -->
+    <div class="card" style="margin-bottom: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <h2 style="color: white; margin: 0 0 10px 0;">📁 Current Project</h2>
+                <div id="current-project-info">
+                    <p style="color: rgba(255,255,255,0.9); margin: 0;">Loading...</p>
+                </div>
+            </div>
+            <div>
+                <select id="project-selector" class="form-control" style="min-width: 250px; font-size: 16px;" onchange="changeProject()">
+                    <option value="">-- No Project Selected --</option>
+                </select>
+            </div>
+        </div>
+        <div id="project-stats" style="display: none; margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.2);">
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px;">
+                <div style="text-align: center;">
+                    <div style="font-size: 32px; font-weight: bold;" id="project-artifacts">0</div>
+                    <div style="color: rgba(255,255,255,0.8); font-size: 14px;">Artifacts</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 32px; font-weight: bold;" id="project-classified">0</div>
+                    <div style="color: rgba(255,255,255,0.8); font-size: 14px;">Classified</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 32px; font-weight: bold;" id="project-validated">0</div>
+                    <div style="color: rgba(255,255,255,0.8); font-size: 14px;">Validated</div>
+                </div>
+                <div style="text-align: center;">
+                    <a href="/web/projects-page" style="display: inline-block; background: rgba(255,255,255,0.2); color: white; padding: 10px 20px; border-radius: 5px; text-decoration: none; font-weight: bold;">
+                        Manage Projects →
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Workflow Guide -->
+    <div class="card" style="margin-bottom: 30px; background: linear-gradient(to right, #f7fafc, #ffffff); border: 2px solid #667eea;">
+        <h2 style="color: #667eea; margin: 0 0 10px 0;">📋 Analysis Workflow Guide</h2>
+        <p style="color: #718096; margin-bottom: 20px;">Follow these steps for a complete archaeological analysis</p>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+            <!-- Step 1 -->
+            <div style="background: white; border-radius: 8px; padding: 15px; border-left: 4px solid #667eea; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                    <div style="background: #667eea; color: white; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 16px;">1</div>
+                    <h3 style="margin: 0; font-size: 15px; color: #2d3748;">Project Setup</h3>
+                </div>
+                <p style="color: #718096; font-size: 13px; margin: 0 0 10px 0;">Create or select project from dropdown above</p>
+                <a href="/web/projects-page" class="btn btn-sm btn-outline" style="font-size: 12px; padding: 6px 12px;">Manage Projects →</a>
+            </div>
+
+            <!-- Step 2 -->
+            <div style="background: white; border-radius: 8px; padding: 15px; border-left: 4px solid #764ba2; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                    <div style="background: #764ba2; color: white; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 16px;">2</div>
+                    <h3 style="margin: 0; font-size: 15px; color: #2d3748;">Upload Meshes</h3>
+                </div>
+                <p style="color: #718096; font-size: 13px; margin: 0 0 10px 0;">Upload 3D artifact meshes (.obj, .stl, .ply format)</p>
+                <a href="/web/upload" class="btn btn-sm btn-primary" style="font-size: 12px; padding: 6px 12px;">📤 Upload →</a>
+            </div>
+
+            <!-- Step 3 -->
+            <div style="background: white; border-radius: 8px; padding: 15px; border-left: 4px solid #f687b3; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                    <div style="background: #f687b3; color: white; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 16px;">3</div>
+                    <h3 style="margin: 0; font-size: 15px; color: #2d3748;">AI Analysis</h3>
+                </div>
+                <p style="color: #718096; font-size: 13px; margin: 0 0 10px 0;">Extract features + technological analysis (auto-run or batch)</p>
+                <a href="/web/technological-analysis-batch-page" class="btn btn-sm btn-secondary" style="font-size: 12px; padding: 6px 12px;">🔬 Batch Analysis →</a>
+            </div>
+
+            <!-- Step 4 -->
+            <div style="background: white; border-radius: 8px; padding: 15px; border-left: 4px solid #ed8936; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                    <div style="background: #ed8936; color: white; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 16px;">4</div>
+                    <h3 style="margin: 0; font-size: 15px; color: #2d3748;">Classification</h3>
+                </div>
+                <p style="color: #718096; font-size: 13px; margin: 0 0 10px 0;">Define taxonomy classes and classify artifacts</p>
+                <a href="/web/classify-management" class="btn btn-sm btn-secondary" style="font-size: 12px; padding: 6px 12px;">🎯 Classify →</a>
+            </div>
+
+            <!-- Step 5 -->
+            <div style="background: white; border-radius: 8px; padding: 15px; border-left: 4px solid #48bb78; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                    <div style="background: #48bb78; color: white; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 16px;">5</div>
+                    <h3 style="margin: 0; font-size: 15px; color: #2d3748;">Model Training</h3>
+                </div>
+                <p style="color: #718096; font-size: 13px; margin: 0 0 10px 0;">Train ML models when sufficient data is available</p>
+                <a href="/web/classify-management" class="btn btn-sm btn-secondary" style="font-size: 12px; padding: 6px 12px;">🧠 Train Model →</a>
+            </div>
+
+            <!-- Step 6 -->
+            <div style="background: white; border-radius: 8px; padding: 15px; border-left: 4px solid #4299e1; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                    <div style="background: #4299e1; color: white; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 16px;">6</div>
+                    <h3 style="margin: 0; font-size: 15px; color: #2d3748;">Export Reports</h3>
+                </div>
+                <p style="color: #718096; font-size: 13px; margin: 0 0 10px 0;">Generate PDF reports with 3D renders and AI insights</p>
+                <a href="/web/artifacts" class="btn btn-sm btn-outline" style="font-size: 12px; padding: 6px 12px;">📄 View Artifacts →</a>
+            </div>
+        </div>
+
+        <div style="margin-top: 20px; padding: 15px; background: #fffbeb; border-radius: 8px; border-left: 4px solid #f59e0b;">
+            <div style="display: flex; gap: 10px;">
+                <div style="color: #f59e0b; font-size: 20px;">💡</div>
+                <div>
+                    <strong style="color: #92400e;">Quick Tip:</strong>
+                    <span style="color: #78350f; font-size: 14px;">
+                        For best results, upload multiple similar artifacts, run batch technological analysis, then classify and validate. Once you have 5+ validated classifications per class, train your ML model for automatic classification.
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon">📦</div>
+            <div class="stat-content">
+                <h3>{{ stats.meshes_loaded }}</h3>
+                <p>Meshes Loaded</p>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon">📊</div>
+            <div class="stat-content">
+                <h3>{{ stats.features_analyzed }}</h3>
+                <p>Features Analyzed</p>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon">🏷️</div>
+            <div class="stat-content">
+                <h3>{{ stats.classes_defined }}</h3>
+                <p>Classes Defined</p>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon">✓</div>
+            <div class="stat-content">
+                <h3>{{ stats.total_classifications }}</h3>
+                <p>Classifications</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="content-grid">
+        <!-- AI Assistant Card -->
+        <div class="card ai-assistant-card" style="grid-column: 1 / -1; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+            <h2 style="color: white;">🤖 AI Assistant</h2>
+            <p style="color: rgba(255,255,255,0.9);">Intelligent artifact analysis with Claude 4.5 Sonnet</p>
+
+            <div id="ai-key-status-mini" style="margin: 15px 0; padding: 12px; background: rgba(255,255,255,0.1); border-radius: 6px;">
+                <strong>API Key:</strong> <span id="ai-key-status-text">Checking...</span>
+            </div>
+
+            <div class="ai-actions" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-top: 20px;">
+                <div class="ai-action-card" style="background: rgba(255,255,255,0.15); padding: 15px; border-radius: 8px; cursor: pointer;" onclick="showAIAnalysis()">
+                    <h4 style="color: white; margin: 0 0 8px 0;">🔍 Single Artifact Analysis</h4>
+                    <p style="color: rgba(255,255,255,0.8); font-size: 13px; margin: 0;">Analyze one artifact with morphometric and stylistic features</p>
+                </div>
+
+                <div class="ai-action-card" style="background: rgba(255,255,255,0.15); padding: 15px; border-radius: 8px; cursor: pointer;" onclick="showMultiArtifactAnalysis()">
+                    <h4 style="color: white; margin: 0 0 8px 0;">📊 Multi-Artifact Analysis</h4>
+                    <p style="color: rgba(255,255,255,0.8); font-size: 13px; margin: 0;">Analyze multiple artifacts together for patterns and grouping</p>
+                </div>
+
+                <div class="ai-action-card" style="background: rgba(255,255,255,0.15); padding: 15px; border-radius: 8px; cursor: pointer;" onclick="showParameterSuggestion()">
+                    <h4 style="color: white; margin: 0 0 8px 0;">⚙️ Parameter Optimization</h4>
+                    <p style="color: rgba(255,255,255,0.8); font-size: 13px; margin: 0;">Get AI suggestions for optimal analysis parameters</p>
+                </div>
+
+                <div class="ai-action-card" style="background: rgba(255,255,255,0.15); padding: 15px; border-radius: 8px; cursor: pointer;" onclick="window.location.href='/web/classify-management'">
+                    <h4 style="color: white; margin: 0 0 8px 0;">🎯 Classification Management</h4>
+                    <p style="color: rgba(255,255,255,0.8); font-size: 13px; margin: 0;">Manage taxonomy classes, create custom types, and train ML models</p>
+                </div>
+
+                <div class="ai-action-card" style="background: rgba(255,255,255,0.15); padding: 15px; border-radius: 8px; cursor: pointer;" onclick="window.location.href='/web/technological-analysis-batch-page'">
+                    <h4 style="color: white; margin: 0 0 8px 0;">🔬 Batch Tech Analysis</h4>
+                    <p style="color: rgba(255,255,255,0.8); font-size: 13px; margin: 0;">Analyze manufacturing techniques, wear patterns, and production methods for multiple artifacts</p>
+                </div>
+
+                <div class="ai-action-card" style="background: rgba(255,255,255,0.15); padding: 15px; border-radius: 8px; cursor: pointer;" onclick="window.location.href='/web/savignano-compare'">
+                    <h4 style="color: white; margin: 0 0 8px 0;">🗡️ Savignano Axes Analysis</h4>
+                    <p style="color: rgba(255,255,255,0.8); font-size: 13px; margin: 0;">Compare Bronze Age axes morphometry and identify casting matrices</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Quick Actions</h2>
+            <div class="action-buttons">
+                <a href="{{ url_for('web.upload_page') }}" class="btn btn-primary">
+                    📤 Upload Meshes
+                </a>
+                <button onclick="runQuickAnalysis()" class="btn btn-secondary">
+                    📊 Run Analysis
+                </button>
+                <a href="{{ url_for('web.taxonomy_page') }}" class="btn btn-secondary">
+                    🏷️ Manage Taxonomy
+                </a>
+                <a href="{{ url_for('web.technological_analysis_batch_page') }}" class="btn btn-secondary">
+                    🔬 Batch Tech Analysis
+                </a>
+                <a href="{{ url_for('web.savignano_compare_page') }}" class="btn btn-secondary">
+                    🗡️ Savignano Compare
+                </a>
+                <button onclick="exportData()" class="btn btn-outline">
+                    💾 Export Data
+                </button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Recent Activity</h2>
+            <div id="recent-activity">
+                <p class="text-muted">No recent activity</p>
+            </div>
+        </div>
+
+        <div class="card full-width">
+            <h2>System Status</h2>
+            <div class="status-grid">
+                <div class="status-item">
+                    <span class="status-label">Mesh Processor</span>
+                    <span class="status-badge status-active">Active</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Morphometric Analyzer</span>
+                    <span class="status-badge status-active">Active</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Taxonomy System</span>
+                    <span class="status-badge status-active">Active</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">API Server</span>
+                    <span class="status-badge status-active">Running</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function runQuickAnalysis() {
+    if ({{ stats.features_analyzed }} < 2) {
+        alert('Need at least 2 artifacts for analysis. Please upload meshes first.');
+        return;
+    }
+
+    const confirmed = confirm('Run PCA and clustering analysis?');
+    if (!confirmed) return;
+
+    try {
+        // Run PCA
+        const pcaResponse = await fetch('/web/run-pca', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({explained_variance: 0.95})
+        });
+
+        if (pcaResponse.ok) {
+            alert('Analysis completed! Check the Analysis page for results.');
+            window.location.href = '/web/morphometric';
+        } else {
+            const error = await pcaResponse.json();
+            alert('Error: ' + error.error);
+        }
+    } catch (error) {
+        alert('Error running analysis: ' + error.message);
+    }
+}
+
+async function exportData() {
+    const type = prompt('Export type (taxonomy or features):', 'taxonomy');
+    if (!type) return;
+
+    try {
+        const response = await fetch('/web/export-data', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({type: type})
+        });
+
+        const result = await response.json();
+        if (response.ok) {
+            alert('Data exported: ' + result.filename);
+        } else {
+            alert('Error: ' + result.error);
+        }
+    } catch (error) {
+        alert('Error exporting data: ' + error.message);
+    }
+}
+
+// Project Management
+async function loadProjects() {
+    try {
+        const response = await fetch('/web/projects?status=all');  // Load all projects including archived
+        const data = await response.json();
+
+        if (response.ok && data.projects) {
+            const select = document.getElementById('project-selector');
+            select.innerHTML = '<option value="">-- No Project Selected --</option>';
+
+            data.projects.forEach(project => {
+                const option = document.createElement('option');
+                option.value = project.project_id;
+
+                // Show status for archived projects
+                const statusLabel = project.status === 'archived' ? ' [ARCHIVED]' : '';
+                const artifactCount = project.stats?.total_artifacts || 0;
+                option.textContent = `${project.project_name} (${artifactCount} artifacts)${statusLabel}`;
+
+                select.appendChild(option);
+            });
+
+            // Load current project from localStorage
+            const currentProjectId = localStorage.getItem('currentProject');
+            if (currentProjectId) {
+                select.value = currentProjectId;
+                await loadProjectStats(currentProjectId);
+            } else {
+                document.getElementById('current-project-info').innerHTML = '<p style="color: rgba(255,255,255,0.9); margin: 0; font-size: 16px;">No project selected. Select a project or upload artifacts without a project.</p>';
+            }
+        }
+    } catch (error) {
+        console.error('Failed to load projects:', error);
+    }
+}
+
+async function loadProjectStats(projectId) {
+    if (!projectId) {
+        document.getElementById('project-stats').style.display = 'none';
+        document.getElementById('current-project-info').innerHTML = '<p style="color: rgba(255,255,255,0.9); margin: 0; font-size: 16px;">No project selected</p>';
+        return;
+    }
+
+    try {
+        const response = await fetch(`/web/projects/${projectId}`);
+        const data = await response.json();
+
+        if (response.ok && data.project) {
+            const project = data.project;
+            const stats = data.stats || {};  // Fixed: stats is at data.stats, not project.stats
+
+            document.getElementById('current-project-info').innerHTML = `
+                <h3 style="color: white; margin: 0 0 5px 0; font-size: 24px;">${project.project_name}</h3>
+                <p style="color: rgba(255,255,255,0.8); margin: 0;">${project.description || 'No description'}</p>
+                <small style="color: rgba(255,255,255,0.6);">Status: ${project.status} | Created: ${new Date(project.created_date).toLocaleDateString()}</small>
+            `;
+
+            document.getElementById('project-artifacts').textContent = stats.total_artifacts || 0;
+            document.getElementById('project-classified').textContent = stats.total_classifications || 0;
+            document.getElementById('project-validated').textContent = stats.validated_classifications || 0;
+
+            document.getElementById('project-stats').style.display = 'block';
+        }
+    } catch (error) {
+        console.error('Failed to load project stats:', error);
+    }
+}
+
+function changeProject() {
+    const select = document.getElementById('project-selector');
+    const projectId = select.value;
+
+    if (projectId) {
+        localStorage.setItem('currentProject', projectId);
+        loadProjectStats(projectId);
+    } else {
+        localStorage.removeItem('currentProject');
+        document.getElementById('project-stats').style.display = 'none';
+        document.getElementById('current-project-info').innerHTML = '<p style="color: rgba(255,255,255,0.9); margin: 0; font-size: 16px;">No project selected</p>';
+    }
+}
+
+// AI Assistant Functions
+async function checkAIKeyStatus() {
+    try {
+        const response = await fetch('/web/config/api-key');
+        const data = await response.json();
+
+        const statusText = document.getElementById('ai-key-status-text');
+        if (data.configured) {
+            statusText.innerHTML = `<span style="color: #4ade80;">✓ Configured</span> ${data.masked_key || ''}`;
+        } else {
+            statusText.innerHTML = `<span style="color: #fbbf24;">⚠ Not configured</span> - <a href="{{ url_for('web.ai_assistant_page') }}" style="color: white; text-decoration: underline;">Set API Key</a>`;
+        }
+    } catch (error) {
+        console.error('Error checking AI key:', error);
+    }
+}
+
+function showAIAnalysis() {
+    // Redirect to AI assistant page with auto-focus on single artifact analysis
+    window.location.href = '{{ url_for("web.ai_assistant_page") }}#single-analysis';
+}
+
+async function showMultiArtifactAnalysis() {
+    // Create modal for multi-artifact selection
+    const modal = createModal('Multi-Artifact Analysis', `
+        <p>Select artifacts to analyze together:</p>
+        <div id="artifact-selection" style="max-height: 300px; overflow-y: auto; margin: 15px 0;">
+            <p>Loading artifacts...</p>
+        </div>
+        <div class="form-group">
+            <label for="multi-context">Archaeological Context (optional):</label>
+            <textarea id="multi-context" class="form-control" rows="3"
+                      placeholder="E.g., Bronze Age axes from Savignano excavation..."></textarea>
+        </div>
+    `, [
+        {
+            label: '🤖 Analyze with AI',
+            class: 'btn-primary',
+            onclick: runMultiArtifactAnalysis
+        },
+        {
+            label: 'Cancel',
+            class: 'btn-secondary',
+            onclick: () => closeModal()
+        }
+    ]);
+
+    // Load artifacts
+    try {
+        const response = await fetch('/web/statistics');
+        const data = await response.json();
+        const artifacts = data.meshes?.artifacts || [];  // Fixed: use 'artifacts' not 'ids'
+
+        const selectionDiv = document.getElementById('artifact-selection');
+        if (artifacts.length === 0) {
+            selectionDiv.innerHTML = '<p style="color: #666;">No artifacts loaded. Please upload meshes first.</p>';
+        } else {
+            selectionDiv.innerHTML = artifacts.map(id => `
+                <label style="display: block; padding: 8px; border-bottom: 1px solid #eee;">
+                    <input type="checkbox" name="artifact" value="${id}" style="margin-right: 8px;">
+                    ${id}
+                </label>
+            `).join('');
+        }
+    } catch (error) {
+        document.getElementById('artifact-selection').innerHTML =
+            `<p style="color: #dc2626;">Error loading artifacts: ${error.message}</p>`;
+    }
+}
+
+async function runMultiArtifactAnalysis() {
+    const checkboxes = document.querySelectorAll('input[name="artifact"]:checked');
+    const artifactIds = Array.from(checkboxes).map(cb => cb.value);
+    const context = document.getElementById('multi-context').value;
+
+    if (artifactIds.length < 2) {
+        alert('Please select at least 2 artifacts for multi-analysis');
+        return;
+    }
+
+    closeModal();
+
+    // Show loading modal
+    const loadingModal = createModal('Analyzing...', `
+        <div style="text-align: center; padding: 30px;">
+            <div class="spinner" style="margin: 0 auto 20px;"></div>
+            <p>AI is analyzing ${artifactIds.length} artifacts...</p>
+            <p style="color: #666; font-size: 13px;">This may take a minute...</p>
+        </div>
+    `, []);
+
+    try {
+        const response = await fetch('/web/ai-multi-analyze', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({artifact_ids: artifactIds, context})
+        });
+
+        const data = await response.json();
+        closeModal();
+
+        if (response.ok) {
+            displayMultiAnalysisResults(data);
+        } else {
+            alert(`Error: ${data.error}`);
+        }
+    } catch (error) {
+        closeModal();
+        alert(`Error: ${error.message}`);
+    }
+}
+
+function displayMultiAnalysisResults(data) {
+    const analysis = data.analysis;
+
+    let content = `
+        <div style="max-height: 600px; overflow-y: auto;">
+            <h4>Collection Overview</h4>
+            <p>${analysis?.collection_overview || data.raw_text || 'No analysis available'}</p>
+    `;
+
+    if (analysis?.suggested_groups) {
+        content += `<h4>Suggested Groups (${analysis.suggested_groups.length})</h4>`;
+        analysis.suggested_groups.forEach((group, i) => {
+            content += `
+                <div style="background: #f3f4f6; padding: 15px; margin: 10px 0; border-radius: 8px;">
+                    <h5 style="color: #667eea;">${group.group_name}</h5>
+                    <p><strong>Artifacts:</strong> ${group.artifact_ids?.join(', ')}</p>
+                    <p><strong>Diagnostic Features:</strong> ${group.diagnostic_features?.join(', ')}</p>
+                </div>
+            `;
+        });
+    }
+
+    if (analysis?.batch_recommendation) {
+        content += `
+            <div style="background: #ecfdf5; padding: 15px; margin: 20px 0; border-radius: 8px; border-left: 4px solid #10b981;">
+                <h4 style="color: #059669;">Batch Processing Recommendation</h4>
+                <p><strong>Auto-apply:</strong> ${analysis.batch_recommendation.auto_apply ? 'Yes' : 'No'}</p>
+                <p>${analysis.batch_recommendation.workflow}</p>
+            </div>
+        `;
+
+        if (analysis.batch_recommendation.auto_apply && analysis.individual_analyses) {
+            content += `
+                <button onclick="applyBatchParameters(${JSON.stringify(analysis.individual_analyses).replace(/"/g, '&quot;')})"
+                        class="btn btn-primary" style="margin-top: 15px;">
+                    ✓ Apply Recommended Parameters
+                </button>
+            `;
+        }
+    }
+
+    content += '</div>';
+
+    createModal('Multi-Artifact Analysis Results', content, [
+        {label: 'Close', class: 'btn-primary', onclick: closeModal}
+    ]);
+}
+
+async function showParameterSuggestion() {
+    // Load artifacts first
+    let artifacts = [];
+    try {
+        const response = await fetch('/web/statistics');
+        const data = await response.json();
+        artifacts = data.meshes?.artifacts || [];
+    } catch (error) {
+        console.error('Error loading artifacts:', error);
+    }
+
+    // Create modal with artifact list
+    let artifactList = '';
+    if (artifacts.length === 0) {
+        artifactList = '<p style="color: #666;">No artifacts loaded. Please upload meshes first.</p>';
+    } else {
+        artifactList = `
+            <div style="margin-bottom: 15px;">
+                <button onclick="toggleAllParams()" class="btn btn-sm btn-secondary" style="margin-bottom: 10px;">
+                    Select All / Deselect All
+                </button>
+            </div>
+            <div id="param-artifact-selection" style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 10px;">
+                ${artifacts.map(id => `
+                    <label style="display: block; padding: 8px; border-bottom: 1px solid #eee; cursor: pointer;">
+                        <input type="checkbox" name="param-artifact" value="${id}" style="margin-right: 8px;">
+                        ${id}
+                    </label>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    createModal('Parameter Optimization', `
+        <p>Select one or more artifacts to get AI parameter suggestions:</p>
+        ${artifactList}
+    `, [
+        {
+            label: '⚙️ Get Suggestions',
+            class: 'btn-primary',
+            onclick: runParameterSuggestion
+        },
+        {
+            label: 'Cancel',
+            class: 'btn-secondary',
+            onclick: () => closeModal()
+        }
+    ]);
+}
+
+function toggleAllParams() {
+    const checkboxes = document.querySelectorAll('input[name="param-artifact"]');
+    const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+    checkboxes.forEach(cb => cb.checked = !allChecked);
+}
+
+async function runParameterSuggestion() {
+    const checkboxes = document.querySelectorAll('input[name="param-artifact"]:checked');
+    const artifactIds = Array.from(checkboxes).map(cb => cb.value);
+
+    if (artifactIds.length === 0) {
+        alert('Please select at least one artifact');
+        return;
+    }
+
+    closeModal();
+
+    // If multiple artifacts selected, process each one
+    const results = [];
+
+    for (const artifactId of artifactIds) {
+        const loadingModal = createModal('Analyzing...', `
+            <div style="text-align: center; padding: 30px;">
+                <div class="spinner" style="margin: 0 auto 20px;"></div>
+                <p>AI is analyzing ${artifactId}...</p>
+                <p style="color: #666; font-size: 13px;">Processing ${results.length + 1} of ${artifactIds.length}</p>
+            </div>
+        `, []);
+
+        try {
+            const response = await fetch('/web/ai-suggest-parameters', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({artifact_id: artifactId})
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                results.push({
+                    artifact_id: artifactId,
+                    parameters: data.parameters,
+                    raw_text: data.raw_text,
+                    success: true
+                });
+            } else {
+                results.push({
+                    artifact_id: artifactId,
+                    error: data.error,
+                    success: false
+                });
+            }
+        } catch (error) {
+            results.push({
+                artifact_id: artifactId,
+                error: error.message,
+                success: false
+            });
+        }
+    }
+
+    closeModal();
+
+    // Display all results
+    displayBatchParameterSuggestions(results);
+}
+
+function displayBatchParameterSuggestions(results) {
+    let content = `
+        <div style="max-height: 600px; overflow-y: auto;">
+            <h3 style="margin-top: 0;">Parameter Suggestions (${results.length} artifacts)</h3>
+    `;
+
+    // Show successful results
+    const successful = results.filter(r => r.success);
+    const failed = results.filter(r => !r.success);
+
+    if (successful.length > 0) {
+        content += `<h4 style="color: #10b981; margin-top: 20px;">✓ Successful (${successful.length})</h4>`;
+
+        successful.forEach(result => {
+            const params = result.parameters;
+            content += `
+                <div style="background: #f3f4f6; padding: 15px; margin: 10px 0; border-radius: 8px; border-left: 4px solid #10b981;">
+                    <h5 style="color: #374151; margin-top: 0;">${result.artifact_id}</h5>
+
+                    ${params?.morphometric_params ? `
+                        <details style="margin: 10px 0;">
+                            <summary style="cursor: pointer; font-weight: bold; color: #667eea;">Morphometric Parameters</summary>
+                            <pre style="background: white; padding: 10px; margin-top: 10px; border-radius: 4px; overflow-x: auto; font-size: 11px;">${JSON.stringify(params.morphometric_params, null, 2)}</pre>
+                        </details>
+                    ` : ''}
+
+                    ${params?.taxonomic_params ? `
+                        <details style="margin: 10px 0;">
+                            <summary style="cursor: pointer; font-weight: bold; color: #667eea;">Taxonomic Parameters</summary>
+                            <pre style="background: white; padding: 10px; margin-top: 10px; border-radius: 4px; overflow-x: auto; font-size: 11px;">${JSON.stringify(params.taxonomic_params, null, 2)}</pre>
+                        </details>
+                    ` : ''}
+
+                    ${params?.reasoning ? `
+                        <details style="margin: 10px 0;">
+                            <summary style="cursor: pointer; font-weight: bold; color: #059669;">AI Reasoning</summary>
+                            <p style="margin-top: 10px; line-height: 1.6;">${params.reasoning}</p>
+                        </details>
+                    ` : ''}
+                </div>
+            `;
+        });
+
+        // Store results for batch application
+        window.batchParameterResults = successful.map(r => ({
+            artifact_id: r.artifact_id,
+            parameters: r.parameters
+        }));
+
+        content += `
+            <div style="margin-top: 20px; padding: 15px; background: #dbeafe; border-radius: 8px; border-left: 4px solid #3b82f6;">
+                <h4 style="color: #1e40af; margin-top: 0;">Apply Parameters</h4>
+                <p>Click below to apply these parameters to all ${successful.length} artifact(s) and run analysis.</p>
+                <button id="apply-batch-params-btn" class="btn btn-primary" style="width: 100%; padding: 12px; font-size: 15px;">
+                    ✓ Apply Parameters to All ${successful.length} Artifacts
+                </button>
+            </div>
+        `;
+    }
+
+    if (failed.length > 0) {
+        content += `<h4 style="color: #ef4444; margin-top: 20px;">✗ Failed (${failed.length})</h4>`;
+        failed.forEach(result => {
+            content += `
+                <div style="background: #fee2e2; padding: 15px; margin: 10px 0; border-radius: 8px; border-left: 4px solid #ef4444;">
+                    <h5 style="margin-top: 0;">${result.artifact_id}</h5>
+                    <p style="color: #dc2626;">Error: ${result.error}</p>
+                </div>
+            `;
+        });
+    }
+
+    content += `</div>`;
+
+    createModal('Batch Parameter Suggestions', content, [
+        {label: 'Close', class: 'btn-secondary', onclick: closeModal}
+    ]);
+
+    // Add event listener for apply button after modal is created
+    setTimeout(() => {
+        const applyBtn = document.getElementById('apply-batch-params-btn');
+        if (applyBtn) {
+            applyBtn.onclick = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                applyBatchParametersFromSuggestions();
+            };
+        }
+    }, 100);
+}
+
+async function applyBatchParametersFromSuggestions() {
+    if (!window.batchParameterResults || window.batchParameterResults.length === 0) {
+        alert('No parameters to apply');
+        return;
+    }
+
+    if (!confirm(`Apply parameters to ${window.batchParameterResults.length} artifacts and run analysis?`)) {
+        return;
+    }
+
+    closeModal();
+
+    try {
+        const response = await fetch('/web/ai-apply-batch-analysis', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                confirmed: true,
+                artifacts_params: window.batchParameterResults
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            alert(`✓ Batch analysis complete!\n\n${data.successful} of ${data.total_processed} artifacts processed successfully.`);
+            // Optionally reload artifacts page
+            if (window.location.pathname.includes('/artifacts')) {
+                location.reload();
+            }
+        } else {
+            alert(`Error: ${data.error}`);
+        }
+    } catch (error) {
+        alert(`Error: ${error.message}`);
+    }
+}
+
+function displayParameterSuggestions(artifactId, data) {
+    // This is now a wrapper for single artifact - just call batch with one result
+    displayBatchParameterSuggestions([{
+        artifact_id: artifactId,
+        parameters: data.parameters,
+        raw_text: data.raw_text,
+        success: true
+    }]);
+}
+
+async function applyParameters(artifactId, parameters) {
+    if (!confirm(`Apply these parameters to ${artifactId} and run analysis?`)) {
+        return;
+    }
+
+    closeModal();
+
+    try {
+        const response = await fetch('/web/ai-apply-batch-analysis', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                confirmed: true,
+                artifacts_params: [{
+                    artifact_id: artifactId,
+                    parameters: parameters
+                }]
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            alert(`✓ Parameters applied successfully!\n${data.successful} of ${data.total_processed} artifacts processed.`);
+        } else {
+            alert(`Error: ${data.error}`);
+        }
+    } catch (error) {
+        alert(`Error: ${error.message}`);
+    }
+}
+
+async function applyBatchParameters(analyses) {
+    const artifactsParams = analyses.map(a => ({
+        artifact_id: a.artifact_id,
+        parameters: a.parameters_to_apply
+    }));
+
+    if (!confirm(`Apply parameters to ${artifactsParams.length} artifacts and run analysis?`)) {
+        return;
+    }
+
+    closeModal();
+
+    try {
+        const response = await fetch('/web/ai-apply-batch-analysis', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                confirmed: true,
+                artifacts_params: artifactsParams
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            alert(`✓ Batch analysis complete!\n${data.successful} of ${data.total_processed} artifacts processed successfully.`);
+        } else {
+            alert(`Error: ${data.error}`);
+        }
+    } catch (error) {
+        alert(`Error: ${error.message}`);
+    }
+}
+
+// Modal helper functions
+function createModal(title, content, buttons) {
+    // Remove existing modal
+    const existing = document.getElementById('ai-modal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'ai-modal';
+    modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); z-index: 10000; display: flex; align-items: center; justify-content: center;';
+
+    // Close on outside click
+    modal.onclick = function(e) {
+        if (e.target === modal) {
+            closeModal();
+        }
+    };
+
+    const modalContent = document.createElement('div');
+    modalContent.style.cssText = 'background: white; padding: 30px; border-radius: 12px; max-width: 800px; width: 90%; max-height: 90vh; overflow-y: auto;';
+
+    // Prevent click propagation
+    modalContent.onclick = function(e) {
+        e.stopPropagation();
+    };
+
+    modalContent.innerHTML = `
+        <h3 style="margin: 0 0 20px 0; color: #667eea;">${title}</h3>
+        <div>${content}</div>
+        <div id="modal-buttons" style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+        </div>
+    `;
+
+    modal.appendChild(modalContent);
+    document.body.appendChild(modal);
+
+    // Add button event listeners AFTER modal is in DOM
+    const buttonContainer = document.getElementById('modal-buttons');
+    buttons.forEach((btn, index) => {
+        const button = document.createElement('button');
+        button.className = `btn ${btn.class}`;
+        button.textContent = btn.label;
+        button.onclick = function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            btn.onclick();
+        };
+        buttonContainer.appendChild(button);
+    });
+
+    return modal;
+}
+
+function closeModal() {
+    const modal = document.getElementById('ai-modal');
+    if (modal) modal.remove();
+}
+
+// Load projects on page load
+document.addEventListener('DOMContentLoaded', () => {
+    loadProjects();
+    checkAIKeyStatus();
+});
+
+// Auto-refresh stats every 30 seconds
+setInterval(() => {
+    fetch('/web/statistics')
+        .then(r => r.json())
+        .then(data => {
+            // Update stats if needed
+            console.log('Stats updated', data);
+        });
+    checkAIKeyStatus();
+}, 30000);
+</script>
+
+<style>
+.spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #e2e8f0;
+    border-top-color: #667eea;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.ai-action-card:hover {
+    background: rgba(255,255,255,0.25) !important;
+    transform: translateY(-2px);
+    transition: all 0.3s ease;
+}
+</style>
+{% endblock %}

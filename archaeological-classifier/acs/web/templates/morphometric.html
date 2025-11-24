@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+
+{% block title %}Morphometric Analysis - Archaeological Classifier{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1>Morphometric Analysis</h1>
+        <p class="subtitle">PCA, clustering, and similarity analysis</p>
+    </div>
+
+    <div class="analysis-container">
+        <div class="card">
+            <h2>Principal Component Analysis (PCA)</h2>
+            <div class="form-group">
+                <label>Number of Components (leave empty for auto)</label>
+                <input type="number" id="pca-components" class="form-input" placeholder="Auto">
+            </div>
+            <div class="form-group">
+                <label>Explained Variance Threshold</label>
+                <input type="number" id="pca-variance" class="form-input" value="0.95" step="0.05" min="0.5" max="1.0">
+            </div>
+            <button onclick="runPCA()" class="btn btn-primary">Run PCA</button>
+            <div id="pca-results" class="results-container"></div>
+        </div>
+
+        <div class="card">
+            <h2>Clustering Analysis</h2>
+            <div class="form-group">
+                <label>Method</label>
+                <select id="cluster-method" class="form-input" onchange="updateClusteringOptions()">
+                    <option value="hierarchical">Hierarchical</option>
+                    <option value="dbscan">DBSCAN</option>
+                </select>
+            </div>
+
+            <div id="hierarchical-options">
+                <div class="form-group">
+                    <label>Number of Clusters</label>
+                    <input type="number" id="n-clusters" class="form-input" value="5" min="2">
+                </div>
+                <div class="form-group">
+                    <label>Linkage Method</label>
+                    <select id="linkage-method" class="form-input">
+                        <option value="ward">Ward</option>
+                        <option value="complete">Complete</option>
+                        <option value="average">Average</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="dbscan-options" style="display: none;">
+                <div class="form-group">
+                    <label>Epsilon (eps)</label>
+                    <input type="number" id="eps" class="form-input" value="0.5" step="0.1">
+                </div>
+                <div class="form-group">
+                    <label>Min Samples</label>
+                    <input type="number" id="min-samples" class="form-input" value="3" min="2">
+                </div>
+            </div>
+
+            <button onclick="runClustering()" class="btn btn-primary">Run Clustering</button>
+            <div id="clustering-results" class="results-container"></div>
+        </div>
+
+        <div class="card full-width">
+            <h2>Visualization</h2>
+            <div id="viz-container" class="viz-container">
+                <p class="text-muted">Run analysis to see visualizations</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function updateClusteringOptions() {
+    const method = document.getElementById('cluster-method').value;
+    document.getElementById('hierarchical-options').style.display =
+        method === 'hierarchical' ? 'block' : 'none';
+    document.getElementById('dbscan-options').style.display =
+        method === 'dbscan' ? 'block' : 'none';
+}
+
+async function runPCA() {
+    const components = document.getElementById('pca-components').value;
+    const variance = parseFloat(document.getElementById('pca-variance').value);
+
+    const resultsDiv = document.getElementById('pca-results');
+    resultsDiv.innerHTML = '<p class="loading">Running PCA...</p>';
+
+    try {
+        const response = await fetch('/web/run-pca', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                n_components: components ? parseInt(components) : null,
+                explained_variance: variance
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            displayPCAResults(data.results);
+        } else {
+            resultsDiv.innerHTML = `<p class="error">Error: ${data.error}</p>`;
+        }
+    } catch (error) {
+        resultsDiv.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+    }
+}
+
+function displayPCAResults(results) {
+    const resultsDiv = document.getElementById('pca-results');
+
+    let html = '<div class="success-message">✓ PCA completed successfully</div>';
+    html += `<p><strong>Components:</strong> ${results.n_components}</p>`;
+    html += `<p><strong>Total Variance Explained:</strong> ${(results.cumulative_variance[results.cumulative_variance.length - 1] * 100).toFixed(2)}%</p>`;
+
+    html += '<h3>Variance per Component</h3><ul>';
+    results.explained_variance_ratio.forEach((v, i) => {
+        html += `<li>PC${i + 1}: ${(v * 100).toFixed(2)}%</li>`;
+    });
+    html += '</ul>';
+
+    resultsDiv.innerHTML = html;
+
+    // Plot PCA
+    plotPCA(results);
+}
+
+async function runClustering() {
+    const method = document.getElementById('cluster-method').value;
+
+    const resultsDiv = document.getElementById('clustering-results');
+    resultsDiv.innerHTML = '<p class="loading">Running clustering...</p>';
+
+    let params = {method: method};
+
+    if (method === 'hierarchical') {
+        params.n_clusters = parseInt(document.getElementById('n-clusters').value);
+        params.linkage = document.getElementById('linkage-method').value;
+    } else {
+        params.eps = parseFloat(document.getElementById('eps').value);
+        params.min_samples = parseInt(document.getElementById('min-samples').value);
+    }
+
+    try {
+        const response = await fetch('/web/run-clustering', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(params)
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            displayClusteringResults(data.results);
+        } else {
+            resultsDiv.innerHTML = `<p class="error">Error: ${data.error}</p>`;
+        }
+    } catch (error) {
+        resultsDiv.innerHTML = `<p class="error">Error: ${error.message}</p>`;
+    }
+}
+
+function displayClusteringResults(results) {
+    const resultsDiv = document.getElementById('clustering-results');
+
+    let html = '<div class="success-message">✓ Clustering completed successfully</div>';
+    html += `<p><strong>Clusters Found:</strong> ${results.n_clusters}</p>`;
+
+    if (results.noise && results.noise.length > 0) {
+        html += `<p><strong>Noise Points:</strong> ${results.noise.length}</p>`;
+    }
+
+    html += '<h3>Cluster Distribution</h3><ul>';
+    for (const [clusterId, members] of Object.entries(results.clusters)) {
+        html += `<li>Cluster ${clusterId}: ${members.length} artifacts</li>`;
+    }
+    html += '</ul>';
+
+    resultsDiv.innerHTML = html;
+
+    // Plot clusters
+    plotClusters(results);
+}
+
+function plotPCA(results) {
+    const vizContainer = document.getElementById('viz-container');
+
+    // Create scree plot
+    const screePlot = {
+        x: results.explained_variance_ratio.map((_, i) => `PC${i + 1}`),
+        y: results.explained_variance_ratio.map(v => v * 100),
+        type: 'bar',
+        name: 'Variance Explained',
+        marker: {color: '#4361ee'}
+    };
+
+    const layout = {
+        title: 'PCA Scree Plot',
+        xaxis: {title: 'Principal Component'},
+        yaxis: {title: 'Variance Explained (%)'},
+        height: 400
+    };
+
+    vizContainer.innerHTML = '<div id="scree-plot"></div>';
+    Plotly.newPlot('scree-plot', [screePlot], layout);
+}
+
+function plotClusters(results) {
+    // Placeholder - would need actual PCA coordinates for proper 2D plot
+    const vizContainer = document.getElementById('viz-container');
+
+    const clusterSizes = Object.entries(results.clusters).map(([id, members]) => ({
+        cluster: id,
+        size: members.length
+    }));
+
+    const barPlot = {
+        x: clusterSizes.map(c => `Cluster ${c.cluster}`),
+        y: clusterSizes.map(c => c.size),
+        type: 'bar',
+        marker: {color: '#4361ee'}
+    };
+
+    const layout = {
+        title: 'Cluster Sizes',
+        xaxis: {title: 'Cluster'},
+        yaxis: {title: 'Number of Artifacts'},
+        height: 400
+    };
+
+    vizContainer.innerHTML = '<div id="cluster-plot"></div>';
+    Plotly.newPlot('cluster-plot', [barPlot], layout);
+}
+</script>
+{% endblock %}

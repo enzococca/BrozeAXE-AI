@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Archaeological Classifier System{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('web.static', filename='css/style.css') }}">
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <span class="logo">🏛️</span>
+                <span class="brand-name">Archaeological Classifier</span>
+            </div>
+            <div class="nav-menu">
+                <a href="{{ url_for('web.index') }}" class="nav-link">Dashboard</a>
+                <div class="hamburger-menu">
+                    <button class="hamburger-btn" id="hamburger-btn" onclick="toggleMenu()">
+                        ☰ Menu
+                    </button>
+                    <div class="dropdown-menu" id="dropdown-menu">
+                        <a href="{{ url_for('web.projects_page') }}" class="dropdown-link">📁 Progetti</a>
+                        <a href="{{ url_for('web.upload_page') }}" class="dropdown-link">📤 Upload</a>
+                        <a href="{{ url_for('web.artifacts_page') }}" class="dropdown-link">📦 Artifacts</a>
+                        <a href="{{ url_for('web.viewer_page') }}" class="dropdown-link">🔍 3D Viewer</a>
+                        <a href="{{ url_for('web.drawings_page') }}" class="dropdown-link">🎨 Disegni Tecnici</a>
+                        <a href="{{ url_for('web.morphometric_page') }}" class="dropdown-link">📊 Analysis</a>
+                        <a href="{{ url_for('web.taxonomy_page') }}" class="dropdown-link">📚 Taxonomy</a>
+                        <a href="{{ url_for('web.ai_assistant_page') }}" class="dropdown-link">🤖 AI Assistant</a>
+                        <hr style="margin: 8px 0; border: none; border-top: 1px solid #e2e8f0;">
+                        <a href="{{ url_for('web.savignano_analysis_page') }}" class="dropdown-link" style="background: linear-gradient(90deg, #667eea, #764ba2); color: white; font-weight: bold;">🗡️ Savignano Analysis</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <style>
+    .nav-menu {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+    }
+
+    .hamburger-menu {
+        position: relative;
+    }
+
+    .hamburger-btn {
+        background: #007bff;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+        transition: background 0.2s;
+    }
+
+    .hamburger-btn:hover {
+        background: #0056b3;
+    }
+
+    .dropdown-menu {
+        display: none;
+        position: absolute;
+        top: 100%;
+        right: 0;
+        margin-top: 8px;
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        min-width: 200px;
+        z-index: 1000;
+    }
+
+    .dropdown-menu.active {
+        display: block;
+    }
+
+    .dropdown-link {
+        display: block;
+        padding: 12px 20px;
+        color: #333;
+        text-decoration: none;
+        transition: background 0.2s;
+        border-bottom: 1px solid #f0f0f0;
+    }
+
+    .dropdown-link:last-child {
+        border-bottom: none;
+    }
+
+    .dropdown-link:hover {
+        background: #f8f9fa;
+        color: #007bff;
+    }
+    </style>
+
+    <script>
+    function toggleMenu() {
+        const menu = document.getElementById('dropdown-menu');
+        menu.classList.toggle('active');
+    }
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', function(event) {
+        const hamburger = document.getElementById('hamburger-btn');
+        const menu = document.getElementById('dropdown-menu');
+
+        if (hamburger && menu && !hamburger.contains(event.target) && !menu.contains(event.target)) {
+            menu.classList.remove('active');
+        }
+    });
+    </script>
+
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+        <p>Archaeological Classifier System v0.1.0 | Built for serious archaeological research</p>
+    </footer>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

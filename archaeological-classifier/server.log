@@ -1,0 +1,18 @@
+======================================================================
+Starting Archaeological Classifier Server
+Port: 5001
+======================================================================
+
+Access the application at:
+  http://localhost:5001/
+
+Savignano Technical Drawings Test:
+  http://localhost:5001/web/savignano-drawings-test
+
+======================================================================
+✓ Initialized 3 default taxonomy classes
+[Mesh Persistence] Reloaded 10 meshes from database
+ * Serving Flask app 'acs.api.app'
+ * Debug mode: on
+Address already in use
+Port 5001 is in use by another program. Either identify and stop that program, or start the server with a different port.

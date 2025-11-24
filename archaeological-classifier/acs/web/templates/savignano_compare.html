@@ -1,0 +1,334 @@
+{% extends "base.html" %}
+
+{% block title %}Savignano Axes Comparison - Archaeological Classifier{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="page-header">
+        <h1>🗡️ Savignano Axes Comparison</h1>
+        <p class="subtitle">Compare morphometric features of Bronze Age axes</p>
+    </div>
+
+    <div class="analysis-container">
+        <!-- Selection Card -->
+        <div class="card">
+            <h2>Select Axes to Compare</h2>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                <div>
+                    <label for="axe1-select" style="font-weight: 600; display: block; margin-bottom: 8px;">
+                        Axe 1
+                    </label>
+                    <select id="axe1-select" class="form-control" onchange="updateComparison()">
+                        <option value="">-- Select Axe 1 --</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="axe2-select" style="font-weight: 600; display: block; margin-bottom: 8px;">
+                        Axe 2
+                    </label>
+                    <select id="axe2-select" class="form-control" onchange="updateComparison()">
+                        <option value="">-- Select Axe 2 --</option>
+                    </select>
+                </div>
+            </div>
+
+            <button onclick="runComparison()" id="compare-btn" class="btn btn-primary" disabled>
+                📊 Compare Selected Axes
+            </button>
+        </div>
+
+        <!-- Results Card -->
+        <div class="card full-width" id="results-card" style="display: none;">
+            <h2>Comparison Results</h2>
+
+            <!-- Overall Similarity Score -->
+            <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 12px; padding: 30px; color: white; text-align: center; margin-bottom: 30px;">
+                <h3 style="margin: 0 0 10px 0; font-size: 18px; opacity: 0.9;">Overall Similarity Score</h3>
+                <div id="similarity-score" style="font-size: 48px; font-weight: bold;">--</div>
+                <div id="similarity-label" style="font-size: 16px; margin-top: 10px; opacity: 0.9;">--</div>
+            </div>
+
+            <!-- Feature Comparison Grid -->
+            <div id="comparison-grid"></div>
+
+            <!-- Visualizations -->
+            <div style="margin-top: 30px;">
+                <h3>Visual Comparison</h3>
+                <div id="comparison-charts"></div>
+            </div>
+
+            <!-- Interpretation -->
+            <div id="interpretation-section" style="margin-top: 30px; display: none;">
+                <h3>🤖 Archaeological Interpretation</h3>
+                <div id="ai-interpretation" style="background: #f7fafc; padding: 20px; border-radius: 8px; border-left: 4px solid #667eea;">
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<script>
+let savignanoAxes = [];
+let currentComparison = null;
+
+// Load Savignano axes on page load
+async function loadSavignanoAxes() {
+    try {
+        const response = await fetch('/web/savignano-axes-list');
+        const data = await response.json();
+
+        if (response.ok && data.axes) {
+            savignanoAxes = data.axes;
+            populateSelects();
+        } else {
+            console.error('Failed to load axes:', data.error);
+        }
+    } catch (error) {
+        console.error('Error loading axes:', error);
+    }
+}
+
+function populateSelects() {
+    const axe1Select = document.getElementById('axe1-select');
+    const axe2Select = document.getElementById('axe2-select');
+
+    savignanoAxes.forEach(axe => {
+        // Build display text with feature status
+        let displayText = axe.artifact_id;
+
+        if (axe.has_savignano_features === false) {
+            displayText += ' ⚠️ (no Savignano features)';
+        } else if (axe.peso && axe.peso > 0) {
+            displayText += ` (${axe.peso.toFixed(1)}g)`;
+        } else {
+            displayText += ' (no weight)';
+        }
+
+        const option1 = document.createElement('option');
+        option1.value = axe.artifact_id;
+        option1.textContent = displayText;
+        if (axe.has_savignano_features === false) {
+            option1.style.color = '#e53e3e'; // Red for missing features
+        }
+        axe1Select.appendChild(option1);
+
+        const option2 = document.createElement('option');
+        option2.value = axe.artifact_id;
+        option2.textContent = displayText;
+        if (axe.has_savignano_features === false) {
+            option2.style.color = '#e53e3e'; // Red for missing features
+        }
+        axe2Select.appendChild(option2);
+    });
+
+    // Show warning if some axes lack features
+    const axesWithoutFeatures = savignanoAxes.filter(a => a.has_savignano_features === false).length;
+    if (axesWithoutFeatures > 0) {
+        const warningDiv = document.createElement('div');
+        warningDiv.style.cssText = 'background: #fff5f5; border-left: 4px solid #fc8181; padding: 15px; margin: 15px 0; border-radius: 4px;';
+        warningDiv.innerHTML = `
+            <p style="margin: 0; color: #c53030; font-weight: 600;">⚠️ ${axesWithoutFeatures} axe(s) missing Savignano features</p>
+            <p style="margin: 5px 0 0 0; color: #742a2a; font-size: 14px;">
+                These axes need to be analyzed with Savignano Analysis first.
+                Go to <a href="/web/savignano-analysis" style="color: #2b6cb0; text-decoration: underline;">Savignano Analysis</a> to process them.
+            </p>
+        `;
+        document.querySelector('.card').appendChild(warningDiv);
+    }
+}
+
+function updateComparison() {
+    const axe1 = document.getElementById('axe1-select').value;
+    const axe2 = document.getElementById('axe2-select').value;
+
+    document.getElementById('compare-btn').disabled = !axe1 || !axe2 || axe1 === axe2;
+}
+
+async function runComparison() {
+    const axe1 = document.getElementById('axe1-select').value;
+    const axe2 = document.getElementById('axe2-select').value;
+
+    if (!axe1 || !axe2) return;
+
+    try {
+        const response = await fetch('/web/compare-savignano', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                axe1_id: axe1,
+                axe2_id: axe2
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            currentComparison = data;
+            displayComparison(data);
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+function displayComparison(data) {
+    // Show results card
+    document.getElementById('results-card').style.display = 'block';
+
+    // Overall similarity
+    const similarity = data.overall_similarity * 100;
+    document.getElementById('similarity-score').textContent = similarity.toFixed(1) + '%';
+
+    let label = '';
+    if (similarity >= 90) label = 'Extremely Similar (likely same matrix)';
+    else if (similarity >= 75) label = 'Very Similar';
+    else if (similarity >= 60) label = 'Similar';
+    else if (similarity >= 40) label = 'Somewhat Similar';
+    else label = 'Different';
+
+    document.getElementById('similarity-label').textContent = label;
+
+    // Feature comparison grid
+    displayFeatureGrid(data.feature_comparison);
+
+    // Charts
+    displayCharts(data);
+
+    // AI interpretation if available
+    if (data.ai_interpretation) {
+        document.getElementById('interpretation-section').style.display = 'block';
+        document.getElementById('ai-interpretation').innerHTML = data.ai_interpretation;
+    }
+
+    // Scroll to results
+    document.getElementById('results-card').scrollIntoView({behavior: 'smooth'});
+}
+
+function displayFeatureGrid(comparison) {
+    const grid = document.getElementById('comparison-grid');
+
+    let html = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px;">';
+
+    // Group features by category
+    const categories = {
+        'Tallone': ['tallone_larghezza', 'tallone_spessore'],
+        'Incavo': ['incavo_larghezza', 'incavo_profondita', 'incavo_presente'],
+        'Margini Rialzati': ['margini_rialzati_lunghezza', 'margini_rialzati_spessore_max', 'margini_rialzati_presenti'],
+        'Tagliente': ['tagliente_larghezza', 'tagliente_espanso'],
+        'Generale': ['length', 'width', 'thickness', 'peso']
+    };
+
+    for (const [category, features] of Object.entries(categories)) {
+        html += `<div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px;">`;
+        html += `<h4 style="margin: 0 0 15px 0; color: #667eea;">${category}</h4>`;
+
+        features.forEach(feature => {
+            const featureName = 'sav_' + feature;
+            if (comparison[featureName]) {
+                const comp = comparison[featureName];
+                const similarity = (comp.similarity * 100).toFixed(1);
+
+                let barColor = '#48bb78';
+                if (similarity < 70) barColor = '#ed8936';
+                if (similarity < 50) barColor = '#f56565';
+
+                html += `
+                    <div style="margin-bottom: 12px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 13px;">
+                            <span style="font-weight: 500;">${feature.replace(/_/g, ' ')}</span>
+                            <span style="color: ${barColor}; font-weight: 600;">${similarity}%</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #718096; margin-bottom: 4px;">
+                            <span>${formatValue(comp.axe1)}</span>
+                            <span>${formatValue(comp.axe2)}</span>
+                        </div>
+                        <div style="background: #e2e8f0; border-radius: 4px; height: 6px; overflow: hidden;">
+                            <div style="background: ${barColor}; height: 100%; width: ${similarity}%;"></div>
+                        </div>
+                    </div>
+                `;
+            }
+        });
+
+        html += '</div>';
+    }
+
+    html += '</div>';
+    grid.innerHTML = html;
+}
+
+function formatValue(val) {
+    if (typeof val === 'boolean') return val ? 'Yes' : 'No';
+    if (typeof val === 'number') return val.toFixed(2);
+    return val;
+}
+
+function displayCharts(data) {
+    const chartsDiv = document.getElementById('comparison-charts');
+
+    // Radar chart for key measurements
+    const radarData = prepareRadarData(data);
+
+    const layout = {
+        polar: {
+            radialaxis: {
+                visible: true,
+                range: [0, 1]
+            }
+        },
+        showlegend: true,
+        height: 500
+    };
+
+    Plotly.newPlot(chartsDiv, radarData, layout);
+}
+
+function prepareRadarData(data) {
+    const features = ['tallone_larghezza', 'tallone_spessore', 'incavo_larghezza',
+                     'tagliente_larghezza', 'peso', 'length'];
+
+    const axe1Values = [];
+    const axe2Values = [];
+    const labels = [];
+
+    features.forEach(feature => {
+        const key = 'sav_' + feature;
+        if (data.feature_comparison[key]) {
+            const comp = data.feature_comparison[key];
+            axe1Values.push(comp.axe1_normalized || comp.axe1);
+            axe2Values.push(comp.axe2_normalized || comp.axe2);
+            labels.push(feature.replace(/_/g, ' '));
+        }
+    });
+
+    return [
+        {
+            type: 'scatterpolar',
+            r: axe1Values,
+            theta: labels,
+            fill: 'toself',
+            name: document.getElementById('axe1-select').selectedOptions[0].text
+        },
+        {
+            type: 'scatterpolar',
+            r: axe2Values,
+            theta: labels,
+            fill: 'toself',
+            name: document.getElementById('axe2-select').selectedOptions[0].text
+        }
+    ];
+}
+
+// Load axes on page load
+document.addEventListener('DOMContentLoaded', () => {
+    loadSavignanoAxes();
+});
+</script>
+{% endblock %}
