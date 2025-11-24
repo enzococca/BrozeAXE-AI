@@ -536,13 +536,13 @@
         // Initialize
         document.addEventListener('DOMContentLoaded', async () => {
             // Check authentication
-            if (!AuthHelper.isAuthenticated()) {
+            if (!AuthHelper.isLoggedIn()) {
                 window.location.href = '/web/login';
                 return;
             }
 
             // Load user info
-            const user = AuthHelper.getCurrentUser();
+            const user = AuthHelper.getUser();
             if (user) {
                 document.getElementById('userName').textContent = user.full_name || user.username;
                 document.getElementById('userRole').textContent = user.role.toUpperCase();
@@ -579,7 +579,7 @@
 
         async function loadStats() {
             try {
-                const response = await AuthHelper.authenticatedFetch('/api/system/status');
+                const response = await AuthHelper.fetch('/api/system/status');
                 const data = await response.json();
 
                 if (data.database) {
@@ -598,7 +598,7 @@
 
         async function loadProjects() {
             try {
-                const response = await AuthHelper.authenticatedFetch('/web/api/projects');
+                const response = await AuthHelper.fetch('/web/api/projects');
                 const data = await response.json();
 
                 if (data.projects) {
@@ -627,7 +627,7 @@
             listEl.innerHTML = '<div class="loading"><div class="spinner"></div><p>Caricamento...</p></div>';
 
             try {
-                const response = await AuthHelper.authenticatedFetch(`/api/mesh/artifacts?page=${page}&per_page=12`);
+                const response = await AuthHelper.fetch(`/api/mesh/artifacts?page=${page}&per_page=12`);
                 const data = await response.json();
 
                 if (data.status === 'success' && data.artifacts) {
@@ -696,7 +696,7 @@
             listEl.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
 
             try {
-                const response = await AuthHelper.authenticatedFetch(`/api/mesh/artifacts/${artifactId}`);
+                const response = await AuthHelper.fetch(`/api/mesh/artifacts/${artifactId}`);
                 const data = await response.json();
 
                 if (data.artifact && data.artifact.features) {
@@ -726,7 +726,7 @@
             }
 
             try {
-                const response = await AuthHelper.authenticatedFetch(`/api/mesh/artifacts/${artifactId}`, {
+                const response = await AuthHelper.fetch(`/api/mesh/artifacts/${artifactId}`, {
                     method: 'DELETE'
                 });
 
@@ -757,7 +757,7 @@
             listEl.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
 
             try {
-                const response = await AuthHelper.authenticatedFetch('/api/auth/users');
+                const response = await AuthHelper.fetch('/api/auth/users');
                 const data = await response.json();
 
                 if (data.users) {

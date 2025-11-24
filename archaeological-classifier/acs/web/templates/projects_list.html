@@ -328,12 +328,12 @@
         let projects = [];
 
         document.addEventListener('DOMContentLoaded', async () => {
-            if (!AuthHelper.isAuthenticated()) {
+            if (!AuthHelper.isLoggedIn()) {
                 window.location.href = '/web/login';
                 return;
             }
 
-            const user = AuthHelper.getCurrentUser();
+            const user = AuthHelper.getUser();
             if (user) {
                 document.getElementById('userName').textContent = user.full_name || user.username;
             }
@@ -343,7 +343,7 @@
 
         async function loadProjects() {
             try {
-                const response = await AuthHelper.authenticatedFetch('/web/projects');
+                const response = await AuthHelper.fetch('/web/projects');
                 const data = await response.json();
 
                 if (data.projects) {
@@ -438,7 +438,7 @@
             };
 
             try {
-                const response = await AuthHelper.authenticatedFetch('/web/projects', {
+                const response = await AuthHelper.fetch('/web/projects', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(projectData)

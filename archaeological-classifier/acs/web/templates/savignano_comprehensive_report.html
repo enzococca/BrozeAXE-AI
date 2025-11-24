@@ -301,7 +301,7 @@
 
                 // Load artifacts from API
                 let url = '/api/mesh/artifacts?per_page=100';
-                const response = await AuthHelper.authenticatedFetch(url);
+                const response = await AuthHelper.fetch(url);
                 const data = await response.json();
 
                 if (data.status === 'success' && data.artifacts) {
