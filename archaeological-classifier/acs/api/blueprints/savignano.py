@@ -1007,6 +1007,113 @@ def generate_comprehensive_report(artifact_id: str):
         }), 500
 
 
+@savignano_bp.route('/generate-comprehensive-report-stream/<artifact_id>', methods=['GET'])
+def generate_comprehensive_report_stream(artifact_id: str):
+    """
+    Generate comprehensive report with real-time streaming logs via Server-Sent Events.
+
+    Query parameters:
+        language: Report language ('it' or 'en', default: 'it')
+
+    Returns:
+        Server-Sent Events stream with progress updates
+    """
+    language = request.args.get('language', 'it')
+
+    def generate():
+        import sys
+        from io import StringIO
+
+        try:
+            # Send initial log
+            yield f"data: {json.dumps({'type': 'log', 'message': 'Inizio generazione report...', 'level': 'info'})}\n\n"
+
+            # Validate language
+            if language not in ['it', 'en']:
+                yield f"data: {json.dumps({'type': 'error', 'message': f'Lingua non supportata: {language}'})}\n\n"
+                return
+
+            # Get artifact from database
+            yield f"data: {json.dumps({'type': 'log', 'message': f'Caricamento artefatto {artifact_id}...', 'level': 'info'})}\n\n"
+
+            db = get_database()
+            artifact = db.get_artifact(artifact_id)
+
+            if not artifact:
+                yield f"data: {json.dumps({'type': 'error', 'message': f'Artefatto {artifact_id} non trovato'})}\n\n"
+                return
+
+            # Get mesh path
+            mesh_path = artifact.get('mesh_path')
+            if not mesh_path or not Path(mesh_path).exists():
+                yield f"data: {json.dumps({'type': 'error', 'message': f'File mesh non trovato per {artifact_id}'})}\n\n"
+                return
+
+            yield f"data: {json.dumps({'type': 'log', 'message': f'Mesh trovato: {Path(mesh_path).name}', 'level': 'success'})}\n\n"
+
+            # Extract features
+            yield f"data: {json.dumps({'type': 'log', 'message': 'Estrazione features morfometriche...', 'level': 'info'})}\n\n"
+
+            from acs.savignano.morphometric_extractor import extract_savignano_features
+            savignano_features = extract_savignano_features(Path(mesh_path), artifact_id)
+
+            yield f"data: {json.dumps({'type': 'log', 'message': '✓ Features estratte con successo', 'level': 'success'})}\n\n"
+
+            # Create output directory
+            output_dir = Path.home() / '.acs' / 'reports' / artifact_id
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            yield f"data: {json.dumps({'type': 'log', 'message': 'Directory output creata', 'level': 'info'})}\n\n"
+
+            # Generate report with logging
+            yield f"data: {json.dumps({'type': 'log', 'message': 'Generazione PDF in corso...', 'level': 'info'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': '  Pagina 1: Copertina e morfometria', 'level': 'info'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': '  Pagina 2: Disegni tecnici', 'level': 'info'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': '  Pagina 3: Interpretazione AI', 'level': 'info'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': '  Pagina 4+: Analisi martellatura', 'level': 'info'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': '  Analisi fusione', 'level': 'info'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': '  Analisi PCA e clustering', 'level': 'info'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': '  Analisi comparativa', 'level': 'info'})}\n\n"
+
+            from acs.savignano.comprehensive_report import generate_comprehensive_report as gen_report
+
+            results = gen_report(
+                mesh_path=mesh_path,
+                features=savignano_features,
+                output_dir=str(output_dir),
+                artifact_id=artifact_id,
+                language=language
+            )
+
+            # Update artifact metadata
+            metadata = artifact.get('metadata', '{}')
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.dumps(metadata) if metadata else {}
+                except json.JSONDecodeError:
+                    metadata = {}
+
+            metadata['comprehensive_report'] = results
+            metadata['report_language'] = language
+            metadata['report_generated'] = datetime.now().isoformat()
+
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    'UPDATE artifacts SET metadata = ? WHERE artifact_id = ?',
+                    (json.dumps(metadata), artifact_id)
+                )
+
+            yield f"data: {json.dumps({'type': 'log', 'message': '✅ Report completato!', 'level': 'success'})}\n\n"
+
+            # Send completion message
+            yield f"data: {json.dumps({'type': 'complete', 'pdf_path': results.get('pdf', '')})}\n\n"
+
+        except Exception as e:
+            logger.error(f"Error in streaming report generation: {e}", exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return current_app.response_class(generate(), mimetype='text/event-stream')
 @savignano_bp.route('/download-comprehensive-report/<artifact_id>', methods=['GET'])
 def download_comprehensive_report(artifact_id: str):
     """

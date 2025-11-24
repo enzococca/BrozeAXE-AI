@@ -237,6 +237,11 @@
 
         <div class="loader" id="loader"></div>
 
+        <div id="log-stream" style="display: none; margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 10px; max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 11px; line-height: 1.4;">
+            <strong style="color: #2C3E50;">📋 Log Generazione:</strong>
+            <div id="log-content"></div>
+        </div>
+
         <div id="status"></div>
 
         <div id="downloads"></div>
@@ -250,6 +255,23 @@
         const loader = document.getElementById('loader');
         const generateBtn = document.getElementById('generateBtn');
         const downloadsDiv = document.getElementById('downloads');
+        const logStream = document.getElementById('log-stream');
+        const logContent = document.getElementById('log-content');
+
+        function addLog(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const colors = {
+                'info': '#2C3E50',
+                'success': '#28a745',
+                'warning': '#ffc107',
+                'error': '#dc3545'
+            };
+            const entry = document.createElement('div');
+            entry.style.color = colors[type] || colors.info;
+            entry.innerHTML = `[${timestamp}] ${message}`;
+            logContent.appendChild(entry);
+            logStream.scrollTop = logStream.scrollHeight;
+        }
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -262,55 +284,65 @@
                 return;
             }
 
+            // Reset and show log
+            logContent.innerHTML = '';
+            logStream.style.display = 'block';
+            addLog('🚀 Avvio generazione report...', 'info');
+
             // Show processing status
             statusDiv.className = 'processing';
             statusDiv.style.display = 'block';
-            statusDiv.innerHTML = '<strong>⏳ Generazione in corso...</strong><br>Questo processo può richiedere 60-90 secondi.<br>Rendering 3D mesh, analisi AI, PCA, comparazioni...';
+            statusDiv.innerHTML = '<strong>⏳ Generazione in corso...</strong><br>Controlla il log qui sotto per i dettagli...';
             loader.style.display = 'block';
             generateBtn.disabled = true;
             downloadsDiv.style.display = 'none';
 
-            try {
-                const response = await fetch(`/api/savignano/generate-comprehensive-report/${artifactId}`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        language: language
-                    })
-                });
+            // Setup EventSource for streaming logs
+            const eventSource = new EventSource(`/api/savignano/generate-comprehensive-report-stream/${artifactId}?language=${language}`);
 
-                const data = await response.json();
+            eventSource.onmessage = (event) => {
+                const data = JSON.parse(event.data);
 
-                loader.style.display = 'none';
-                generateBtn.disabled = false;
+                if (data.type === 'log') {
+                    addLog(data.message, data.level || 'info');
+                } else if (data.type === 'complete') {
+                    addLog('✅ Report generato con successo!', 'success');
+                    eventSource.close();
 
-                if (data.status === 'success') {
+                    loader.style.display = 'none';
+                    generateBtn.disabled = false;
                     statusDiv.className = 'success';
                     statusDiv.innerHTML = `
                         <strong>✅ Report generato con successo!</strong><br>
-                        Report completo: ${data.report.pdf}<br>
-                        Lingua: ${data.language.toUpperCase()}
+                        Report completo: ${data.pdf_path}<br>
+                        Lingua: ${language.toUpperCase()}
                     `;
 
-                    // Show download links
                     downloadsDiv.style.display = 'block';
                     downloadsDiv.innerHTML = `
                         <strong>📥 Download:</strong><br>
                         <a href="/api/savignano/download-comprehensive-report/${artifactId}?language=${language}" class="download-link">📄 Download Report Completo (PDF)</a>
                     `;
-                } else {
+                } else if (data.type === 'error') {
+                    addLog(`❌ Errore: ${data.message}`, 'error');
+                    eventSource.close();
+
+                    loader.style.display = 'none';
+                    generateBtn.disabled = false;
                     statusDiv.className = 'error';
-                    statusDiv.innerHTML = `<strong>❌ Errore:</strong><br>${data.error || 'Errore sconosciuto'}`;
+                    statusDiv.innerHTML = `<strong>❌ Errore:</strong><br>${data.message}`;
                 }
-            } catch (error) {
+            };
+
+            eventSource.onerror = (error) => {
+                addLog('❌ Errore di connessione al server', 'error');
+                eventSource.close();
                 loader.style.display = 'none';
                 generateBtn.disabled = false;
                 statusDiv.className = 'error';
                 statusDiv.style.display = 'block';
-                statusDiv.innerHTML = `<strong>❌ Errore di rete:</strong><br>${error.message}`;
-            }
+                statusDiv.innerHTML = `<strong>❌ Errore di rete:</strong><br>Connessione al server interrotta`;
+            };
         });
     </script>
 </body>
