@@ -214,12 +214,17 @@
 
         <form id="reportForm">
             <div class="form-group">
-                <label for="artifact">🔨 Seleziona Ascia:</label>
-                <select id="artifact" required>
-                    <option value="">-- Scegli un'ascia --</option>
-                    <option value="axe974">axe974 - Matrix A (Raised Flanges)</option>
-                    <option value="axe936">axe936 - Matrix A (Decorated)</option>
-                </select>
+                <label>🔨 Seleziona Artifacts:</label>
+                <div style="margin-bottom: 10px;">
+                    <button type="button" onclick="selectAll()" style="padding: 8px 16px; margin-right: 10px; background: #28a745; color: white; border: none; border-radius: 6px; cursor: pointer;">✅ Seleziona Tutti</button>
+                    <button type="button" onclick="deselectAll()" style="padding: 8px 16px; background: #6c757d; color: white; border: none; border-radius: 6px; cursor: pointer;">❌ Deseleziona Tutti</button>
+                    <span id="selectedCount" style="margin-left: 15px; color: #667eea; font-weight: 600;"></span>
+                </div>
+                <div id="artifactsContainer" style="max-height: 300px; overflow-y: auto; border: 2px solid #e0e0e0; border-radius: 10px; padding: 15px; background: #f8f9fa;">
+                    <div style="text-align: center; padding: 20px; color: #999;">
+                        Caricamento artifacts...
+                    </div>
+                </div>
             </div>
 
             <div class="form-group">
@@ -228,6 +233,12 @@
                     <option value="it">🇮🇹 Italiano (Italian)</option>
                     <option value="en">🇬🇧 English</option>
                 </select>
+            </div>
+
+            <div class="form-group">
+                <label for="apiKey">🔑 API Key Anthropic (Opzionale):</label>
+                <input type="password" id="apiKey" placeholder="sk-ant-... (opzionale per analisi AI)">
+                <small style="color: #666; font-size: 0.9em;">Inserisci la tua API key per abilitare l'analisi AI con Claude</small>
             </div>
 
             <button type="submit" class="btn-primary" id="generateBtn">
@@ -249,6 +260,7 @@
         <a href="/web/" class="back-link">← Torna alla Home</a>
     </div>
 
+    <script src="/web/static/js/auth.js"></script>
     <script>
         const form = document.getElementById('reportForm');
         const statusDiv = document.getElementById('status');
@@ -257,6 +269,8 @@
         const downloadsDiv = document.getElementById('downloads');
         const logStream = document.getElementById('log-stream');
         const logContent = document.getElementById('log-content');
+
+        let availableArtifacts = [];
 
         function addLog(message, type = 'info') {
             const timestamp = new Date().toLocaleTimeString();
@@ -273,15 +287,106 @@
             logStream.scrollTop = logStream.scrollHeight;
         }
 
+        // Load artifacts on page load
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadArtifacts();
+        });
+
+        async function loadArtifacts() {
+            const container = document.getElementById('artifactsContainer');
+
+            try {
+                // Check if currentProject is in sessionStorage
+                const currentProject = sessionStorage.getItem('currentProject');
+
+                // Load artifacts from API
+                let url = '/api/mesh/artifacts?per_page=100';
+                const response = await AuthHelper.fetch(url);
+                const data = await response.json();
+
+                if (data.status === 'success' && data.artifacts) {
+                    availableArtifacts = data.artifacts;
+
+                    // Filter by currentProject if set
+                    if (currentProject) {
+                        availableArtifacts = availableArtifacts.filter(art =>
+                            art.project_id === currentProject
+                        );
+                    }
+
+                    if (availableArtifacts.length === 0) {
+                        container.innerHTML = '<div style="text-align: center; padding: 20px; color: #999;">Nessun artifact trovato' +
+                            (currentProject ? ' per questo progetto' : '') + '</div>';
+                        return;
+                    }
+
+                    // Render artifacts as checkboxes
+                    container.innerHTML = availableArtifacts.map(art => `
+                        <div style="padding: 10px; border-bottom: 1px solid #dee2e6;">
+                            <label style="display: flex; align-items: center; cursor: pointer; font-weight: normal;">
+                                <input type="checkbox"
+                                       class="artifact-checkbox"
+                                       value="${art.artifact_id}"
+                                       style="width: 18px; height: 18px; margin-right: 10px;"
+                                       onchange="updateSelectedCount()">
+                                <span style="flex: 1;">
+                                    <strong>${art.artifact_id}</strong>
+                                    ${art.filename ? `<br><small style="color: #666;">${art.filename}</small>` : ''}
+                                </span>
+                            </label>
+                        </div>
+                    `).join('');
+
+                    updateSelectedCount();
+                } else {
+                    throw new Error('Invalid response format');
+                }
+            } catch (error) {
+                console.error('Error loading artifacts:', error);
+                container.innerHTML = '<div style="text-align: center; padding: 20px; color: #dc3545;">Errore nel caricamento artifacts</div>';
+            }
+        }
+
+        function selectAll() {
+            document.querySelectorAll('.artifact-checkbox').forEach(cb => cb.checked = true);
+            updateSelectedCount();
+        }
+
+        function deselectAll() {
+            document.querySelectorAll('.artifact-checkbox').forEach(cb => cb.checked = false);
+            updateSelectedCount();
+        }
+
+        function updateSelectedCount() {
+            const selected = document.querySelectorAll('.artifact-checkbox:checked').length;
+            const total = document.querySelectorAll('.artifact-checkbox').length;
+            document.getElementById('selectedCount').textContent = `${selected} di ${total} selezionati`;
+        }
+
+        function getSelectedArtifacts() {
+            return Array.from(document.querySelectorAll('.artifact-checkbox:checked'))
+                .map(cb => cb.value);
+        }
+
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
 
-            const artifactId = document.getElementById('artifact').value;
+            const selectedArtifacts = getSelectedArtifacts();
             const language = document.getElementById('language').value;
+            const apiKey = document.getElementById('apiKey').value;
 
-            if (!artifactId) {
-                alert('Seleziona un\'ascia');
+            if (selectedArtifacts.length === 0) {
+                alert('Seleziona almeno un artifact');
                 return;
+            }
+
+            // For now, use first selected artifact (TODO: batch processing)
+            const artifactId = selectedArtifacts[0];
+
+            if (selectedArtifacts.length > 1) {
+                if (!confirm(`Hai selezionato ${selectedArtifacts.length} artifacts. Il report verrà generato per: ${artifactId}.\n\nContinuare?`)) {
+                    return;
+                }
             }
 
             // Reset and show log

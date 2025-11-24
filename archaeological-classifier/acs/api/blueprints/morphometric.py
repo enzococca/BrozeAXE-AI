@@ -6,6 +6,7 @@ Endpoints for PCA, clustering, and similarity analysis.
 """
 
 from flask import Blueprint, request, jsonify
+from acs.core.auth import login_required, role_required
 from acs.core.morphometric import MorphometricAnalyzer
 
 morphometric_bp = Blueprint('morphometric', __name__)
@@ -15,6 +16,7 @@ analyzer = MorphometricAnalyzer()
 
 
 @morphometric_bp.route('/add-features', methods=['POST'])
+@role_required('admin', 'archaeologist')
 def add_features():
     """
     Add feature vectors for analysis.
@@ -52,6 +54,7 @@ def add_features():
 
 
 @morphometric_bp.route('/pca', methods=['POST'])
+@role_required('admin', 'archaeologist')
 def fit_pca():
     """
     Fit PCA model on loaded features.
@@ -86,6 +89,7 @@ def fit_pca():
 
 
 @morphometric_bp.route('/cluster', methods=['POST'])
+@role_required('admin', 'archaeologist')
 def hierarchical_cluster():
     """
     Perform hierarchical clustering.
@@ -123,6 +127,7 @@ def hierarchical_cluster():
 
 
 @morphometric_bp.route('/dbscan', methods=['POST'])
+@role_required('admin', 'archaeologist')
 def dbscan_cluster():
     """
     Perform DBSCAN clustering.
@@ -157,6 +162,7 @@ def dbscan_cluster():
 
 
 @morphometric_bp.route('/similarity', methods=['POST'])
+@login_required
 def similarity_matrix():
     """
     Compute pairwise similarity matrix.
@@ -186,6 +192,7 @@ def similarity_matrix():
 
 
 @morphometric_bp.route('/find-similar', methods=['POST'])
+@login_required
 def find_similar():
     """
     Find most similar artifacts to query.
@@ -230,6 +237,7 @@ def find_similar():
 
 
 @morphometric_bp.route('/statistics', methods=['GET'])
+@login_required
 def get_statistics():
     """
     Get feature statistics.
