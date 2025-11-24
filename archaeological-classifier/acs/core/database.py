@@ -258,6 +258,59 @@ class ArtifactDatabase:
                 'pages': pages
             }
 
+    def delete_artifact(self, artifact_id: str) -> bool:
+        """
+        Delete an artifact and all associated data (CASCADE).
+
+        This will delete:
+        - Artifact record
+        - All features
+        - All classifications
+        - All training samples
+        - All comparisons
+        - All stylistic features
+
+        Args:
+            artifact_id: ID of the artifact to delete
+
+        Returns:
+            True if artifact was deleted, False if not found
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Check if artifact exists
+            cursor.execute('SELECT artifact_id FROM artifacts WHERE artifact_id = ?', (artifact_id,))
+            if not cursor.fetchone():
+                return False
+
+            # Delete from all related tables (CASCADE should handle this automatically,
+            # but we do it explicitly for clarity and to handle any non-CASCADE constraints)
+
+            # Delete features
+            cursor.execute('DELETE FROM features WHERE artifact_id = ?', (artifact_id,))
+
+            # Delete stylistic features
+            cursor.execute('DELETE FROM stylistic_features WHERE artifact_id = ?', (artifact_id,))
+
+            # Delete classifications
+            cursor.execute('DELETE FROM classifications WHERE artifact_id = ?', (artifact_id,))
+
+            # Delete training samples
+            cursor.execute('DELETE FROM training_samples WHERE artifact_id = ?', (artifact_id,))
+
+            # Delete comparisons where this artifact is involved
+            cursor.execute('''
+                DELETE FROM comparisons
+                WHERE artifact1_id = ? OR artifact2_id = ?
+            ''', (artifact_id, artifact_id))
+
+            # Delete the artifact itself
+            cursor.execute('DELETE FROM artifacts WHERE artifact_id = ?', (artifact_id,))
+
+            conn.commit()
+            return True
+
     # ========== FEATURE OPERATIONS ==========
 
     def add_features(self, artifact_id: str, features: Dict[str, float]):

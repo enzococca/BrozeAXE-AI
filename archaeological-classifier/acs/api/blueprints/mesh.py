@@ -374,3 +374,68 @@ def get_artifact_from_db(artifact_id):
             'status': 'error',
             'error': str(e)
         }), 500
+
+
+@mesh_bp.route('/artifacts/<artifact_id>', methods=['DELETE'])
+@role_required('admin', 'archaeologist')
+def delete_artifact(artifact_id):
+    """
+    Delete an artifact and all associated data.
+
+    Requires: admin or archaeologist role
+
+    This will delete:
+    - Artifact record from database
+    - All features
+    - All classifications
+    - All training samples
+    - All comparisons
+    - Associated mesh file (if exists)
+
+    Args:
+        artifact_id: ID of the artifact to delete
+
+    Returns:
+        JSON with deletion status
+    """
+    try:
+        # Check if artifact exists in database
+        artifact = db.get_artifact(artifact_id)
+
+        if not artifact:
+            return jsonify({
+                'error': f'Artifact {artifact_id} not found'
+            }), 404
+
+        # Delete from database (includes all related data)
+        deleted = db.delete_artifact(artifact_id)
+
+        if not deleted:
+            return jsonify({
+                'error': f'Failed to delete artifact {artifact_id}'
+            }), 500
+
+        # Remove from mesh processor memory if loaded
+        if artifact_id in processor.meshes:
+            del processor.meshes[artifact_id]
+
+        # Delete mesh file if exists
+        mesh_file = artifact.get('file_path')
+        if mesh_file and os.path.exists(mesh_file):
+            try:
+                os.remove(mesh_file)
+            except Exception as e:
+                # Log but don't fail if file deletion fails
+                print(f"Warning: Could not delete mesh file {mesh_file}: {e}")
+
+        return jsonify({
+            'status': 'success',
+            'message': f'Artifact {artifact_id} deleted successfully',
+            'artifact_id': artifact_id
+        })
+
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
