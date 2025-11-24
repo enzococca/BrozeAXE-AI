@@ -8,10 +8,16 @@ Endpoints for system health, status, and monitoring.
 from flask import Blueprint, jsonify
 import os
 import sys
-import psutil
 from datetime import datetime
 from acs.core.database import ArtifactDatabase
 from acs.core.auth import login_required
+
+# Optional psutil for system monitoring
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
 
 system_bp = Blueprint('system', __name__)
 
@@ -59,50 +65,62 @@ def health_check():
         }
 
     # Check disk space
-    try:
-        disk_usage = psutil.disk_usage('/')
-        disk_percent = disk_usage.percent
+    if PSUTIL_AVAILABLE:
+        try:
+            disk_usage = psutil.disk_usage('/')
+            disk_percent = disk_usage.percent
 
-        if disk_percent > 90:
-            health_status['status'] = 'unhealthy'
-            status = 'critical'
-        elif disk_percent > 80:
-            status = 'warning'
-        else:
-            status = 'healthy'
+            if disk_percent > 90:
+                health_status['status'] = 'unhealthy'
+                status = 'critical'
+            elif disk_percent > 80:
+                status = 'warning'
+            else:
+                status = 'healthy'
 
+            health_status['checks']['disk_space'] = {
+                'status': status,
+                'usage_percent': disk_percent,
+                'free_gb': round(disk_usage.free / (1024**3), 2),
+                'total_gb': round(disk_usage.total / (1024**3), 2)
+            }
+        except Exception as e:
+            health_status['checks']['disk_space'] = {
+                'status': 'unknown',
+                'message': f'Could not check disk space: {str(e)}'
+            }
+    else:
         health_status['checks']['disk_space'] = {
-            'status': status,
-            'usage_percent': disk_percent,
-            'free_gb': round(disk_usage.free / (1024**3), 2),
-            'total_gb': round(disk_usage.total / (1024**3), 2)
-        }
-    except Exception as e:
-        health_status['checks']['disk_space'] = {
-            'status': 'unknown',
-            'message': f'Could not check disk space: {str(e)}'
+            'status': 'unavailable',
+            'message': 'psutil not installed'
         }
 
     # Check memory
-    try:
-        memory = psutil.virtual_memory()
-        memory_percent = memory.percent
+    if PSUTIL_AVAILABLE:
+        try:
+            memory = psutil.virtual_memory()
+            memory_percent = memory.percent
 
-        if memory_percent > 90:
-            status = 'warning'
-        else:
-            status = 'healthy'
+            if memory_percent > 90:
+                status = 'warning'
+            else:
+                status = 'healthy'
 
+            health_status['checks']['memory'] = {
+                'status': status,
+                'usage_percent': memory_percent,
+                'available_gb': round(memory.available / (1024**3), 2),
+                'total_gb': round(memory.total / (1024**3), 2)
+            }
+        except Exception as e:
+            health_status['checks']['memory'] = {
+                'status': 'unknown',
+                'message': f'Could not check memory: {str(e)}'
+            }
+    else:
         health_status['checks']['memory'] = {
-            'status': status,
-            'usage_percent': memory_percent,
-            'available_gb': round(memory.available / (1024**3), 2),
-            'total_gb': round(memory.total / (1024**3), 2)
-        }
-    except Exception as e:
-        health_status['checks']['memory'] = {
-            'status': 'unknown',
-            'message': f'Could not check memory: {str(e)}'
+            'status': 'unavailable',
+            'message': 'psutil not installed'
         }
 
     # Return appropriate status code
@@ -139,38 +157,47 @@ def system_status():
         status['system']['platform'] = sys.platform
 
         # CPU info
-        try:
-            status['system']['cpu'] = {
-                'count': psutil.cpu_count(),
-                'usage_percent': psutil.cpu_percent(interval=1),
-                'load_average': os.getloadavg() if hasattr(os, 'getloadavg') else None
-            }
-        except:
-            status['system']['cpu'] = {'status': 'unavailable'}
+        if PSUTIL_AVAILABLE:
+            try:
+                status['system']['cpu'] = {
+                    'count': psutil.cpu_count(),
+                    'usage_percent': psutil.cpu_percent(interval=1),
+                    'load_average': os.getloadavg() if hasattr(os, 'getloadavg') else None
+                }
+            except:
+                status['system']['cpu'] = {'status': 'unavailable'}
+        else:
+            status['system']['cpu'] = {'status': 'psutil not installed'}
 
         # Memory info
-        try:
-            memory = psutil.virtual_memory()
-            status['system']['memory'] = {
-                'total_gb': round(memory.total / (1024**3), 2),
-                'available_gb': round(memory.available / (1024**3), 2),
-                'used_gb': round(memory.used / (1024**3), 2),
-                'usage_percent': memory.percent
-            }
-        except:
-            status['system']['memory'] = {'status': 'unavailable'}
+        if PSUTIL_AVAILABLE:
+            try:
+                memory = psutil.virtual_memory()
+                status['system']['memory'] = {
+                    'total_gb': round(memory.total / (1024**3), 2),
+                    'available_gb': round(memory.available / (1024**3), 2),
+                    'used_gb': round(memory.used / (1024**3), 2),
+                    'usage_percent': memory.percent
+                }
+            except:
+                status['system']['memory'] = {'status': 'unavailable'}
+        else:
+            status['system']['memory'] = {'status': 'psutil not installed'}
 
         # Disk info
-        try:
-            disk = psutil.disk_usage('/')
-            status['system']['disk'] = {
-                'total_gb': round(disk.total / (1024**3), 2),
-                'used_gb': round(disk.used / (1024**3), 2),
-                'free_gb': round(disk.free / (1024**3), 2),
-                'usage_percent': disk.percent
-            }
-        except:
-            status['system']['disk'] = {'status': 'unavailable'}
+        if PSUTIL_AVAILABLE:
+            try:
+                disk = psutil.disk_usage('/')
+                status['system']['disk'] = {
+                    'total_gb': round(disk.total / (1024**3), 2),
+                    'used_gb': round(disk.used / (1024**3), 2),
+                    'free_gb': round(disk.free / (1024**3), 2),
+                    'usage_percent': disk.percent
+                }
+            except:
+                status['system']['disk'] = {'status': 'unavailable'}
+        else:
+            status['system']['disk'] = {'status': 'psutil not installed'}
 
         # Database statistics
         try:
