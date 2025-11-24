@@ -297,7 +297,7 @@ class ArtifactDatabase:
             cursor.execute('DELETE FROM classifications WHERE artifact_id = ?', (artifact_id,))
 
             # Delete training samples
-            cursor.execute('DELETE FROM training_samples WHERE artifact_id = ?', (artifact_id,))
+            cursor.execute('DELETE FROM training_data WHERE artifact_id = ?', (artifact_id,))
 
             # Delete comparisons where this artifact is involved
             cursor.execute('''

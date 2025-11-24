@@ -343,7 +343,7 @@
 
         async function loadProjects() {
             try {
-                const response = await AuthHelper.authenticatedFetch('/web/api/projects');
+                const response = await AuthHelper.authenticatedFetch('/web/projects');
                 const data = await response.json();
 
                 if (data.projects) {
@@ -438,7 +438,7 @@
             };
 
             try {
-                const response = await AuthHelper.authenticatedFetch('/web/api/projects', {
+                const response = await AuthHelper.authenticatedFetch('/web/projects', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(projectData)

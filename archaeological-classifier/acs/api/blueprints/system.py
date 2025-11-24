@@ -213,7 +213,7 @@ def system_status():
                 classifications_count = cursor.fetchone()['count']
 
                 # Count training samples
-                cursor.execute('SELECT COUNT(*) as count FROM training_samples')
+                cursor.execute('SELECT COUNT(*) as count FROM training_data')
                 training_count = cursor.fetchone()['count']
 
                 # Count users
