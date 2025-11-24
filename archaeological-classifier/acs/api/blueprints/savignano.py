@@ -1070,8 +1070,20 @@ def generate_comprehensive_report_stream(artifact_id: str):
             yield f"data: {json.dumps({'type': 'log', 'message': '  Pagina 1: Copertina e morfometria', 'level': 'info'})}\n\n"
             yield f"data: {json.dumps({'type': 'log', 'message': '  Pagina 2: Disegni tecnici', 'level': 'info'})}\n\n"
             yield f"data: {json.dumps({'type': 'log', 'message': '  Pagina 3: Interpretazione AI', 'level': 'info'})}\n\n"
+
+            # Stream hammering analysis preview
             yield f"data: {json.dumps({'type': 'log', 'message': '  Pagina 4+: Analisi martellatura', 'level': 'info'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': '    → Calcolo rugosità superficiale per regioni...', 'level': 'info'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': '    → Analisi tallone, corpo e tagliente...', 'level': 'info'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': '    → Interpretazione tracce di martellamento...', 'level': 'info'})}\n\n"
+
+            # Stream casting analysis preview
             yield f"data: {json.dumps({'type': 'log', 'message': '  Analisi fusione', 'level': 'info'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': '    → Analisi simmetria bilaterale...', 'level': 'info'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': '    → Valutazione qualità mesh...', 'level': 'info'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': '    → Analisi variazione spessore...', 'level': 'info'})}\n\n"
+            yield f"data: {json.dumps({'type': 'log', 'message': '    → Verifica tecnica stampo...', 'level': 'info'})}\n\n"
+
             yield f"data: {json.dumps({'type': 'log', 'message': '  Analisi PCA e clustering', 'level': 'info'})}\n\n"
             yield f"data: {json.dumps({'type': 'log', 'message': '  Analisi comparativa', 'level': 'info'})}\n\n"
 
@@ -1089,7 +1101,7 @@ def generate_comprehensive_report_stream(artifact_id: str):
             metadata = artifact.get('metadata', '{}')
             if isinstance(metadata, str):
                 try:
-                    metadata = json.dumps(metadata) if metadata else {}
+                    metadata = json.loads(metadata) if metadata else {}
                 except json.JSONDecodeError:
                     metadata = {}
 
