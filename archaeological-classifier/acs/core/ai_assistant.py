@@ -18,18 +18,16 @@ class AIClassificationAssistant:
 
     def __init__(self, api_key: str = None):
         """Initialize AI assistant."""
-        # Try config first, then environment variable, then parameter
+        # Try environment variable first, then parameter
         if api_key is None:
-            from acs.core.config import get_config
-            config = get_config()
-            api_key = config.get_api_key() or os.getenv('ANTHROPIC_API_KEY')
+            api_key = os.getenv('ANTHROPIC_API_KEY')
 
         self.api_key = api_key
         if not self.api_key:
-            raise ValueError("API key not configured. Set it in the web interface or via ANTHROPIC_API_KEY environment variable.")
+            raise ValueError("API key not configured. Set ANTHROPIC_API_KEY environment variable on Railway.")
 
         self.client = anthropic.Anthropic(api_key=self.api_key)
-        self.model = "claude-sonnet-4-20250514"
+        self.model = "claude-sonnet-4-5-20250929"  # Latest Claude Sonnet 4.5 model
 
     def analyze_artifact(self, artifact_id: str, features: Dict[str, Any],
                         existing_classes: List[Dict] = None,
