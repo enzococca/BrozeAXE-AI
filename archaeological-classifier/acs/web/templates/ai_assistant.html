@@ -23,7 +23,7 @@
         <h4>🧠 AI Classification (Claude 4.5)</h4>
         <ul>
             <li><strong>What it does:</strong> Analyzes artifact features and provides intelligent classification suggestions with archaeological context</li>
-            <li><strong>Requires:</strong> Anthropic API key (configure below)</li>
+            <li><strong>Requires:</strong> Anthropic API key (configured server-side on Railway)</li>
             <li><strong>Best for:</strong> Initial analysis, expert second opinion, or when dealing with unusual artifacts</li>
             <li><strong>Output:</strong> Detailed analysis with reasoning, suggested classifications, and confidence levels</li>
         </ul>
@@ -52,34 +52,14 @@
     </div>
 </div>
 
-<!-- API Key Configuration -->
-<div class="api-key-section card">
-    <h3>🔑 API Key Configuration</h3>
-    <p>Configure your Anthropic API key for AI-powered classification (required for AI features)</p>
-
-    <div id="api-key-status" style="margin-bottom: 15px;">
-        <p><strong>Status:</strong> <span id="key-status-badge">Checking...</span></p>
-        <p id="masked-key-display" style="display:none;"><strong>Current Key:</strong> <code id="masked-key"></code></p>
-    </div>
-
-    <div class="form-group">
-        <label for="api-key-input">Anthropic API Key:</label>
-        <div style="display: flex; gap: 10px;">
-            <input type="password" id="api-key-input" class="form-control"
-                   placeholder="sk-ant-api03-..." style="flex: 1;">
-            <button id="btn-toggle-key-visibility" class="btn btn-secondary" type="button">👁️ Show</button>
-        </div>
-        <small style="color: #666;">
-            Get your API key from <a href="https://console.anthropic.com/" target="_blank">console.anthropic.com</a>
-        </small>
-    </div>
-
-    <div style="display: flex; gap: 10px;">
-        <button id="btn-save-api-key" class="btn btn-primary">💾 Save API Key</button>
-        <button id="btn-delete-api-key" class="btn btn-danger" style="display:none;">🗑️ Delete Key</button>
-    </div>
-
-    <div id="api-key-message" style="margin-top: 10px; display:none;"></div>
+<!-- AI Configuration Info -->
+<div class="ai-status card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+    <h3 style="color: white;">🔑 AI Configuration</h3>
+    <p style="margin: 10px 0; font-size: 14px;">
+        ✅ Claude 4.5 Sonnet API configured server-side<br>
+        🚀 AI analysis ready - no manual configuration needed<br>
+        🔒 API key managed securely via Railway environment variables
+    </p>
 </div>
 
 <div class="ai-status card" id="ai-status">
@@ -211,7 +191,7 @@
             <ul style="color: rgba(255,255,255,0.9); line-height: 1.8;">
                 <li><strong>Morphometric Analysis:</strong> Extracts shape and dimensional features</li>
                 <li><strong>Stylistic Analysis:</strong> Evaluates symmetry, proportions, surface quality</li>
-                <li><strong>AI Classification:</strong> Uses Claude 4.5 for intelligent suggestions (if API key configured)</li>
+                <li><strong>AI Classification:</strong> Uses Claude 4.5 Sonnet for intelligent suggestions</li>
                 <li><strong>ML Prediction:</strong> Applies trained model (if available)</li>
                 <li><strong>Confidence Threshold:</strong> Auto-saves classifications with >80% confidence</li>
             </ul>
@@ -377,92 +357,8 @@ textarea.form-control {
 
 <script>
 document.addEventListener('DOMContentLoaded', async () => {
-    // Check API key status
-    await checkAPIKeyStatus();
-
     // Check system status
     await checkSystemStatus();
-
-    // API Key Management
-    document.getElementById('btn-toggle-key-visibility').addEventListener('click', () => {
-        const input = document.getElementById('api-key-input');
-        const btn = document.getElementById('btn-toggle-key-visibility');
-        if (input.type === 'password') {
-            input.type = 'text';
-            btn.textContent = '👁️‍🗨️ Hide';
-        } else {
-            input.type = 'password';
-            btn.textContent = '👁️ Show';
-        }
-    });
-
-    document.getElementById('btn-save-api-key').addEventListener('click', async () => {
-        const apiKey = document.getElementById('api-key-input').value.trim();
-
-        if (!apiKey) {
-            showAPIKeyMessage('Please enter an API key', 'error');
-            return;
-        }
-
-        const btn = document.getElementById('btn-save-api-key');
-        btn.textContent = '⏳ Saving...';
-        btn.disabled = true;
-
-        try {
-            const response = await fetch('/web/config/api-key', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ api_key: apiKey })
-            });
-
-            const data = await response.json();
-
-            if (response.ok) {
-                showAPIKeyMessage('✅ API key saved successfully!', 'success');
-                document.getElementById('api-key-input').value = '';
-                await checkAPIKeyStatus();
-                await checkSystemStatus(); // Refresh AI status
-            } else {
-                showAPIKeyMessage(`❌ Error: ${data.error}`, 'error');
-            }
-        } catch (error) {
-            showAPIKeyMessage(`❌ Error: ${error.message}`, 'error');
-        } finally {
-            btn.textContent = '💾 Save API Key';
-            btn.disabled = false;
-        }
-    });
-
-    document.getElementById('btn-delete-api-key').addEventListener('click', async () => {
-        if (!confirm('Are you sure you want to delete the stored API key?')) {
-            return;
-        }
-
-        const btn = document.getElementById('btn-delete-api-key');
-        btn.textContent = '⏳ Deleting...';
-        btn.disabled = true;
-
-        try {
-            const response = await fetch('/web/config/api-key', {
-                method: 'DELETE'
-            });
-
-            const data = await response.json();
-
-            if (response.ok) {
-                showAPIKeyMessage('✅ API key deleted', 'success');
-                await checkAPIKeyStatus();
-                await checkSystemStatus();
-            } else {
-                showAPIKeyMessage(`❌ Error: ${data.error}`, 'error');
-            }
-        } catch (error) {
-            showAPIKeyMessage(`❌ Error: ${error.message}`, 'error');
-        } finally {
-            btn.textContent = '🗑️ Delete Key';
-            btn.disabled = false;
-        }
-    });
 
     // AI Classification
     document.getElementById('btn-ai-classify').addEventListener('click', async () => {
@@ -732,56 +628,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 });
 
-async function checkAPIKeyStatus() {
-    try {
-        const response = await fetch('/web/config/api-key');
-        const data = await response.json();
-
-        const statusBadge = document.getElementById('key-status-badge');
-        const maskedKeyDisplay = document.getElementById('masked-key-display');
-        const maskedKey = document.getElementById('masked-key');
-        const deleteBtn = document.getElementById('btn-delete-api-key');
-
-        if (data.configured) {
-            statusBadge.innerHTML = '<span class="status-badge status-active">✓ Configured</span>';
-            maskedKey.textContent = data.masked_key;
-            maskedKeyDisplay.style.display = 'block';
-            deleteBtn.style.display = 'inline-block';
-        } else {
-            statusBadge.innerHTML = '<span class="status-badge status-inactive">Not configured</span>';
-            maskedKeyDisplay.style.display = 'none';
-            deleteBtn.style.display = 'none';
-        }
-    } catch (error) {
-        console.error('Error checking API key status:', error);
-        document.getElementById('key-status-badge').innerHTML =
-            '<span class="status-badge status-warning">Error checking status</span>';
-    }
-}
-
-function showAPIKeyMessage(message, type) {
-    const msgDiv = document.getElementById('api-key-message');
-    msgDiv.textContent = message;
-    msgDiv.style.display = 'block';
-    msgDiv.style.padding = '10px';
-    msgDiv.style.borderRadius = '4px';
-    msgDiv.style.marginTop = '10px';
-
-    if (type === 'success') {
-        msgDiv.style.backgroundColor = '#d4edda';
-        msgDiv.style.color = '#155724';
-        msgDiv.style.border = '1px solid #c3e6cb';
-    } else {
-        msgDiv.style.backgroundColor = '#f8d7da';
-        msgDiv.style.color = '#721c24';
-        msgDiv.style.border = '1px solid #f5c6cb';
-    }
-
-    setTimeout(() => {
-        msgDiv.style.display = 'none';
-    }, 5000);
-}
-
 function toggleHelp() {
     const content = document.getElementById('help-content');
     const btn = document.getElementById('help-toggle-btn');
@@ -802,7 +648,7 @@ async function checkSystemStatus() {
         const data = await response.json();
 
         document.getElementById('ai-status-badge').innerHTML =
-            '<span class="status-badge status-warning">Optional (set ANTHROPIC_API_KEY)</span>';
+            '<span class="status-badge status-active">✓ Configured (Claude 4.5 Sonnet)</span>';
 
         document.getElementById('db-status-badge').innerHTML =
             `<span class="status-badge status-active">✓ Active (${data.meshes?.loaded || 0} artifacts)</span>`;
