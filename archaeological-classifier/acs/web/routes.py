@@ -1729,7 +1729,11 @@ def list_projects():
         if g.current_user['role'] == 'admin':
             projects = db.list_projects(status='active')
             for project in projects:
-                project['user_role'] = 'admin'
+                # Check if admin is owner of this project
+                if project.get('owner_id') == user_id:
+                    project['user_role'] = 'owner'
+                else:
+                    project['user_role'] = 'admin'
         else:
             # Get user's projects (owned + collaborated) with user_role
             projects = db.get_user_projects(user_id)
