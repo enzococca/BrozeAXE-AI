@@ -5,7 +5,7 @@ Web Interface Routes
 Blueprint for web-based user interface.
 """
 
-from flask import Blueprint, render_template, request, jsonify, session, current_app, make_response, send_file, redirect, url_for
+from flask import Blueprint, render_template, request, jsonify, session, current_app, make_response, send_file, redirect, url_for, g
 from werkzeug.utils import secure_filename
 import os
 import json
@@ -16,6 +16,7 @@ from acs.core.mesh_processor import MeshProcessor
 from acs.core.morphometric import MorphometricAnalyzer
 from acs.core.taxonomy import FormalTaxonomySystem
 from acs.core.database import get_database
+from acs.core.auth import login_required
 
 web_bp = Blueprint('web', __name__,
                    template_folder='templates',
@@ -1743,16 +1744,12 @@ def list_projects():
 
 
 @web_bp.route('/projects', methods=['POST'])
+@login_required
 def create_project():
     """Create a new project."""
     try:
-        from acs.core.database import get_database
-        from acs.core.auth import get_current_user
-
-        # Get current user
-        current_user = get_current_user(request)
-        if not current_user:
-            return jsonify({'error': 'Authentication required'}), 401
+        # Get current user from Flask g (set by @login_required decorator)
+        current_user = g.current_user
 
         data = request.json
         project_id = data.get('project_id')
