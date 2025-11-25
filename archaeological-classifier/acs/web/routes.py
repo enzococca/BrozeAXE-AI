@@ -1747,6 +1747,12 @@ def create_project():
     """Create a new project."""
     try:
         from acs.core.database import get_database
+        from acs.core.auth import get_current_user
+
+        # Get current user
+        current_user = get_current_user(request)
+        if not current_user:
+            return jsonify({'error': 'Authentication required'}), 401
 
         data = request.json
         project_id = data.get('project_id')
@@ -1757,7 +1763,8 @@ def create_project():
             return jsonify({'error': 'project_id and name are required'}), 400
 
         db = get_database()
-        db.create_project(project_id, name, description)
+        # Pass current user's ID as owner_id
+        db.create_project(project_id, name, current_user['user_id'], description)
 
         return jsonify({
             'status': 'success',
