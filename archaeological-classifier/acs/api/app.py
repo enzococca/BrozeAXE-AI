@@ -58,6 +58,7 @@ def create_app(config=None):
 
     # Register API blueprints
     from acs.api.blueprints.auth import auth_bp
+    from acs.api.blueprints.projects import projects_bp
     from acs.api.blueprints.mesh import mesh_bp
     from acs.api.blueprints.morphometric import morphometric_bp
     from acs.api.blueprints.classification import classification_bp
@@ -66,6 +67,7 @@ def create_app(config=None):
     from acs.api.blueprints.system import system_bp
 
     app.register_blueprint(auth_bp)  # Auth at /api/auth
+    app.register_blueprint(projects_bp)  # Projects at /api/projects
     app.register_blueprint(mesh_bp, url_prefix='/api/mesh')
     app.register_blueprint(morphometric_bp, url_prefix='/api/morphometric')
     app.register_blueprint(classification_bp, url_prefix='/api/classification')

@@ -409,6 +409,216 @@ def deactivate_user(user_id):
         }), 500
 
 
+@auth_bp.route('/users/<int:user_id>/activate', methods=['PUT'])
+@role_required('admin')
+def activate_user(user_id):
+    """Activate user (admin only).
+
+    Headers:
+        Authorization: Bearer <token>
+
+    Response:
+    {
+        "status": "success",
+        "message": "User activated successfully"
+    }
+    """
+    try:
+        db = get_database()
+
+        # Check if user exists
+        user = db.get_user_by_id(user_id)
+        if not user:
+            return jsonify({
+                'status': 'error',
+                'error': 'User not found',
+                'code': 'USER_NOT_FOUND'
+            }), 404
+
+        # Activate user
+        db.activate_user(user_id)
+
+        logger.info(f"User activated: user_id={user_id}, username={user.get('username')} (by {g.current_user['username']})")
+
+        return jsonify({
+            'status': 'success',
+            'message': 'User activated successfully'
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Activate user error: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'error': 'Failed to activate user',
+            'details': str(e)
+        }), 500
+
+
+@auth_bp.route('/users/<int:user_id>', methods=['PUT'])
+@role_required('admin')
+def update_user(user_id):
+    """Update user information (admin only).
+
+    Headers:
+        Authorization: Bearer <token>
+
+    Request JSON:
+    {
+        "email": "new@example.com",  // optional
+        "full_name": "New Name",  // optional
+        "role": "archaeologist",  // optional
+        "password": "newpassword"  // optional
+    }
+
+    Response:
+    {
+        "status": "success",
+        "message": "User updated successfully"
+    }
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({
+                'status': 'error',
+                'error': 'No data provided',
+                'code': 'MISSING_DATA'
+            }), 400
+
+        db = get_database()
+
+        # Check if user exists
+        user = db.get_user_by_id(user_id)
+        if not user:
+            return jsonify({
+                'status': 'error',
+                'error': 'User not found',
+                'code': 'USER_NOT_FOUND'
+            }), 404
+
+        # Hash password if provided
+        password_hash = None
+        if 'password' in data:
+            password_hash = PasswordHasher.hash_password(data['password'])
+
+        # Update user
+        db.update_user(
+            user_id=user_id,
+            email=data.get('email'),
+            full_name=data.get('full_name'),
+            role=data.get('role'),
+            password_hash=password_hash
+        )
+
+        logger.info(f"User updated: user_id={user_id} (by {g.current_user['username']})")
+
+        return jsonify({
+            'status': 'success',
+            'message': 'User updated successfully'
+        }), 200
+
+    except ValueError as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e),
+            'code': 'VALIDATION_ERROR'
+        }), 400
+
+    except Exception as e:
+        logger.error(f"Update user error: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'error': 'Failed to update user',
+            'details': str(e)
+        }), 500
+
+
+@auth_bp.route('/users/<int:user_id>/delete-permanently', methods=['DELETE'])
+@role_required('admin')
+def delete_user_permanently(user_id):
+    """Permanently delete user (admin only). WARNING: This cannot be undone!
+
+    Headers:
+        Authorization: Bearer <token>
+
+    Response:
+    {
+        "status": "success",
+        "message": "User permanently deleted"
+    }
+    """
+    try:
+        db = get_database()
+
+        # Check if user exists
+        user = db.get_user_by_id(user_id)
+        if not user:
+            return jsonify({
+                'status': 'error',
+                'error': 'User not found',
+                'code': 'USER_NOT_FOUND'
+            }), 404
+
+        # Prevent self-deletion
+        if user_id == g.current_user['user_id']:
+            return jsonify({
+                'status': 'error',
+                'error': 'Cannot delete your own account',
+                'code': 'SELF_DELETION'
+            }), 400
+
+        # Delete user permanently
+        db.delete_user(user_id)
+
+        logger.warning(f"User permanently deleted: user_id={user_id}, username={user['username']} (by {g.current_user['username']})")
+
+        return jsonify({
+            'status': 'success',
+            'message': 'User permanently deleted'
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Delete user error: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'error': 'Failed to delete user',
+            'details': str(e)
+        }), 500
+
+
+@auth_bp.route('/users/all', methods=['GET'])
+@role_required('admin')
+def list_all_users():
+    """List all users including inactive (admin only).
+
+    Headers:
+        Authorization: Bearer <token>
+
+    Response:
+    {
+        "status": "success",
+        "users": [...]
+    }
+    """
+    try:
+        db = get_database()
+        users = db.get_all_users_including_inactive()
+
+        return jsonify({
+            'status': 'success',
+            'users': users
+        }), 200
+
+    except Exception as e:
+        logger.error(f"List all users error: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'error': 'Failed to retrieve users',
+            'details': str(e)
+        }), 500
+
+
 @auth_bp.route('/change-password', methods=['POST'])
 @login_required
 def change_password():

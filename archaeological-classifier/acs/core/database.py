@@ -51,8 +51,24 @@ class ArtifactDatabase:
                     project_id TEXT PRIMARY KEY,
                     project_name TEXT,
                     description TEXT,
+                    owner_id INTEGER,
                     created_date TEXT,
-                    status TEXT DEFAULT 'active'
+                    status TEXT DEFAULT 'active',
+                    FOREIGN KEY (owner_id) REFERENCES users(user_id)
+                )
+            ''')
+
+            # Project collaborators table
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS project_collaborators (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    project_id TEXT,
+                    user_id INTEGER,
+                    role TEXT DEFAULT 'collaborator',
+                    invited_date TEXT,
+                    FOREIGN KEY (project_id) REFERENCES projects(project_id),
+                    FOREIGN KEY (user_id) REFERENCES users(user_id),
+                    UNIQUE(project_id, user_id)
                 )
             ''')
 
@@ -593,14 +609,14 @@ class ArtifactDatabase:
 
     # ========== PROJECT MANAGEMENT OPERATIONS ==========
 
-    def create_project(self, project_id: str, name: str, description: str = None):
-        """Create a new project."""
+    def create_project(self, project_id: str, name: str, owner_id: int, description: str = None):
+        """Create a new project owned by a user."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                INSERT INTO projects (project_id, project_name, description, created_date, status)
-                VALUES (?, ?, ?, ?, 'active')
-            ''', (project_id, name, description, datetime.now().isoformat()))
+                INSERT INTO projects (project_id, project_name, description, owner_id, created_date, status)
+                VALUES (?, ?, ?, ?, ?, 'active')
+            ''', (project_id, name, description, owner_id, datetime.now().isoformat()))
 
     def get_project(self, project_id: str) -> Optional[Dict]:
         """Get project information."""
@@ -857,6 +873,139 @@ class ArtifactDatabase:
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('UPDATE users SET is_active = 1 WHERE user_id = ?', (user_id,))
+
+    def update_user(self, user_id: int, email: str = None, full_name: str = None,
+                    role: str = None, password_hash: str = None):
+        """Update user information (admin only)."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            updates = []
+            params = []
+
+            if email:
+                updates.append('email = ?')
+                params.append(email)
+            if full_name:
+                updates.append('full_name = ?')
+                params.append(full_name)
+            if role:
+                valid_roles = ['admin', 'archaeologist', 'viewer']
+                if role not in valid_roles:
+                    raise ValueError(f"Invalid role: {role}")
+                updates.append('role = ?')
+                params.append(role)
+            if password_hash:
+                updates.append('password_hash = ?')
+                params.append(password_hash)
+
+            if updates:
+                params.append(user_id)
+                query = f"UPDATE users SET {', '.join(updates)} WHERE user_id = ?"
+                cursor.execute(query, params)
+
+    def delete_user(self, user_id: int):
+        """Permanently delete user (hard delete). Admin only."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM users WHERE user_id = ?', (user_id,))
+
+    def get_all_users_including_inactive(self) -> List[Dict]:
+        """Get all users including inactive ones (admin only)."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT user_id, username, email, role, full_name, created_date, last_login, is_active
+                FROM users
+                ORDER BY created_date DESC
+            ''')
+            return [dict(row) for row in cursor.fetchall()]
+
+    # ========== PROJECT COLLABORATORS OPERATIONS ==========
+
+    def add_collaborator(self, project_id: str, user_id: int, role: str = 'collaborator'):
+        """Add a collaborator to a project."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute('''
+                    INSERT INTO project_collaborators (project_id, user_id, role, invited_date)
+                    VALUES (?, ?, ?, ?)
+                ''', (project_id, user_id, role, datetime.now().isoformat()))
+            except sqlite3.IntegrityError:
+                # User already a collaborator
+                raise ValueError(f"User {user_id} is already a collaborator on project {project_id}")
+
+    def remove_collaborator(self, project_id: str, user_id: int):
+        """Remove a collaborator from a project."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                DELETE FROM project_collaborators
+                WHERE project_id = ? AND user_id = ?
+            ''', (project_id, user_id))
+
+    def get_project_collaborators(self, project_id: str) -> List[Dict]:
+        """Get all collaborators for a project."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT pc.*, u.username, u.email, u.full_name
+                FROM project_collaborators pc
+                JOIN users u ON pc.user_id = u.user_id
+                WHERE pc.project_id = ? AND u.is_active = 1
+                ORDER BY pc.invited_date DESC
+            ''', (project_id,))
+            return [dict(row) for row in cursor.fetchall()]
+
+    def get_user_projects(self, user_id: int) -> List[Dict]:
+        """Get all projects where user is owner or collaborator."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Get owned projects
+            cursor.execute('''
+                SELECT p.*, 'owner' as user_role
+                FROM projects p
+                WHERE p.owner_id = ? AND p.status = 'active'
+            ''', (user_id,))
+            owned = [dict(row) for row in cursor.fetchall()]
+
+            # Get collaborated projects
+            cursor.execute('''
+                SELECT p.*, pc.role as user_role
+                FROM projects p
+                JOIN project_collaborators pc ON p.project_id = pc.project_id
+                WHERE pc.user_id = ? AND p.status = 'active'
+            ''', (user_id,))
+            collaborated = [dict(row) for row in cursor.fetchall()]
+
+            return owned + collaborated
+
+    def is_project_owner(self, project_id: str, user_id: int) -> bool:
+        """Check if user is the owner of a project."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT owner_id FROM projects WHERE project_id = ?
+            ''', (project_id,))
+            row = cursor.fetchone()
+            return row and row['owner_id'] == user_id
+
+    def is_project_collaborator(self, project_id: str, user_id: int) -> bool:
+        """Check if user is a collaborator on a project."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id FROM project_collaborators
+                WHERE project_id = ? AND user_id = ?
+            ''', (project_id, user_id))
+            return cursor.fetchone() is not None
+
+    def can_access_project(self, project_id: str, user_id: int) -> bool:
+        """Check if user can access a project (owner or collaborator)."""
+        return self.is_project_owner(project_id, user_id) or \
+               self.is_project_collaborator(project_id, user_id)
 
 
 # Global database instance
