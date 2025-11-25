@@ -1718,17 +1718,21 @@ def reload_meshes():
 # ========== PROJECT MANAGEMENT ROUTES ==========
 
 @web_bp.route('/projects', methods=['GET'])
+@login_required
 def list_projects():
-    """List all projects."""
+    """List all projects accessible by current user."""
     try:
-        from acs.core.database import get_database
-
         db = get_database()
-        status = request.args.get('status')  # Optional filter
-        # If status is "all", pass None to get all projects
-        if status == 'all':
-            status = None
-        projects = db.list_projects(status=status)
+        user_id = g.current_user['user_id']
+
+        # Admin can see all projects
+        if g.current_user['role'] == 'admin':
+            projects = db.list_projects(status='active')
+            for project in projects:
+                project['user_role'] = 'admin'
+        else:
+            # Get user's projects (owned + collaborated) with user_role
+            projects = db.get_user_projects(user_id)
 
         # Get statistics for each project
         for project in projects:
