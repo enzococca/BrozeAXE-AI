@@ -273,6 +273,77 @@
             background: #f8d7da;
             color: #721c24;
         }
+
+        .role-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+            margin-left: 10px;
+        }
+
+        .role-owner {
+            background: #667eea;
+            color: white;
+        }
+
+        .role-collaborator {
+            background: #28a745;
+            color: white;
+        }
+
+        .collaborators-section {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .collaborators-list {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+
+        .collaborator-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 5px 10px;
+            background: #f0f0f0;
+            border-radius: 15px;
+            font-size: 12px;
+            color: #333;
+        }
+
+        .btn-manage {
+            background: #17a2b8;
+            color: white;
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .user-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .user-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .user-item:hover {
+            background: #f8f9fa;
+        }
     </style>
 </head>
 <body>
@@ -320,6 +391,33 @@
                     <button type="submit" class="btn btn-primary">Crea Progetto</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Manage Collaborators Modal -->
+    <div id="collaboratorsModal" class="modal">
+        <div class="modal-content">
+            <h2>Gestisci Collaboratori</h2>
+            <p style="color: #666; margin-bottom: 20px;">Progetto: <strong id="collab-project-name"></strong></p>
+
+            <div class="form-group">
+                <label>Aggiungi Collaboratore</label>
+                <select id="userSelect" style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 10px;">
+                    <option value="">-- Seleziona utente --</option>
+                </select>
+                <button class="btn btn-primary" onclick="addCollaborator()" style="width: 100%;">+ Aggiungi Collaboratore</button>
+            </div>
+
+            <div class="form-group">
+                <label>Collaboratori Attuali</label>
+                <div id="currentCollaborators" class="user-list">
+                    <p style="text-align: center; color: #999; padding: 20px;">Nessun collaboratore</p>
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeCollaboratorsModal()">Chiudi</button>
+            </div>
         </div>
     </div>
 
@@ -379,10 +477,19 @@
 
             container.innerHTML = `
                 <div class="projects-grid">
-                    ${projects.map(proj => `
+                    ${projects.map(proj => {
+                        const isOwner = proj.user_role === 'owner';
+                        const roleClass = isOwner ? 'role-owner' : 'role-collaborator';
+                        const roleText = isOwner ? '👑 Owner' : '🤝 Collaborator';
+
+                        return `
                         <div class="project-card">
                             <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px;">
-                                <h3>📁 ${proj.project_name}</h3>
+                                <div>
+                                    <h3>📁 ${proj.project_name}
+                                        <span class="role-badge ${roleClass}">${roleText}</span>
+                                    </h3>
+                                </div>
                                 <span class="status-badge status-${proj.status || 'active'}">
                                     ${proj.status || 'active'}
                                 </span>
@@ -405,6 +512,16 @@
                                     <div class="stat-label">Validate</div>
                                 </div>
                             </div>
+
+                            <div class="collaborators-section">
+                                <div style="font-size: 11px; color: #999; text-transform: uppercase; margin-bottom: 8px;">
+                                    👥 Collaboratori: <span id="collab-count-${proj.project_id}">...</span>
+                                </div>
+                                <div class="collaborators-list" id="collab-list-${proj.project_id}">
+                                    <span style="color: #999; font-size: 12px;">Caricamento...</span>
+                                </div>
+                            </div>
+
                             <div class="project-actions" onclick="event.stopPropagation()">
                                 <button class="btn btn-primary" onclick="goToUpload('${proj.project_id}')">
                                     📤 Upload
@@ -412,11 +529,22 @@
                                 <button class="btn btn-primary" onclick="goToReport('${proj.project_id}')">
                                     📊 Report
                                 </button>
+                                ${isOwner ? `
+                                <button class="btn btn-manage" onclick="manageCollaborators('${proj.project_id}', '${proj.project_name}')">
+                                    👥 Gestisci
+                                </button>
+                                ` : ''}
                             </div>
                         </div>
-                    `).join('')}
+                        `;
+                    }).join('')}
                 </div>
             `;
+
+            // Load collaborators for each project
+            projects.forEach(proj => {
+                loadProjectCollaborators(proj.project_id);
+            });
         }
 
         function showCreateModal() {
@@ -473,6 +601,173 @@
         function goToReport(projectId) {
             sessionStorage.setItem('currentProject', projectId);
             window.location.href = `/web/savignano-comprehensive-report?project=${projectId}`;
+        }
+
+        // ========== COLLABORATORS MANAGEMENT ==========
+
+        let currentProjectId = null;
+        let allUsers = [];
+        let currentCollaborators = [];
+
+        async function loadProjectCollaborators(projectId) {
+            try {
+                const response = await AuthHelper.fetch(`/api/projects/${projectId}/collaborators`);
+                const data = await response.json();
+
+                const countEl = document.getElementById(`collab-count-${projectId}`);
+                const listEl = document.getElementById(`collab-list-${projectId}`);
+
+                if (data.status === 'success' && data.collaborators) {
+                    const collabs = data.collaborators;
+                    countEl.textContent = collabs.length;
+
+                    if (collabs.length === 0) {
+                        listEl.innerHTML = '<span style="color: #999; font-size: 12px;">Nessuno</span>';
+                    } else {
+                        listEl.innerHTML = collabs.slice(0, 3).map(c => `
+                            <span class="collaborator-tag" title="${c.email}">
+                                👤 ${c.username}
+                            </span>
+                        `).join('');
+
+                        if (collabs.length > 3) {
+                            listEl.innerHTML += `<span class="collaborator-tag">+${collabs.length - 3}</span>`;
+                        }
+                    }
+                } else {
+                    countEl.textContent = '0';
+                    listEl.innerHTML = '<span style="color: #999; font-size: 12px;">Nessuno</span>';
+                }
+            } catch (error) {
+                console.error('Error loading collaborators:', error);
+            }
+        }
+
+        async function manageCollaborators(projectId, projectName) {
+            currentProjectId = projectId;
+
+            document.getElementById('collab-project-name').textContent = projectName;
+            document.getElementById('collaboratorsModal').classList.add('active');
+
+            // Load all users and current collaborators
+            await loadAllUsers();
+            await loadCurrentCollaborators();
+        }
+
+        async function loadAllUsers() {
+            try {
+                const response = await AuthHelper.fetch('/api/auth/users');
+                const data = await response.json();
+
+                if (data.users) {
+                    allUsers = data.users;
+
+                    const select = document.getElementById('userSelect');
+                    select.innerHTML = '<option value="">-- Seleziona utente --</option>';
+
+                    allUsers.forEach(user => {
+                        select.innerHTML += `<option value="${user.user_id}">${user.username} (${user.full_name || user.email})</option>`;
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading users:', error);
+                alert('Errore nel caricamento utenti');
+            }
+        }
+
+        async function loadCurrentCollaborators() {
+            try {
+                const response = await AuthHelper.fetch(`/api/projects/${currentProjectId}/collaborators`);
+                const data = await response.json();
+
+                const container = document.getElementById('currentCollaborators');
+
+                if (data.status === 'success' && data.collaborators) {
+                    currentCollaborators = data.collaborators;
+
+                    if (currentCollaborators.length === 0) {
+                        container.innerHTML = '<p style="text-align: center; color: #999; padding: 20px;">Nessun collaboratore</p>';
+                    } else {
+                        container.innerHTML = currentCollaborators.map(collab => `
+                            <div class="user-item">
+                                <div>
+                                    <strong>👤 ${collab.username}</strong>
+                                    <div style="font-size: 12px; color: #666;">${collab.email}</div>
+                                    <div style="font-size: 11px; color: #999;">Aggiunto: ${new Date(collab.invited_date).toLocaleDateString('it-IT')}</div>
+                                </div>
+                                <button class="btn btn-danger" onclick="removeCollaborator(${collab.user_id})" style="padding: 8px 16px; font-size: 12px;">
+                                    🗑️ Rimuovi
+                                </button>
+                            </div>
+                        `).join('');
+                    }
+                } else {
+                    container.innerHTML = '<p style="text-align: center; color: #999; padding: 20px;">Errore nel caricamento</p>';
+                }
+            } catch (error) {
+                console.error('Error loading collaborators:', error);
+                document.getElementById('currentCollaborators').innerHTML =
+                    '<p style="text-align: center; color: #dc3545; padding: 20px;">Errore: ' + error.message + '</p>';
+            }
+        }
+
+        async function addCollaborator() {
+            const userId = document.getElementById('userSelect').value;
+
+            if (!userId) {
+                alert('Seleziona un utente');
+                return;
+            }
+
+            try {
+                const response = await AuthHelper.fetch(`/api/projects/${currentProjectId}/collaborators`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: parseInt(userId) })
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    alert('Collaboratore aggiunto con successo!');
+                    document.getElementById('userSelect').value = '';
+                    await loadCurrentCollaborators();
+                    await loadProjectCollaborators(currentProjectId);
+                } else {
+                    alert('Errore: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Errore: ' + error.message);
+            }
+        }
+
+        async function removeCollaborator(userId) {
+            if (!confirm('Rimuovere questo collaboratore?')) {
+                return;
+            }
+
+            try {
+                const response = await AuthHelper.fetch(`/api/projects/${currentProjectId}/collaborators/${userId}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    alert('Collaboratore rimosso con successo!');
+                    await loadCurrentCollaborators();
+                    await loadProjectCollaborators(currentProjectId);
+                } else {
+                    alert('Errore: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Errore: ' + error.message);
+            }
+        }
+
+        function closeCollaboratorsModal() {
+            document.getElementById('collaboratorsModal').classList.remove('active');
+            currentProjectId = null;
         }
     </script>
 </body>
