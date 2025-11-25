@@ -873,7 +873,8 @@
             listEl.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
 
             try {
-                const response = await AuthHelper.fetch('/api/auth/users');
+                // Load ALL users including inactive (admin endpoint)
+                const response = await AuthHelper.fetch('/api/auth/users/all');
                 const data = await response.json();
 
                 if (data.users) {
@@ -885,18 +886,166 @@
                                 <span class="feature-value">${user.email}</span>
                             </div>
                             <div class="feature-row">
-                                <span class="feature-label">Role</span>
-                                <span class="feature-value">${user.role}</span>
+                                <span class="feature-label">Full Name</span>
+                                <span class="feature-value">${user.full_name || 'N/A'}</span>
                             </div>
                             <div class="feature-row">
-                                <span class="feature-label">Active</span>
-                                <span class="feature-value">${user.is_active ? '✅' : '❌'}</span>
+                                <span class="feature-label">Role</span>
+                                <span class="feature-value" style="text-transform: uppercase; font-weight: bold;">${user.role}</span>
+                            </div>
+                            <div class="feature-row">
+                                <span class="feature-label">Status</span>
+                                <span class="feature-value">${user.is_active ? '✅ Active' : '❌ Inactive'}</span>
+                            </div>
+                            <div class="feature-row">
+                                <span class="feature-label">Created</span>
+                                <span class="feature-value">${new Date(user.created_date).toLocaleDateString('it-IT')}</span>
+                            </div>
+                            <div class="action-buttons">
+                                <button class="btn btn-primary" onclick="editUser(${user.user_id}, '${user.username}', '${user.email}', '${user.full_name || ''}', '${user.role}')" style="font-size: 12px;">✏️ Edit</button>
+                                ${user.is_active ?
+                                    `<button class="btn btn-secondary" onclick="deactivateUser(${user.user_id}, '${user.username}')" style="font-size: 12px;">⏸️ Deactivate</button>` :
+                                    `<button class="btn" onclick="activateUser(${user.user_id}, '${user.username}')" style="background: #28a745; color: white; font-size: 12px;">▶️ Activate</button>`
+                                }
+                                <button class="btn btn-danger" onclick="deleteUserPermanently(${user.user_id}, '${user.username}')" style="font-size: 12px;">🗑️ Delete</button>
                             </div>
                         </div>
                     `).join('') + '</div>';
                 }
             } catch (error) {
                 listEl.innerHTML = '<div class="empty-state"><p>Errore: ' + error.message + '</p></div>';
+            }
+        }
+
+        async function editUser(userId, username, email, fullName, role) {
+            // Show edit modal
+            const newEmail = prompt(`Edit Email for ${username}:`, email);
+            if (newEmail === null) return; // Cancelled
+
+            const newFullName = prompt(`Edit Full Name for ${username}:`, fullName);
+            if (newFullName === null) return; // Cancelled
+
+            const newRole = prompt(`Edit Role for ${username} (admin/archaeologist/viewer):`, role);
+            if (newRole === null) return; // Cancelled
+
+            if (!['admin', 'archaeologist', 'viewer'].includes(newRole.toLowerCase())) {
+                alert('Invalid role! Must be: admin, archaeologist, or viewer');
+                return;
+            }
+
+            const changePassword = confirm('Do you want to change the password too?');
+            let newPassword = null;
+            if (changePassword) {
+                newPassword = prompt(`Enter new password for ${username} (min 6 characters):`);
+                if (!newPassword || newPassword.length < 6) {
+                    alert('Password must be at least 6 characters!');
+                    return;
+                }
+            }
+
+            try {
+                const updateData = {
+                    email: newEmail,
+                    full_name: newFullName,
+                    role: newRole.toLowerCase()
+                };
+
+                if (newPassword) {
+                    updateData.password = newPassword;
+                }
+
+                const response = await AuthHelper.fetch(`/api/auth/users/${userId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updateData)
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    alert('User updated successfully!');
+                    await loadUsers();
+                } else {
+                    alert('Error: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        async function deactivateUser(userId, username) {
+            if (!confirm(`Deactivate user "${username}"? They will not be able to login.`)) {
+                return;
+            }
+
+            try {
+                const response = await AuthHelper.fetch(`/api/auth/users/${userId}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    alert('User deactivated successfully!');
+                    await loadUsers();
+                } else {
+                    alert('Error: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        async function activateUser(userId, username) {
+            if (!confirm(`Activate user "${username}"? They will be able to login again.`)) {
+                return;
+            }
+
+            try {
+                const response = await AuthHelper.fetch(`/api/auth/users/${userId}/activate`, {
+                    method: 'PUT'
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    alert('User activated successfully!');
+                    await loadUsers();
+                } else {
+                    alert('Error: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        async function deleteUserPermanently(userId, username) {
+            if (!confirm(`⚠️ WARNING: Permanently DELETE user "${username}"?\n\nThis action CANNOT be undone!\nAll their projects and data will remain but ownership will be lost.`)) {
+                return;
+            }
+
+            // Double confirmation for permanent deletion
+            const confirmText = prompt(`Type "${username}" to confirm permanent deletion:`);
+            if (confirmText !== username) {
+                alert('Deletion cancelled - confirmation text did not match.');
+                return;
+            }
+
+            try {
+                const response = await AuthHelper.fetch(`/api/auth/users/${userId}/delete-permanently`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    alert('User permanently deleted!');
+                    await loadUsers();
+                } else {
+                    alert('Error: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
             }
         }
 
