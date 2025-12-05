@@ -5,37 +5,17 @@ Web Interface Routes
 Blueprint for web-based user interface.
 """
 
-from flask import Blueprint, render_template, request, jsonify, session, current_app, make_response, send_file, redirect, url_for, g
+from flask import Blueprint, render_template, request, jsonify, session, current_app, make_response, send_file, redirect, url_for
 from werkzeug.utils import secure_filename
 import os
 import json
 import io
 from datetime import datetime
-import numpy as np
 
 from acs.core.mesh_processor import MeshProcessor
 from acs.core.morphometric import MorphometricAnalyzer
 from acs.core.taxonomy import FormalTaxonomySystem
 from acs.core.database import get_database
-from acs.core.auth import login_required
-
-
-def convert_numpy_types(obj):
-    """Convert numpy types to Python native types for JSON serialization."""
-    if isinstance(obj, np.bool_):
-        return bool(obj)
-    elif isinstance(obj, np.integer):
-        return int(obj)
-    elif isinstance(obj, np.floating):
-        return float(obj)
-    elif isinstance(obj, np.ndarray):
-        return obj.tolist()
-    elif isinstance(obj, dict):
-        return {key: convert_numpy_types(value) for key, value in obj.items()}
-    elif isinstance(obj, (list, tuple)):
-        return [convert_numpy_types(item) for item in obj]
-    else:
-        return obj
 
 web_bp = Blueprint('web', __name__,
                    template_folder='templates',
@@ -221,11 +201,15 @@ def upload_mesh():
         return jsonify({'error': 'No file selected'}), 400
 
     filename = secure_filename(file.filename)
-    upload_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], 'meshes')
-    os.makedirs(upload_folder, exist_ok=True)
 
-    filepath = os.path.join(upload_folder, filename)
-    file.save(filepath)
+    # Save to temporary location first for processing
+    import tempfile
+    temp_dir = tempfile.mkdtemp()
+    temp_filepath = os.path.join(temp_dir, filename)
+    file.save(temp_filepath)
+
+    # We'll upload to storage after processing
+    filepath = temp_filepath
 
     # Process mesh
     try:
@@ -310,12 +294,37 @@ def upload_mesh():
                 logging.error(f"Savignano extraction failed for {artifact_id}: {e}", exc_info=True)
                 features['savignano_error'] = str(e)
 
-        # Save to database with actual file path
+        # Upload to storage (Google Drive or local)
+        from acs.core.storage import get_default_storage
+        import shutil
+
+        storage = get_default_storage()
+        remote_path = f"meshes/{artifact_id}/{filename}"
+
+        try:
+            # Upload to storage backend
+            storage_id = storage.upload_file(filepath, remote_path)
+            stored_path = remote_path  # Use remote path for retrieval
+
+            import logging
+            logging.info(f"✅ Uploaded {filename} to storage: {remote_path}")
+
+        except Exception as e:
+            import logging
+            logging.error(f"Storage upload failed, falling back to local: {e}")
+            # Fallback to local storage
+            upload_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], 'meshes')
+            os.makedirs(upload_folder, exist_ok=True)
+            local_filepath = os.path.join(upload_folder, filename)
+            shutil.copy2(filepath, local_filepath)
+            stored_path = local_filepath
+
+        # Save to database with storage path
         db = get_database()
         mesh = mesh_processor.meshes[artifact_id]
         db.add_artifact(
             artifact_id=artifact_id,
-            mesh_path=filepath,  # Save actual path
+            mesh_path=stored_path,  # Save storage path (remote or local)
             n_vertices=len(mesh.vertices),
             n_faces=len(mesh.faces),
             is_watertight=mesh.is_watertight,
@@ -325,27 +334,40 @@ def upload_mesh():
                 'savignano_auto_detected': enable_savignano_explicit is None,
                 'category': category,
                 'description': description,
-                'material': material
+                'material': material,
+                'storage_backend': os.getenv('STORAGE_BACKEND', 'local')
             },
             project_id=project_id
         )
         db.add_features(artifact_id, features)
 
-        # Convert numpy types before JSON serialization
-        response_data = {
+        # Clean up temporary directory
+        try:
+            shutil.rmtree(temp_dir)
+        except:
+            pass
+
+        return jsonify({
             'status': 'success',
             'artifact_id': features['id'],
-            'features': convert_numpy_types(features),
+            'features': features,
             'persisted': True,
             'savignano_extracted': savignano_features is not None,
             'savignano_auto_detected': enable_savignano_explicit is None and enable_savignano,
+            'storage_backend': os.getenv('STORAGE_BACKEND', 'local'),
             'message': 'Savignano morphometric analysis automatically performed' if (enable_savignano_explicit is None and enable_savignano) else None
-        }
-
-        return jsonify(response_data)
+        })
     except Exception as e:
         import logging
         logging.error(f"Upload error for {filename}: {e}", exc_info=True)
+
+        # Clean up temporary directory on error
+        try:
+            import shutil
+            shutil.rmtree(temp_dir)
+        except:
+            pass
+
         return jsonify({'error': str(e)}), 500
 
 
@@ -654,27 +676,50 @@ def viewer_page():
 
 @web_bp.route('/mesh-file/<artifact_id>')
 def serve_mesh_file(artifact_id):
-    """Serve original mesh file for 3D viewer."""
+    """Serve mesh file for 3D viewer, downloading from storage if needed."""
     try:
-        # Get mesh path from database
+        from acs.core.database import get_database
+        from acs.core.storage import get_default_storage
+        import shutil
+
         db = get_database()
         artifact = db.get_artifact(artifact_id)
 
         if not artifact:
-            return jsonify({'error': 'Artifact not found in database'}), 404
+            return jsonify({'error': 'Artifact not found'}), 404
 
         mesh_path = artifact.get('mesh_path')
-        if not mesh_path or not os.path.exists(mesh_path):
-            return jsonify({'error': 'Mesh file not found on disk'}), 404
+        if not mesh_path:
+            return jsonify({'error': 'Mesh file path not found'}), 404
 
-        from flask import send_file
-        # Serve original file with cache headers
-        response = send_file(mesh_path, mimetype='text/plain')
+        # Check if this is a remote storage path (not an absolute local path)
+        if not os.path.isabs(mesh_path) or not os.path.exists(mesh_path):
+            # Remote storage path - download to cache
+            storage = get_default_storage()
+            cache_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], 'mesh_cache')
+            os.makedirs(cache_folder, exist_ok=True)
+
+            cache_path = os.path.join(cache_folder, f'{artifact_id}.obj')
+
+            # Download if not cached
+            if not os.path.exists(cache_path):
+                import logging
+                logging.info(f"Downloading {mesh_path} from storage to cache")
+                storage.download_file(mesh_path, cache_path)
+
+            serve_path = cache_path
+        else:
+            # Local path - serve directly
+            serve_path = mesh_path
+
+        # Serve the file
+        response = send_file(serve_path, mimetype='text/plain')
         response.headers['Cache-Control'] = 'public, max-age=31536000'  # 1 year
         return response
+
     except Exception as e:
         import logging
-        logging.error(f"Error serving mesh file for {artifact_id}: {e}", exc_info=True)
+        logging.error(f"Error serving mesh file {artifact_id}: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 
@@ -1739,25 +1784,17 @@ def reload_meshes():
 # ========== PROJECT MANAGEMENT ROUTES ==========
 
 @web_bp.route('/projects', methods=['GET'])
-@login_required
 def list_projects():
-    """List all projects accessible by current user."""
+    """List all projects."""
     try:
-        db = get_database()
-        user_id = g.current_user['user_id']
+        from acs.core.database import get_database
 
-        # Admin can see all projects
-        if g.current_user['role'] == 'admin':
-            projects = db.list_projects(status='active')
-            for project in projects:
-                # Check if admin is owner of this project
-                if project.get('owner_id') == user_id:
-                    project['user_role'] = 'owner'
-                else:
-                    project['user_role'] = 'admin'
-        else:
-            # Get user's projects (owned + collaborated) with user_role
-            projects = db.get_user_projects(user_id)
+        db = get_database()
+        status = request.args.get('status')  # Optional filter
+        # If status is "all", pass None to get all projects
+        if status == 'all':
+            status = None
+        projects = db.list_projects(status=status)
 
         # Get statistics for each project
         for project in projects:
@@ -1773,12 +1810,10 @@ def list_projects():
 
 
 @web_bp.route('/projects', methods=['POST'])
-@login_required
 def create_project():
     """Create a new project."""
     try:
-        # Get current user from Flask g (set by @login_required decorator)
-        current_user = g.current_user
+        from acs.core.database import get_database
 
         data = request.json
         project_id = data.get('project_id')
@@ -1789,8 +1824,7 @@ def create_project():
             return jsonify({'error': 'project_id and name are required'}), 400
 
         db = get_database()
-        # Pass current user's ID as owner_id
-        db.create_project(project_id, name, current_user['user_id'], description)
+        db.create_project(project_id, name, description)
 
         return jsonify({
             'status': 'success',
