@@ -258,17 +258,22 @@ def login_required(f: Callable) -> Callable:
     return decorated_function
 
 
-def role_required(required_role: str) -> Callable:
-    """Decorator to require specific role for route.
+def role_required(*allowed_roles: str) -> Callable:
+    """Decorator to require specific role(s) for route.
 
     Args:
-        required_role: Required user role ('admin', 'archaeologist', 'viewer')
+        *allowed_roles: One or more allowed roles ('admin', 'archaeologist', 'viewer')
 
     Usage:
         @app.route('/admin')
         @role_required('admin')
         def admin_route():
             return jsonify({'message': 'Admin only'})
+
+        @app.route('/research')
+        @role_required('admin', 'archaeologist')
+        def research_route():
+            return jsonify({'message': 'Admin and archaeologist only'})
     """
     def decorator(f: Callable) -> Callable:
         @wraps(f)
@@ -276,21 +281,13 @@ def role_required(required_role: str) -> Callable:
         def decorated_function(*args, **kwargs):
             user_role = g.current_user['role']
 
-            # Role hierarchy: admin > archaeologist > viewer
-            role_levels = {
-                'viewer': 0,
-                'archaeologist': 1,
-                'admin': 2
-            }
-
-            required_level = role_levels.get(required_role, 0)
-            user_level = role_levels.get(user_role, 0)
-
-            if user_level < required_level:
+            # Check if user role is in allowed roles
+            if user_role not in allowed_roles:
+                roles_str = ', '.join(allowed_roles)
                 return jsonify({
-                    'error': f'Requires {required_role} role',
+                    'error': f'Requires one of these roles: {roles_str}',
                     'code': 'INSUFFICIENT_PERMISSIONS',
-                    'required_role': required_role,
+                    'allowed_roles': list(allowed_roles),
                     'user_role': user_role
                 }), 403
 
