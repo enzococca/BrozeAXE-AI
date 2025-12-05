@@ -654,28 +654,27 @@ def viewer_page():
 
 @web_bp.route('/mesh-file/<artifact_id>')
 def serve_mesh_file(artifact_id):
-    """Serve mesh file for 3D viewer with caching."""
-    if artifact_id not in mesh_processor.meshes:
-        return jsonify({'error': 'Artifact not found'}), 404
-
+    """Serve original mesh file for 3D viewer."""
     try:
-        # Use cached folder for persistent storage
-        cache_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], 'mesh_cache')
-        os.makedirs(cache_folder, exist_ok=True)
+        # Get mesh path from database
+        db = get_database()
+        artifact = db.get_artifact(artifact_id)
 
-        cache_path = os.path.join(cache_folder, f'{artifact_id}.obj')
+        if not artifact:
+            return jsonify({'error': 'Artifact not found in database'}), 404
 
-        # Only export if not already cached
-        if not os.path.exists(cache_path):
-            mesh = mesh_processor.meshes[artifact_id]
-            mesh.export(cache_path)
+        mesh_path = artifact.get('mesh_path')
+        if not mesh_path or not os.path.exists(mesh_path):
+            return jsonify({'error': 'Mesh file not found on disk'}), 404
 
         from flask import send_file
-        # Add cache headers for browser caching
-        response = send_file(cache_path, mimetype='text/plain')
+        # Serve original file with cache headers
+        response = send_file(mesh_path, mimetype='text/plain')
         response.headers['Cache-Control'] = 'public, max-age=31536000'  # 1 year
         return response
     except Exception as e:
+        import logging
+        logging.error(f"Error serving mesh file for {artifact_id}: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 
