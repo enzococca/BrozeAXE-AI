@@ -323,13 +323,16 @@ async function uploadFiles() {
                     reject(new Error('Upload cancelled'));
                 });
 
-                // Add authentication token
+                // Open connection FIRST
+                xhr.open('POST', '/web/upload-mesh');
+
+                // THEN set headers
                 const token = AuthHelper.getToken();
                 if (token) {
                     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
                 }
 
-                xhr.open('POST', '/web/upload-mesh');
+                // FINALLY send data
                 xhr.send(formData);
             });
 
