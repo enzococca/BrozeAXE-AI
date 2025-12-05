@@ -261,6 +261,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="/web/static/js/auth.js"></script>
 <script>
 async function runQuickAnalysis() {
     if ({{ stats.features_analyzed }} < 2) {
@@ -316,7 +317,7 @@ async function exportData() {
 // Project Management
 async function loadProjects() {
     try {
-        const response = await fetch('/web/projects?status=all');  // Load all projects including archived
+        const response = await AuthHelper.fetch('/web/projects?status=all');  // Load all projects including archived
         const data = await response.json();
 
         if (response.ok && data.projects) {
