@@ -253,22 +253,24 @@ document.addEventListener('DOMContentLoaded', function() {
 
 async function loadArtifacts() {
     try {
-        const response = await fetch('/web/statistics');
+        // Load artifacts from database instead of in-memory cache
+        const response = await AuthHelper.fetch('/api/mesh/artifacts?per_page=100');
         const data = await response.json();
 
         const select = document.getElementById('artifactSelect');
         select.innerHTML = '<option value="">-- Seleziona un reperto --</option>';
 
-        if (data.meshes && data.meshes.artifacts) {
-            data.meshes.artifacts.forEach(artifactId => {
+        if (data.status === 'success' && data.artifacts) {
+            data.artifacts.forEach(artifact => {
                 const option = document.createElement('option');
-                option.value = artifactId;
-                option.textContent = artifactId;
+                option.value = artifact.artifact_id;
+                option.textContent = `${artifact.artifact_id} (${artifact.n_vertices} vertices)`;
                 select.appendChild(option);
             });
         }
     } catch (error) {
         console.error('Error loading artifacts:', error);
+        alert('Errore nel caricamento degli artifact. Assicurati di aver effettuato il login.');
     }
 }
 

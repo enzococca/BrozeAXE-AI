@@ -105,11 +105,12 @@ class JWTManager:
 
     @staticmethod
     def get_token_from_request() -> Optional[str]:
-        """Extract JWT token from request headers.
+        """Extract JWT token from request headers or query parameters.
 
         Looks for token in:
         1. Authorization header: "Bearer <token>"
         2. X-Access-Token header: "<token>"
+        3. Query parameter: "?token=<token>" (for EventSource/SSE compatibility)
 
         Returns:
             Token string or None
@@ -121,6 +122,11 @@ class JWTManager:
 
         # Check X-Access-Token header
         token = request.headers.get('X-Access-Token')
+        if token:
+            return token
+
+        # Check query parameter (for EventSource/SSE which can't send custom headers)
+        token = request.args.get('token')
         if token:
             return token
 
