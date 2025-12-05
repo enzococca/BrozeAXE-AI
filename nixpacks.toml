@@ -4,8 +4,5 @@ providers = ["python"]
 [phases.setup]
 nixPkgs = ['python311', 'gcc', 'libstdcxx5']
 
-[phases.install]
-cmds = ["pip install -r requirements.txt"]
-
 [start]
 cmd = 'cd archaeological-classifier && python3 -m acs.api.app'
