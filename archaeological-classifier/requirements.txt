@@ -12,6 +12,10 @@ flask>=3.0.0
 flask-cors>=4.0.0
 werkzeug>=3.0.0
 
+# Authentication
+PyJWT>=2.8.0
+bcrypt>=4.1.0
+
 # Data validation
 pydantic>=2.0.0
 
@@ -24,6 +28,7 @@ click>=8.1.0
 # Optional dependencies
 pandas>=2.0.0  # For CSV export
 pyefd>=1.5.0  # For Elliptic Fourier Analysis
+psutil>=5.9.0  # For system monitoring (health endpoints)
 
 # Development dependencies (optional)
 pytest>=7.4.0

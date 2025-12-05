@@ -6,7 +6,9 @@ Endpoints for formal taxonomy management and classification.
 """
 
 from flask import Blueprint, request, jsonify, current_app, send_file
+from acs.core.auth import login_required, role_required
 from acs.core.taxonomy import FormalTaxonomySystem
+from acs.core.database import ArtifactDatabase
 from acs.savignano.taxonomy_rules import SavignanoClassifier, classify_savignano_artifact
 import os
 
@@ -15,9 +17,11 @@ classification_bp = Blueprint('classification', __name__)
 # Global taxonomy system instances
 taxonomy = FormalTaxonomySystem()
 savignano_classifier = SavignanoClassifier()
+db = ArtifactDatabase()
 
 
 @classification_bp.route('/define-class', methods=['POST'])
+@role_required('admin', 'archaeologist')
 def define_class():
     """
     Define new taxonomic class from reference group.
@@ -63,6 +67,7 @@ def define_class():
 
 
 @classification_bp.route('/classify', methods=['POST'])
+@role_required('admin', 'archaeologist')
 def classify_artifact():
     """
     Classify an artifact using defined taxonomy.
@@ -101,6 +106,7 @@ def classify_artifact():
 
 
 @classification_bp.route('/classify-savignano', methods=['POST'])
+@role_required('admin', 'archaeologist')
 def classify_savignano():
     """
     Classify artifact using Savignano morphometric taxonomy.
@@ -148,7 +154,148 @@ def classify_savignano():
         }), 500
 
 
+@classification_bp.route('/classify-batch', methods=['POST'])
+@role_required('admin', 'archaeologist')
+def classify_batch():
+    """
+    Classify multiple artifacts in a single request.
+
+    This endpoint accepts a list of artifact IDs and classifies each one
+    using the appropriate taxonomy system. Features are automatically
+    retrieved from the database.
+
+    Body:
+        artifact_ids: List of artifact IDs to classify
+        classification_type: Type of classification ('general', 'savignano') - default 'savignano'
+        return_all_scores: Return all class scores for general classification - default False
+
+    Returns:
+        JSON with batch classification results:
+        - results: List of classification results for each artifact
+        - total: Total number of artifacts processed
+        - successful: Number of successful classifications
+        - failed: Number of failed classifications
+        - errors: List of errors for failed classifications
+
+    Example Request:
+        {
+            "artifact_ids": ["axe936", "axe992", "axe979"],
+            "classification_type": "savignano"
+        }
+
+    Example Response:
+        {
+            "status": "success",
+            "results": [
+                {
+                    "artifact_id": "axe936",
+                    "classification": {...},
+                    "success": true
+                },
+                ...
+            ],
+            "total": 3,
+            "successful": 2,
+            "failed": 1
+        }
+    """
+    data = request.get_json()
+
+    artifact_ids = data.get('artifact_ids', [])
+    classification_type = data.get('classification_type', 'savignano')
+    return_all_scores = data.get('return_all_scores', False)
+
+    if not artifact_ids or not isinstance(artifact_ids, list):
+        return jsonify({
+            'status': 'error',
+            'error': 'artifact_ids must be a non-empty list'
+        }), 400
+
+    if classification_type not in ['general', 'savignano']:
+        return jsonify({
+            'status': 'error',
+            'error': 'classification_type must be "general" or "savignano"'
+        }), 400
+
+    results = []
+    successful_count = 0
+    failed_count = 0
+    errors = []
+
+    for artifact_id in artifact_ids:
+        try:
+            # Get features from database
+            features = db.get_features(artifact_id)
+
+            if not features:
+                failed_count += 1
+                errors.append({
+                    'artifact_id': artifact_id,
+                    'error': 'No features found in database'
+                })
+                results.append({
+                    'artifact_id': artifact_id,
+                    'success': False,
+                    'error': 'No features found in database'
+                })
+                continue
+
+            # Classify based on type
+            if classification_type == 'savignano':
+                classification_result = classify_savignano_artifact(artifact_id, features)
+            else:  # general classification
+                classification_result = taxonomy.classify_object(
+                    obj_features=features,
+                    return_all_scores=return_all_scores
+                )
+
+            # Store classification in database
+            try:
+                db.store_classification(
+                    artifact_id=artifact_id,
+                    classification_result=classification_result,
+                    classifier_type=classification_type,
+                    validated=False  # Needs manual validation
+                )
+            except Exception as store_error:
+                # Log but don't fail the classification
+                current_app.logger.warning(
+                    f'Could not store classification for {artifact_id}: {str(store_error)}'
+                )
+
+            successful_count += 1
+            results.append({
+                'artifact_id': artifact_id,
+                'classification': classification_result,
+                'success': True
+            })
+
+        except Exception as e:
+            failed_count += 1
+            error_msg = str(e)
+            errors.append({
+                'artifact_id': artifact_id,
+                'error': error_msg
+            })
+            results.append({
+                'artifact_id': artifact_id,
+                'success': False,
+                'error': error_msg
+            })
+
+    return jsonify({
+        'status': 'success' if failed_count == 0 else 'partial_success',
+        'results': results,
+        'total': len(artifact_ids),
+        'successful': successful_count,
+        'failed': failed_count,
+        'errors': errors if errors else None,
+        'classification_type': classification_type
+    })
+
+
 @classification_bp.route('/savignano-classes', methods=['GET'])
+@login_required
 def get_savignano_classes():
     """
     Get all defined Savignano taxonomic classes.
@@ -187,6 +334,7 @@ def get_savignano_classes():
 
 
 @classification_bp.route('/modify-class', methods=['POST'])
+@role_required('admin', 'archaeologist')
 def modify_class():
     """
     Modify class parameters with justification.
@@ -234,6 +382,7 @@ def modify_class():
 
 
 @classification_bp.route('/discover', methods=['POST'])
+@role_required('admin', 'archaeologist')
 def discover_classes():
     """
     Discover new classes from unclassified artifacts.
@@ -276,6 +425,7 @@ def discover_classes():
 
 
 @classification_bp.route('/classes', methods=['GET'])
+@login_required
 def list_classes():
     """
     List all defined classes.
@@ -310,6 +460,7 @@ def list_classes():
 
 
 @classification_bp.route('/classes/<class_id>', methods=['GET'])
+@login_required
 def get_class_details(class_id):
     """
     Get detailed information about a specific class.
@@ -339,6 +490,7 @@ def get_class_details(class_id):
 
 
 @classification_bp.route('/export', methods=['GET'])
+@role_required('admin')
 def export_taxonomy():
     """
     Export complete taxonomy to JSON file.
@@ -369,6 +521,7 @@ def export_taxonomy():
 
 
 @classification_bp.route('/import', methods=['POST'])
+@role_required('admin')
 def import_taxonomy():
     """
     Import taxonomy from JSON file.
@@ -407,6 +560,7 @@ def import_taxonomy():
 
 
 @classification_bp.route('/statistics', methods=['GET'])
+@login_required
 def get_statistics():
     """
     Get taxonomy statistics.

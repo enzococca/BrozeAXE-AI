@@ -1648,16 +1648,10 @@ class SavignanoComprehensiveReport:
 
             for i, line in enumerate(page_lines):
                 # Render both empty and non-empty lines to preserve spacing
-                # Use Courier New as more reliable monospace font, fallback to sans-serif
-                try:
-                    ax.text(0.08, current_y, line, ha='left', va='top',
-                           fontsize=9, family='Courier New', color='black',
-                           transform=ax.transAxes)
-                except:
-                    # Fallback without font specification
-                    ax.text(0.08, current_y, line, ha='left', va='top',
-                           fontsize=9, color='black',
-                           transform=ax.transAxes)
+                # Use same default font as rest of PDF
+                ax.text(0.08, current_y, line, ha='left', va='top',
+                       fontsize=9, color='black',
+                       transform=ax.transAxes)
                 current_y -= line_height
 
                 # Debug log for first few lines
@@ -1755,16 +1749,10 @@ class SavignanoComprehensiveReport:
 
             for i, line in enumerate(page_lines):
                 # Render both empty and non-empty lines to preserve spacing
-                # Use Courier New as more reliable monospace font, fallback to sans-serif
-                try:
-                    ax.text(0.08, current_y, line, ha='left', va='top',
-                           fontsize=9, family='Courier New', color='black',
-                           transform=ax.transAxes)
-                except:
-                    # Fallback without font specification
-                    ax.text(0.08, current_y, line, ha='left', va='top',
-                           fontsize=9, color='black',
-                           transform=ax.transAxes)
+                # Use same default font as rest of PDF
+                ax.text(0.08, current_y, line, ha='left', va='top',
+                       fontsize=9, color='black',
+                       transform=ax.transAxes)
                 current_y -= line_height
 
                 # Debug log for first few lines
