@@ -428,7 +428,7 @@
                     downloadsDiv.style.display = 'block';
                     downloadsDiv.innerHTML = `
                         <strong>📥 Download:</strong><br>
-                        <a href="/api/savignano/download-comprehensive-report/${artifactId}?language=${language}" class="download-link">📄 Download Report Completo (PDF)</a>
+                        <button onclick="downloadReport('${artifactId}', '${language}')" class="download-link" style="cursor: pointer; border: none; background: none; color: #007bff; text-decoration: underline; font-size: inherit;">📄 Download Report Completo (PDF)</button>
                     `;
                 } else if (data.type === 'error') {
                     addLog(`❌ Errore: ${data.message}`, 'error');
@@ -451,6 +451,35 @@
                 statusDiv.innerHTML = `<strong>❌ Errore di rete:</strong><br>Connessione al server interrotta`;
             };
         });
+
+        async function downloadReport(artifactId, language) {
+            try {
+                // Use AuthHelper.fetch to include authentication token
+                const response = await AuthHelper.fetch(`/api/savignano/download-comprehensive-report/${artifactId}?language=${language}`);
+
+                if (!response.ok) {
+                    throw new Error(`Download failed: ${response.statusText}`);
+                }
+
+                // Get the blob from response
+                const blob = await response.blob();
+
+                // Create a download link and trigger it
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${artifactId}_comprehensive_report_${language}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+
+                // Clean up
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            } catch (error) {
+                console.error('Download error:', error);
+                alert(`Errore nel download del report: ${error.message}`);
+            }
+        }
     </script>
 </body>
 </html>
