@@ -104,7 +104,7 @@ class GoogleDriveStorage(StorageBackend):
             self.gauth = GoogleAuth()
 
             if credentials_path and os.path.exists(credentials_path):
-                # Use provided credentials
+                # Use provided credentials file
                 self.gauth.LoadCredentialsFile(credentials_path)
             else:
                 # Try environment variable
@@ -112,12 +112,27 @@ class GoogleDriveStorage(StorageBackend):
                 if creds_json:
                     import json
                     import tempfile
-                    # Write credentials to temp file
-                    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
-                        json.dump(json.loads(creds_json), f)
-                        temp_creds = f.name
-                    self.gauth.LoadCredentialsFile(temp_creds)
-                    os.unlink(temp_creds)
+
+                    try:
+                        # Parse JSON credentials
+                        creds_dict = json.loads(creds_json)
+
+                        # Write credentials to temp file
+                        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
+                            json.dump(creds_dict, f)
+                            temp_creds = f.name
+
+                        self.gauth.LoadCredentialsFile(temp_creds)
+                        os.unlink(temp_creds)
+
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Invalid JSON in GOOGLE_DRIVE_CREDENTIALS: {e}")
+                        logger.error(f"JSON starts with: {creds_json[:200]}...")
+                        raise ValueError(
+                            "GOOGLE_DRIVE_CREDENTIALS contains invalid JSON. "
+                            "Make sure to properly escape newlines in the private_key field. "
+                            f"Parse error: {str(e)}"
+                        )
                 else:
                     # Interactive authentication (development only)
                     logger.warning("No credentials found, using interactive authentication")

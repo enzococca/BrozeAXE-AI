@@ -295,23 +295,22 @@ def upload_mesh():
                 features['savignano_error'] = str(e)
 
         # Upload to storage (Google Drive or local)
-        from acs.core.storage import get_default_storage
+        from acs.core.storage import get_default_storage, LocalStorage
         import shutil
+        import logging
 
-        storage = get_default_storage()
-        remote_path = f"meshes/{artifact_id}/{filename}"
-
+        # Try to get storage backend (Google Drive or local)
         try:
+            storage = get_default_storage()
+            remote_path = f"meshes/{artifact_id}/{filename}"
+
             # Upload to storage backend
             storage_id = storage.upload_file(filepath, remote_path)
             stored_path = remote_path  # Use remote path for retrieval
-
-            import logging
             logging.info(f"✅ Uploaded {filename} to storage: {remote_path}")
 
         except Exception as e:
-            import logging
-            logging.error(f"Storage upload failed, falling back to local: {e}")
+            logging.error(f"Storage backend failed, using local fallback: {e}")
             # Fallback to local storage
             upload_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], 'meshes')
             os.makedirs(upload_folder, exist_ok=True)
