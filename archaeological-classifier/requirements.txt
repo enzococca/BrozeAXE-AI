@@ -26,8 +26,9 @@ mcp>=0.1.0
 click>=8.1.0
 
 # AI and Cloud Storage
-anthropic>=0.18.0  # Claude AI for technological analysis
+anthropic>=0.40.0  # Claude AI for technological analysis
 PyDrive2>=1.17.0  # Google Drive integration
+oauth2client>=4.1.3  # Required for Google Drive Service Account auth
 
 # PDF and Image Processing
 reportlab>=4.0.0  # PDF generation
@@ -38,9 +39,6 @@ Pillow>=10.0.0  # Image processing
 pandas>=2.0.0  # For CSV export
 pyefd>=1.5.0  # For Elliptic Fourier Analysis
 psutil>=5.9.0  # For system monitoring (health endpoints)
-
-# Cloud storage
-PyDrive2>=1.17.0  # Google Drive integration
 
 # Development dependencies (optional)
 pytest>=7.4.0
