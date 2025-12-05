@@ -11,6 +11,7 @@ import os
 import json
 import io
 from datetime import datetime
+import numpy as np
 
 from acs.core.mesh_processor import MeshProcessor
 from acs.core.morphometric import MorphometricAnalyzer
@@ -20,6 +21,24 @@ from acs.core.database import get_database
 web_bp = Blueprint('web', __name__,
                    template_folder='templates',
                    static_folder='static')
+
+
+def convert_numpy_types(obj):
+    """Convert numpy types to Python native types for JSON serialization."""
+    if isinstance(obj, np.bool_):
+        return bool(obj)
+    elif isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {key: convert_numpy_types(value) for key, value in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [convert_numpy_types(item) for item in obj]
+    else:
+        return obj
 
 # Global instances (in production, use proper state management)
 mesh_processor = MeshProcessor()
@@ -346,16 +365,18 @@ def upload_mesh():
         except:
             pass
 
-        return jsonify({
+        # Convert numpy types to native Python types for JSON serialization
+        response_data = {
             'status': 'success',
             'artifact_id': features['id'],
-            'features': features,
+            'features': convert_numpy_types(features),
             'persisted': True,
             'savignano_extracted': savignano_features is not None,
             'savignano_auto_detected': enable_savignano_explicit is None and enable_savignano,
             'storage_backend': os.getenv('STORAGE_BACKEND', 'local'),
             'message': 'Savignano morphometric analysis automatically performed' if (enable_savignano_explicit is None and enable_savignano) else None
-        })
+        }
+        return jsonify(response_data)
     except Exception as e:
         import logging
         logging.error(f"Upload error for {filename}: {e}", exc_info=True)
