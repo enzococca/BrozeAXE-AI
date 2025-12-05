@@ -90,6 +90,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="/web/static/js/auth.js"></script>
 <script>
 function filterArtifacts() {
     const searchTerm = document.getElementById('search-input').value.toLowerCase();
@@ -414,7 +415,7 @@ async function assignToProject() {
     showLoadingModal('Loading projects...');
 
     try {
-        const response = await fetch('/web/projects?status=all');
+        const response = await AuthHelper.fetch('/web/projects?status=all');
         const data = await response.json();
         closeLoadingModal();
 
@@ -545,7 +546,7 @@ async function createProjectDialog() {
     const description = prompt('Enter Project Description (optional):') || '';
 
     try {
-        const response = await fetch('/web/projects', {
+        const response = await AuthHelper.fetch('/web/projects', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
