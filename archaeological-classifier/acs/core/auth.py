@@ -48,7 +48,7 @@ class PasswordHasher:
             password_hash: Stored password hash
 
         Returns:
-            True if password matches, False otherwise
+            True if password matches hash, False otherwise
         """
         try:
             return bcrypt.checkpw(
@@ -63,16 +63,16 @@ class JWTManager:
     """JWT token management."""
 
     @staticmethod
-    def generate_token(user_id: int, username: str, role: str) -> str:
-        """Generate JWT token for authenticated user.
+    def generate_token(user_id: int, username: str, role: str = 'viewer') -> str:
+        """Generate JWT token for user.
 
         Args:
             user_id: User ID
             username: Username
-            role: User role
+            role: User role (admin, archaeologist, viewer)
 
         Returns:
-            JWT token string
+            JWT token as string
         """
         payload = {
             'user_id': user_id,
@@ -87,21 +87,21 @@ class JWTManager:
 
     @staticmethod
     def decode_token(token: str) -> Optional[Dict]:
-        """Decode and validate JWT token.
+        """Decode and verify JWT token.
 
         Args:
             token: JWT token string
 
         Returns:
-            Decoded payload dict, or None if invalid/expired
+            Decoded payload dict if valid, None if invalid or expired
         """
         try:
             payload = jwt.decode(token, SECRET_KEY, algorithms=[JWT_ALGORITHM])
             return payload
         except jwt.ExpiredSignatureError:
-            return None  # Token expired
+            return None
         except jwt.InvalidTokenError:
-            return None  # Invalid token
+            return None
 
     @staticmethod
     def get_token_from_request() -> Optional[str]:
@@ -153,136 +153,49 @@ def authenticate_user(username: str, password: str) -> Optional[Dict]:
     if not PasswordHasher.verify_password(password, user['password_hash']):
         return None
 
-    # Update last login
-    db.update_last_login(user['user_id'])
+    # Check if user is active
+    if not user.get('is_active', True):
+        return None
 
-    # Remove password hash from returned user
-    user_safe = {k: v for k, v in user.items() if k != 'password_hash'}
-
-    return user_safe
-
-
-def login_required(f: Callable) -> Callable:
-    """Decorator to protect routes requiring authentication.
-
-    Usage:
-        @app.route('/protected')
-        @login_required
-        def protected_route():
-            user = g.current_user
-            return jsonify({'message': f'Hello {user["username"]}'})
-    """
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        token = JWTManager.get_token_from_request()
-
-        if not token:
-            return jsonify({'error': 'Authentication required', 'code': 'NO_TOKEN'}), 401
-
-        payload = JWTManager.decode_token(token)
-
-        if not payload:
-            return jsonify({'error': 'Invalid or expired token', 'code': 'INVALID_TOKEN'}), 401
-
-        # Store user info in Flask's g object for access in route
-        g.current_user = {
-            'user_id': payload['user_id'],
-            'username': payload['username'],
-            'role': payload['role']
-        }
-
-        return f(*args, **kwargs)
-
-    return decorated_function
-
-
-def role_required(*allowed_roles: str):
-    """Decorator to protect routes requiring specific roles.
-
-    Args:
-        allowed_roles: Tuple of allowed role strings ('admin', 'archaeologist', 'viewer')
-
-    Usage:
-        @app.route('/admin-only')
-        @role_required('admin')
-        def admin_route():
-            return jsonify({'message': 'Admin area'})
-
-        @app.route('/expert-area')
-        @role_required('admin', 'archaeologist')
-        def expert_route():
-            return jsonify({'message': 'Expert area'})
-    """
-    def decorator(f: Callable) -> Callable:
-        @wraps(f)
-        def decorated_function(*args, **kwargs):
-            token = JWTManager.get_token_from_request()
-
-            if not token:
-                return jsonify({'error': 'Authentication required', 'code': 'NO_TOKEN'}), 401
-
-            payload = JWTManager.decode_token(token)
-
-            if not payload:
-                return jsonify({'error': 'Invalid or expired token', 'code': 'INVALID_TOKEN'}), 401
-
-            user_role = payload['role']
-
-            if user_role not in allowed_roles:
-                return jsonify({
-                    'error': f'Access denied. Required roles: {", ".join(allowed_roles)}',
-                    'code': 'INSUFFICIENT_PERMISSIONS'
-                }), 403
-
-            # Store user info in Flask's g object
-            g.current_user = {
-                'user_id': payload['user_id'],
-                'username': payload['username'],
-                'role': payload['role']
-            }
-
-            return f(*args, **kwargs)
-
-        return decorated_function
-    return decorator
+    # Remove password hash from returned dict
+    user_data = {k: v for k, v in user.items() if k != 'password_hash'}
+    return user_data
 
 
 def register_user(username: str, email: str, password: str,
-                  role: str = 'viewer', full_name: str = None) -> Dict:
+                 role: str = 'viewer', full_name: Optional[str] = None) -> Dict:
     """Register a new user.
 
     Args:
         username: Unique username
-        email: Unique email
+        email: User email
         password: Plain text password (will be hashed)
-        role: User role (default: 'viewer')
+        role: User role (admin, archaeologist, viewer)
         full_name: Optional full name
 
     Returns:
-        Dict with user info and token
+        Dict with user info and JWT token
 
     Raises:
-        ValueError: If username/email already exists or invalid role
+        ValueError: If username or email already exists
     """
-    valid_roles = ['admin', 'archaeologist', 'viewer']
-    if role not in valid_roles:
-        raise ValueError(f"Invalid role: {role}. Must be one of {valid_roles}")
-
     db = get_database()
 
     # Check if username exists
-    if db.get_user_by_username(username):
+    existing = db.get_user_by_username(username)
+    if existing:
         raise ValueError(f"Username '{username}' already exists")
 
     # Check if email exists
-    if db.get_user_by_email(email):
+    existing = db.get_user_by_email(email)
+    if existing:
         raise ValueError(f"Email '{email}' already registered")
 
     # Hash password
     password_hash = PasswordHasher.hash_password(password)
 
     # Create user
-    user_id = db.add_user(
+    user_id = db.create_user(
         username=username,
         email=email,
         password_hash=password_hash,
@@ -303,30 +216,118 @@ def register_user(username: str, email: str, password: str,
     }
 
 
-def create_default_admin():
+def login_required(f: Callable) -> Callable:
+    """Decorator to require authentication for route.
+
+    Usage:
+        @app.route('/protected')
+        @login_required
+        def protected_route():
+            user = g.current_user  # Access authenticated user
+            return jsonify({'user': user})
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Get token from request
+        token = JWTManager.get_token_from_request()
+
+        if not token:
+            return jsonify({
+                'error': 'Authentication required',
+                'code': 'NO_TOKEN'
+            }), 401
+
+        # Decode token
+        payload = JWTManager.decode_token(token)
+
+        if not payload:
+            return jsonify({
+                'error': 'Invalid or expired token',
+                'code': 'INVALID_TOKEN'
+            }), 401
+
+        # Store user info in Flask g object
+        g.current_user = {
+            'user_id': payload['user_id'],
+            'username': payload['username'],
+            'role': payload['role']
+        }
+
+        return f(*args, **kwargs)
+
+    return decorated_function
+
+
+def role_required(required_role: str) -> Callable:
+    """Decorator to require specific role for route.
+
+    Args:
+        required_role: Required user role ('admin', 'archaeologist', 'viewer')
+
+    Usage:
+        @app.route('/admin')
+        @role_required('admin')
+        def admin_route():
+            return jsonify({'message': 'Admin only'})
+    """
+    def decorator(f: Callable) -> Callable:
+        @wraps(f)
+        @login_required  # First check authentication
+        def decorated_function(*args, **kwargs):
+            user_role = g.current_user['role']
+
+            # Role hierarchy: admin > archaeologist > viewer
+            role_levels = {
+                'viewer': 0,
+                'archaeologist': 1,
+                'admin': 2
+            }
+
+            required_level = role_levels.get(required_role, 0)
+            user_level = role_levels.get(user_role, 0)
+
+            if user_level < required_level:
+                return jsonify({
+                    'error': f'Requires {required_role} role',
+                    'code': 'INSUFFICIENT_PERMISSIONS',
+                    'required_role': required_role,
+                    'user_role': user_role
+                }), 403
+
+            return f(*args, **kwargs)
+
+        return decorated_function
+
+    return decorator
+
+
+def create_default_admin() -> Optional[Dict]:
     """Create default admin user if no users exist.
 
-    Default credentials:
-    - Username: admin
-    - Password: admin123 (CHANGE IMMEDIATELY IN PRODUCTION)
-    - Role: admin
+    Returns:
+        Admin user dict if created, None if users already exist
     """
     db = get_database()
 
     # Check if any users exist
-    users = db.get_all_users()
-    if len(users) > 0:
-        return None  # Users already exist
+    with db.get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT COUNT(*) as count FROM users')
+        count = cursor.fetchone()['count']
+
+        if count > 0:
+            return None  # Users already exist
 
     # Create default admin
     try:
         admin = register_user(
             username='admin',
-            email='admin@brozeaxe.local',
-            password='admin123',
+            email='admin@bronzeaxe.local',
+            password='admin123',  # CHANGE THIS!
             role='admin',
-            full_name='Default Administrator'
+            full_name='Administrator'
         )
         return admin
-    except ValueError:
-        return None  # Admin already exists
+    except Exception as e:
+        print(f"Error creating default admin: {e}")
+        return None

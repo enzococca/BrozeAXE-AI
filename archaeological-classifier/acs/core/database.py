@@ -1039,3 +1039,64 @@ def get_database() -> ArtifactDatabase:
     if _db_instance is None:
         _db_instance = ArtifactDatabase()
     return _db_instance
+
+
+def backup_database_to_storage(db_path: str = None) -> dict:
+    """Backup database to configured storage (Google Drive or local).
+
+    Args:
+        db_path: Path to database file (default: from environment)
+
+    Returns:
+        dict with backup info: {'status': 'success', 'backup_path': '...', 'timestamp': '...'}
+    """
+    import os
+    import shutil
+    from datetime import datetime
+    from acs.core.storage import get_default_storage
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        # Get database path
+        if db_path is None:
+            db_path = os.getenv('DATABASE_PATH', '/data/acs_artifacts.db')
+
+        if not os.path.exists(db_path):
+            raise FileNotFoundError(f"Database file not found: {db_path}")
+
+        # Check if backups are enabled
+        if os.getenv('DB_BACKUP_ENABLED', 'true').lower() not in ('true', '1', 'yes'):
+            logger.info("Database backups are disabled")
+            return {'status': 'disabled', 'message': 'DB_BACKUP_ENABLED is false'}
+
+        # Create backup filename with timestamp
+        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        backup_filename = f"acs_artifacts_backup_{timestamp}.db"
+        remote_path = f"backups/database/{backup_filename}"
+
+        # Get storage backend
+        storage = get_default_storage()
+
+        # Upload to storage
+        logger.info(f"Backing up database to storage: {remote_path}")
+        storage_id = storage.upload_file(db_path, remote_path)
+
+        logger.info(f"✅ Database backup successful: {backup_filename}")
+
+        return {
+            'status': 'success',
+            'backup_path': remote_path,
+            'backup_filename': backup_filename,
+            'timestamp': timestamp,
+            'storage_backend': os.getenv('STORAGE_BACKEND', 'local'),
+            'storage_id': storage_id
+        }
+
+    except Exception as e:
+        logger.error(f"Database backup failed: {e}", exc_info=True)
+        return {
+            'status': 'error',
+            'error': str(e)
+        }

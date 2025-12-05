@@ -25,6 +25,15 @@ mcp>=0.1.0
 # CLI
 click>=8.1.0
 
+# AI and Cloud Storage
+anthropic>=0.18.0  # Claude AI for technological analysis
+PyDrive2>=1.17.0  # Google Drive integration
+
+# PDF and Image Processing
+reportlab>=4.0.0  # PDF generation
+matplotlib>=3.7.0  # Plots and visualizations
+Pillow>=10.0.0  # Image processing
+
 # Optional dependencies
 pandas>=2.0.0  # For CSV export
 pyefd>=1.5.0  # For Elliptic Fourier Analysis
