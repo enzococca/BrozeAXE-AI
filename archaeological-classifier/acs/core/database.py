@@ -332,6 +332,25 @@ class ArtifactDatabase:
     def add_features(self, artifact_id: str, features: Dict[str, float]):
         """Store features for an artifact."""
         import json
+        import numpy as np
+
+        def convert_numpy_types(obj):
+            """Convert numpy types to Python native types for JSON serialization."""
+            if isinstance(obj, np.bool_):
+                return bool(obj)
+            elif isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, dict):
+                return {key: convert_numpy_types(value) for key, value in obj.items()}
+            elif isinstance(obj, (list, tuple)):
+                return [convert_numpy_types(item) for item in obj]
+            else:
+                return obj
+
         with self.get_connection() as conn:
             cursor = conn.cursor()
             extraction_date = datetime.now().isoformat()
@@ -343,6 +362,8 @@ class ArtifactDatabase:
             for feature_name, feature_value in features.items():
                 # Handle nested dictionaries (e.g., 'savignano' features)
                 if isinstance(feature_value, dict):
+                    # Convert numpy types before JSON serialization
+                    feature_value = convert_numpy_types(feature_value)
                     # Store in stylistic_features table
                     cursor.execute('DELETE FROM stylistic_features WHERE artifact_id = ? AND feature_category = ?',
                                  (artifact_id, feature_name))
