@@ -403,7 +403,9 @@
             downloadsDiv.style.display = 'none';
 
             // Setup EventSource for streaming logs
-            const eventSource = new EventSource(`/api/savignano/generate-comprehensive-report-stream/${artifactId}?language=${language}`);
+            // EventSource doesn't support custom headers, so pass token as query param
+            const token = AuthHelper.getToken();
+            const eventSource = new EventSource(`/api/savignano/generate-comprehensive-report-stream/${artifactId}?language=${language}&token=${encodeURIComponent(token)}`);
 
             eventSource.onmessage = (event) => {
                 const data = JSON.parse(event.data);

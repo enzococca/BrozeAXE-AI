@@ -117,7 +117,8 @@
         <div id="canvas-container"></div>
         <div id="loading-indicator" class="loading-overlay" style="display:none;">
             <div class="spinner"></div>
-            <p>Loading 3D model...</p>
+            <p id="loading-text">Loading 3D model...</p>
+            <p id="loading-percent" style="font-size: 24px; font-weight: bold; margin-top: 10px;">0%</p>
         </div>
     </div>
 </div>
@@ -584,7 +585,19 @@ class ArtifactViewer {
                 document.getElementById('loading-indicator').style.display = 'none';
             },
             (xhr) => {
-                console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+                // Update progress percentage
+                if (xhr.lengthComputable) {
+                    const percentComplete = Math.round((xhr.loaded / xhr.total) * 100);
+                    const loadingPercent = document.getElementById('loading-percent');
+                    const loadingText = document.getElementById('loading-text');
+                    if (loadingPercent) {
+                        loadingPercent.textContent = percentComplete + '%';
+                    }
+                    if (loadingText) {
+                        loadingText.textContent = `Loading 3D model... (${(xhr.loaded / 1024 / 1024).toFixed(1)}MB / ${(xhr.total / 1024 / 1024).toFixed(1)}MB)`;
+                    }
+                    console.log(percentComplete + '% loaded');
+                }
             },
             (error) => {
                 console.error('Error loading model:', error);
