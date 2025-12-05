@@ -278,3 +278,37 @@ def system_info():
             'Comprehensive PDF reports'
         ]
     })
+
+
+@system_bp.route('/backup', methods=['POST'])
+@login_required
+def backup_database():
+    """
+    Trigger manual database backup to configured storage.
+
+    Requires: authentication (admin recommended)
+
+    Returns:
+        JSON with backup status:
+        - status: 'success' or 'error'
+        - backup_path: Path to backup in storage
+        - timestamp: Backup timestamp
+        - storage_backend: Storage backend used
+    """
+    try:
+        from acs.core.database import backup_database_to_storage
+
+        result = backup_database_to_storage()
+
+        if result['status'] == 'success':
+            return jsonify(result), 200
+        elif result['status'] == 'disabled':
+            return jsonify(result), 200
+        else:
+            return jsonify(result), 500
+
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500

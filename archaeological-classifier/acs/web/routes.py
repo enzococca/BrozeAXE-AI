@@ -201,11 +201,15 @@ def upload_mesh():
         return jsonify({'error': 'No file selected'}), 400
 
     filename = secure_filename(file.filename)
-    upload_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], 'meshes')
-    os.makedirs(upload_folder, exist_ok=True)
 
-    filepath = os.path.join(upload_folder, filename)
-    file.save(filepath)
+    # Save to temporary location first for processing
+    import tempfile
+    temp_dir = tempfile.mkdtemp()
+    temp_filepath = os.path.join(temp_dir, filename)
+    file.save(temp_filepath)
+
+    # We'll upload to storage after processing
+    filepath = temp_filepath
 
     # Process mesh
     try:
@@ -290,12 +294,37 @@ def upload_mesh():
                 logging.error(f"Savignano extraction failed for {artifact_id}: {e}", exc_info=True)
                 features['savignano_error'] = str(e)
 
-        # Save to database with actual file path
+        # Upload to storage (Google Drive or local)
+        from acs.core.storage import get_default_storage
+        import shutil
+
+        storage = get_default_storage()
+        remote_path = f"meshes/{artifact_id}/{filename}"
+
+        try:
+            # Upload to storage backend
+            storage_id = storage.upload_file(filepath, remote_path)
+            stored_path = remote_path  # Use remote path for retrieval
+
+            import logging
+            logging.info(f"✅ Uploaded {filename} to storage: {remote_path}")
+
+        except Exception as e:
+            import logging
+            logging.error(f"Storage upload failed, falling back to local: {e}")
+            # Fallback to local storage
+            upload_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], 'meshes')
+            os.makedirs(upload_folder, exist_ok=True)
+            local_filepath = os.path.join(upload_folder, filename)
+            shutil.copy2(filepath, local_filepath)
+            stored_path = local_filepath
+
+        # Save to database with storage path
         db = get_database()
         mesh = mesh_processor.meshes[artifact_id]
         db.add_artifact(
             artifact_id=artifact_id,
-            mesh_path=filepath,  # Save actual path
+            mesh_path=stored_path,  # Save storage path (remote or local)
             n_vertices=len(mesh.vertices),
             n_faces=len(mesh.faces),
             is_watertight=mesh.is_watertight,
@@ -305,11 +334,18 @@ def upload_mesh():
                 'savignano_auto_detected': enable_savignano_explicit is None,
                 'category': category,
                 'description': description,
-                'material': material
+                'material': material,
+                'storage_backend': os.getenv('STORAGE_BACKEND', 'local')
             },
             project_id=project_id
         )
         db.add_features(artifact_id, features)
+
+        # Clean up temporary directory
+        try:
+            shutil.rmtree(temp_dir)
+        except:
+            pass
 
         return jsonify({
             'status': 'success',
@@ -318,11 +354,20 @@ def upload_mesh():
             'persisted': True,
             'savignano_extracted': savignano_features is not None,
             'savignano_auto_detected': enable_savignano_explicit is None and enable_savignano,
+            'storage_backend': os.getenv('STORAGE_BACKEND', 'local'),
             'message': 'Savignano morphometric analysis automatically performed' if (enable_savignano_explicit is None and enable_savignano) else None
         })
     except Exception as e:
         import logging
         logging.error(f"Upload error for {filename}: {e}", exc_info=True)
+
+        # Clean up temporary directory on error
+        try:
+            import shutil
+            shutil.rmtree(temp_dir)
+        except:
+            pass
+
         return jsonify({'error': str(e)}), 500
 
 
@@ -631,28 +676,50 @@ def viewer_page():
 
 @web_bp.route('/mesh-file/<artifact_id>')
 def serve_mesh_file(artifact_id):
-    """Serve mesh file for 3D viewer with caching."""
-    if artifact_id not in mesh_processor.meshes:
-        return jsonify({'error': 'Artifact not found'}), 404
-
+    """Serve mesh file for 3D viewer, downloading from storage if needed."""
     try:
-        # Use cached folder for persistent storage
-        cache_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], 'mesh_cache')
-        os.makedirs(cache_folder, exist_ok=True)
+        from acs.core.database import get_database
+        from acs.core.storage import get_default_storage
+        import shutil
 
-        cache_path = os.path.join(cache_folder, f'{artifact_id}.obj')
+        db = get_database()
+        artifact = db.get_artifact(artifact_id)
 
-        # Only export if not already cached
-        if not os.path.exists(cache_path):
-            mesh = mesh_processor.meshes[artifact_id]
-            mesh.export(cache_path)
+        if not artifact:
+            return jsonify({'error': 'Artifact not found'}), 404
 
-        from flask import send_file
-        # Add cache headers for browser caching
-        response = send_file(cache_path, mimetype='text/plain')
+        mesh_path = artifact.get('mesh_path')
+        if not mesh_path:
+            return jsonify({'error': 'Mesh file path not found'}), 404
+
+        # Check if this is a remote storage path (not an absolute local path)
+        if not os.path.isabs(mesh_path) or not os.path.exists(mesh_path):
+            # Remote storage path - download to cache
+            storage = get_default_storage()
+            cache_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], 'mesh_cache')
+            os.makedirs(cache_folder, exist_ok=True)
+
+            cache_path = os.path.join(cache_folder, f'{artifact_id}.obj')
+
+            # Download if not cached
+            if not os.path.exists(cache_path):
+                import logging
+                logging.info(f"Downloading {mesh_path} from storage to cache")
+                storage.download_file(mesh_path, cache_path)
+
+            serve_path = cache_path
+        else:
+            # Local path - serve directly
+            serve_path = mesh_path
+
+        # Serve the file
+        response = send_file(serve_path, mimetype='text/plain')
         response.headers['Cache-Control'] = 'public, max-age=31536000'  # 1 year
         return response
+
     except Exception as e:
+        import logging
+        logging.error(f"Error serving mesh file {artifact_id}: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 
