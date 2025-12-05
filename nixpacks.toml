@@ -4,9 +4,8 @@ providers = ["python"]
 [phases.setup]
 nixPkgs = ['python311', 'gcc', 'libstdcxx5']
 
-# Skip generic install phase - python:install will handle everything
 [phases.install]
-cmds = ["echo 'Skipping generic install phase'"]
+cmds = ["pip install -r requirements.txt"]
 
 [start]
 cmd = 'cd archaeological-classifier && python3 -m acs.api.app'
