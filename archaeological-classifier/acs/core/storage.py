@@ -95,17 +95,22 @@ class GoogleDriveStorage(StorageBackend):
         """Initialize Google Drive storage.
 
         Args:
-            credentials_path: Path to Google OAuth2 credentials JSON file
+            credentials_path: Path to Google Service Account credentials JSON file
         """
         try:
             from pydrive2.auth import GoogleAuth
             from pydrive2.drive import GoogleDrive
+            from oauth2client.service_account import ServiceAccountCredentials
 
-            self.gauth = GoogleAuth()
+            # Define the scopes
+            scopes = ['https://www.googleapis.com/auth/drive']
 
+            # Try to load credentials
             if credentials_path and os.path.exists(credentials_path):
-                # Use provided credentials file
-                self.gauth.LoadCredentialsFile(credentials_path)
+                # Use provided credentials file path
+                credentials = ServiceAccountCredentials.from_json_keyfile_name(
+                    credentials_path, scopes
+                )
             else:
                 # Try environment variable
                 creds_json = os.getenv('GOOGLE_DRIVE_CREDENTIALS')
@@ -117,12 +122,17 @@ class GoogleDriveStorage(StorageBackend):
                         # Parse JSON credentials
                         creds_dict = json.loads(creds_json)
 
-                        # Write credentials to temp file
+                        # Write credentials to temp file for ServiceAccountCredentials
                         with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.json') as f:
                             json.dump(creds_dict, f)
                             temp_creds = f.name
 
-                        self.gauth.LoadCredentialsFile(temp_creds)
+                        # Load service account credentials from temp file
+                        credentials = ServiceAccountCredentials.from_json_keyfile_name(
+                            temp_creds, scopes
+                        )
+
+                        # Clean up temp file
                         os.unlink(temp_creds)
 
                     except json.JSONDecodeError as e:
@@ -134,20 +144,26 @@ class GoogleDriveStorage(StorageBackend):
                             f"Parse error: {str(e)}"
                         )
                 else:
-                    # Interactive authentication (development only)
-                    logger.warning("No credentials found, using interactive authentication")
-                    self.gauth.LocalWebserverAuth()
+                    raise ValueError(
+                        "No Google Drive credentials found. Set GOOGLE_DRIVE_CREDENTIALS "
+                        "environment variable or provide credentials_path"
+                    )
+
+            # Create GoogleAuth instance with service account credentials
+            self.gauth = GoogleAuth()
+            self.gauth.credentials = credentials
 
             self.drive = GoogleDrive(self.gauth)
             self._folder_cache = {}
 
-            logger.info("✅ Google Drive storage initialized")
+            logger.info("✅ Google Drive storage initialized with Service Account")
 
         except ImportError:
             raise RuntimeError(
                 "PyDrive2 not installed. Install with: pip install PyDrive2"
             )
         except Exception as e:
+            logger.error(f"Failed to initialize Google Drive: {str(e)}")
             raise RuntimeError(f"Failed to initialize Google Drive: {str(e)}")
 
     def _get_or_create_folder(self, folder_path: str) -> str:
