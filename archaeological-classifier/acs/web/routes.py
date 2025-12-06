@@ -243,6 +243,9 @@ def upload_mesh():
         description = request.form.get('description', '')
         material = request.form.get('material', '')
 
+        # Mesh units for scale conversion (mm, cm, m, in)
+        mesh_units = request.form.get('mesh_units', 'cm')  # Default to cm for archaeological meshes
+
         # Auto-detect Savignano analysis (can be overridden by explicit parameter)
         enable_savignano_explicit = request.form.get('enable_savignano')
         if enable_savignano_explicit is not None:
@@ -301,7 +304,8 @@ def upload_mesh():
                     mesh_path=filepath,
                     artifact_id=artifact_id,
                     weight=weight,
-                    inventory_number=artifact_id
+                    inventory_number=artifact_id,
+                    mesh_units=mesh_units
                 )
 
                 # Add to features dict

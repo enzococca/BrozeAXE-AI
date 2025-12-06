@@ -38,18 +38,43 @@ class SavignanoMorphometricExtractor:
     - analyze_blade(): Analizza tagliente
     """
 
-    def __init__(self, mesh: trimesh.Trimesh, artifact_id: str):
+    # Common scale factors for mesh units
+    SCALE_FACTORS = {
+        'mm': 1.0,          # Already in mm
+        'cm': 10.0,         # Centimeters to mm
+        'm': 1000.0,        # Meters to mm
+        'in': 25.4,         # Inches to mm
+        'auto': None        # Auto-detect (not implemented yet)
+    }
+
+    def __init__(self, mesh: trimesh.Trimesh, artifact_id: str, scale_factor: float = 1.0, mesh_units: str = None):
         """
         Inizializza extractor.
 
         Args:
             mesh: Mesh 3D dell'ascia
             artifact_id: ID univoco dell'artefatto
+            scale_factor: Fattore di scala per convertire unità mesh in mm (default: 1.0)
+                         Es: 10.0 per cm->mm, 1000.0 per m->mm
+            mesh_units: Unità della mesh ('mm', 'cm', 'm', 'in'). Se specificato,
+                       sovrascrive scale_factor con il valore appropriato.
         """
         self.mesh = mesh
         self.artifact_id = artifact_id
-        self.vertices = mesh.vertices
+
+        # Determina fattore di scala
+        if mesh_units and mesh_units in self.SCALE_FACTORS:
+            self.scale_factor = self.SCALE_FACTORS[mesh_units]
+            logger.info(f"{artifact_id}: Using mesh units '{mesh_units}' -> scale factor {self.scale_factor}")
+        else:
+            self.scale_factor = scale_factor
+
+        # Applica fattore di scala ai vertici
+        self.vertices = mesh.vertices * self.scale_factor
         self.faces = mesh.faces
+
+        if self.scale_factor != 1.0:
+            logger.info(f"{artifact_id}: Applied scale factor {self.scale_factor}x (mesh units -> mm)")
 
         # Identifica orientamento ascia (asse principale)
         self._identify_orientation()
@@ -722,7 +747,9 @@ class SavignanoMorphometricExtractor:
 
 def extract_savignano_features(mesh_path: str, artifact_id: str,
                                weight: Optional[float] = None,
-                               inventory_number: Optional[str] = None) -> Dict:
+                               inventory_number: Optional[str] = None,
+                               mesh_units: Optional[str] = None,
+                               scale_factor: Optional[float] = None) -> Dict:
     """
     Wrapper function per estrarre features da mesh file.
 
@@ -731,16 +758,20 @@ def extract_savignano_features(mesh_path: str, artifact_id: str,
         artifact_id: ID univoco artefatto
         weight: Peso ascia in grammi (opzionale)
         inventory_number: Numero inventario (opzionale)
+        mesh_units: Unità della mesh ('mm', 'cm', 'm', 'in'). Se specificato,
+                   applica automaticamente il fattore di scala appropriato.
+        scale_factor: Fattore di scala manuale (sovrascrive mesh_units se specificato insieme)
 
     Returns:
         Dict con tutti i parametri morfometrici
 
     Example:
+        >>> # Mesh in centimetri
         >>> features = extract_savignano_features(
         ...     'axe_974.obj',
         ...     'AXE_974',
         ...     weight=387.0,
-        ...     inventory_number='974'
+        ...     mesh_units='cm'  # Converte automaticamente cm -> mm
         ... )
         >>> print(features['incavo_presente'])
         True
@@ -765,16 +796,36 @@ def extract_savignano_features(mesh_path: str, artifact_id: str,
         if len(mesh.vertices) == 0:
             raise ValueError(f"Mesh {mesh_path} is empty (0 vertices)")
 
-        # Converti in mm se necessario (alcune mesh sono in m)
-        # NumPy 2.0 compatibility: use np.ptp() instead of .ptp()
-        max_dimension = np.ptp(mesh.bounds, axis=0).max()
-        logger.info(f"{artifact_id}: Max dimension before scaling: {max_dimension:.4f}")
+        # Determina fattore di scala
+        # Priorità: scale_factor > mesh_units > auto-detect
+        effective_scale = 1.0
 
-        if max_dimension < 1.0:  # Se max dimension < 1.0, probabilmente in metri
-            mesh.apply_scale(1000.0)
-            logger.info(f"{artifact_id}: Mesh scalata da m a mm (new max: {np.ptp(mesh.bounds, axis=0).max():.2f}mm)")
+        if scale_factor is not None:
+            effective_scale = scale_factor
+            logger.info(f"{artifact_id}: Using manual scale factor: {effective_scale}x")
+        elif mesh_units is not None:
+            # Usa classe per lookup
+            effective_scale = SavignanoMorphometricExtractor.SCALE_FACTORS.get(mesh_units, 1.0)
+            logger.info(f"{artifact_id}: Using mesh_units='{mesh_units}' -> scale factor {effective_scale}x")
+        else:
+            # Auto-detect: se max dimension < 1.0, probabilmente in metri
+            # NumPy 2.0 compatibility: use np.ptp() instead of .ptp()
+            max_dimension = np.ptp(mesh.bounds, axis=0).max()
+            logger.info(f"{artifact_id}: Max dimension before scaling: {max_dimension:.4f}")
 
-        # Estrai features
+            if max_dimension < 1.0:  # Probabilmente in metri
+                effective_scale = 1000.0
+                logger.info(f"{artifact_id}: Auto-detected meters, applying 1000x scale")
+            elif max_dimension < 10.0:  # Probabilmente in centimetri
+                effective_scale = 10.0
+                logger.info(f"{artifact_id}: Auto-detected centimeters, applying 10x scale")
+
+        # Applica scala alla mesh
+        if effective_scale != 1.0:
+            mesh.apply_scale(effective_scale)
+            logger.info(f"{artifact_id}: Mesh scalata (new max: {np.ptp(mesh.bounds, axis=0).max():.2f}mm)")
+
+        # Estrai features (non passiamo scale_factor perché già applicato alla mesh)
         logger.info(f"{artifact_id}: Starting feature extraction...")
         extractor = SavignanoMorphometricExtractor(mesh, artifact_id)
         features = extractor.extract_all_features()

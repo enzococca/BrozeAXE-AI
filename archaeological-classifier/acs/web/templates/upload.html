@@ -56,6 +56,22 @@
                 </small>
 
                 <div id="savignano-options" style="display: none;">
+                    <!-- Mesh Units Selection -->
+                    <div style="margin-bottom: 15px;">
+                        <label style="font-weight: 600; margin-bottom: 8px; display: block;">
+                            📏 Mesh Units
+                        </label>
+                        <select id="mesh-units" class="form-control" style="max-width: 200px;">
+                            <option value="cm" selected>Centimeters (cm) - Default</option>
+                            <option value="mm">Millimeters (mm)</option>
+                            <option value="m">Meters (m)</option>
+                            <option value="in">Inches (in)</option>
+                        </select>
+                        <small style="color: #666; margin-top: 5px; display: block;">
+                            Select the unit your 3D mesh is exported in. Most archaeological scans are in cm.
+                        </small>
+                    </div>
+
                     <div style="margin-bottom: 15px;">
                         <label style="font-weight: 600; margin-bottom: 8px; display: block;">
                             ⚖️ Weights (Optional but Recommended)
@@ -272,6 +288,10 @@ async function uploadFiles() {
             // Add Savignano options
             if (enableSavignano) {
                 formData.append('enable_savignano', 'true');
+
+                // Add mesh units
+                const meshUnits = document.getElementById('mesh-units')?.value || 'cm';
+                formData.append('mesh_units', meshUnits);
 
                 // Add weight if available
                 if (weightMode === 'manual' && fileWeights[file.name]) {

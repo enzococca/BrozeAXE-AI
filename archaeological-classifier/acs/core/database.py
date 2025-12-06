@@ -1100,3 +1100,155 @@ def backup_database_to_storage(db_path: str = None) -> dict:
             'status': 'error',
             'error': str(e)
         }
+
+
+def restore_database_from_storage(db_path: str = None) -> dict:
+    """Restore database from cloud storage (Dropbox/Google Drive).
+
+    Finds the most recent backup and restores it if local DB is empty or missing.
+
+    Args:
+        db_path: Path to restore database to (default: from environment)
+
+    Returns:
+        dict with restore info: {'status': 'success'/'skipped'/'error', ...}
+    """
+    import os
+    import shutil
+    import tempfile
+    from datetime import datetime
+    from acs.core.storage import get_default_storage, LocalStorage
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        # Get database path
+        if db_path is None:
+            db_path = os.getenv('DATABASE_PATH', '/data/acs_artifacts.db')
+
+        # Check if restore is enabled
+        if os.getenv('DB_RESTORE_ENABLED', 'true').lower() not in ('true', '1', 'yes'):
+            logger.info("Database restore is disabled")
+            return {'status': 'disabled', 'message': 'DB_RESTORE_ENABLED is false'}
+
+        # Check if local DB already has data
+        if os.path.exists(db_path) and os.path.getsize(db_path) > 10000:
+            # DB exists and has significant data, skip restore
+            logger.info(f"Local database exists with data ({os.path.getsize(db_path)} bytes), skipping restore")
+            return {'status': 'skipped', 'reason': 'local_db_has_data', 'size': os.path.getsize(db_path)}
+
+        # Get storage backend
+        storage = get_default_storage()
+
+        # Skip if using local storage (nothing to restore from)
+        if isinstance(storage, LocalStorage):
+            logger.info("Using local storage, no cloud backup to restore from")
+            return {'status': 'skipped', 'reason': 'local_storage'}
+
+        # List backups and find the most recent
+        logger.info("Looking for database backups in cloud storage...")
+        try:
+            backups = storage.list_files('backups/database')
+        except Exception as e:
+            logger.warning(f"Could not list backups: {e}")
+            return {'status': 'skipped', 'reason': 'no_backups_found', 'error': str(e)}
+
+        if not backups:
+            logger.info("No backups found in cloud storage")
+            return {'status': 'skipped', 'reason': 'no_backups'}
+
+        # Sort by name (timestamp) to get most recent
+        db_backups = [b for b in backups if b['name'].endswith('.db')]
+        if not db_backups:
+            logger.info("No database backups found")
+            return {'status': 'skipped', 'reason': 'no_db_backups'}
+
+        db_backups.sort(key=lambda x: x['name'], reverse=True)
+        latest_backup = db_backups[0]
+
+        logger.info(f"Found latest backup: {latest_backup['name']}")
+
+        # Download to temp file first
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.db') as tmp:
+            tmp_path = tmp.name
+
+        try:
+            remote_path = f"backups/database/{latest_backup['name']}"
+            storage.download_file(remote_path, tmp_path)
+
+            # Verify downloaded file
+            if os.path.getsize(tmp_path) < 1000:
+                raise ValueError("Downloaded backup file is too small, may be corrupted")
+
+            # Ensure target directory exists
+            os.makedirs(os.path.dirname(db_path), exist_ok=True)
+
+            # Move temp file to target location
+            shutil.move(tmp_path, db_path)
+
+            logger.info(f"✅ Database restored from: {latest_backup['name']}")
+
+            return {
+                'status': 'success',
+                'restored_from': latest_backup['name'],
+                'restored_to': db_path,
+                'backup_size': latest_backup.get('size', 0),
+                'storage_backend': os.getenv('STORAGE_BACKEND', 'local')
+            }
+
+        finally:
+            # Clean up temp file if it still exists
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+
+    except Exception as e:
+        logger.error(f"Database restore failed: {e}", exc_info=True)
+        return {
+            'status': 'error',
+            'error': str(e)
+        }
+
+
+def auto_sync_database() -> dict:
+    """Automatically sync database with cloud storage.
+
+    On startup:
+    1. Try to restore from cloud if local DB is empty/missing
+    2. If local DB has data, backup to cloud
+
+    Returns:
+        dict with sync results
+    """
+    import os
+    import logging
+
+    logger = logging.getLogger(__name__)
+    results = {'restore': None, 'backup': None}
+
+    try:
+        db_path = os.getenv('DATABASE_PATH', '/data/acs_artifacts.db')
+
+        # Step 1: Try to restore if needed
+        logger.info("🔄 Auto-sync: Checking if restore is needed...")
+        restore_result = restore_database_from_storage(db_path)
+        results['restore'] = restore_result
+
+        if restore_result['status'] == 'success':
+            logger.info(f"✅ Restored database from cloud: {restore_result.get('restored_from')}")
+        elif restore_result['status'] == 'skipped':
+            # Local DB exists, backup to cloud
+            if restore_result.get('reason') == 'local_db_has_data':
+                logger.info("🔄 Auto-sync: Backing up local database to cloud...")
+                backup_result = backup_database_to_storage(db_path)
+                results['backup'] = backup_result
+
+                if backup_result['status'] == 'success':
+                    logger.info(f"✅ Backed up database to cloud: {backup_result.get('backup_filename')}")
+
+        return results
+
+    except Exception as e:
+        logger.error(f"Auto-sync failed: {e}", exc_info=True)
+        results['error'] = str(e)
+        return results
