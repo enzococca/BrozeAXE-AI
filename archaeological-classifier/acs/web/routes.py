@@ -277,6 +277,114 @@ def upload_page():
     return render_template('upload.html')
 
 
+def background_upload_to_storage(artifact_id, temp_dir, filename, mtl_filename, texture_filenames, mesh_units, enable_savignano, weight):
+    """Background task to upload files to cloud storage and run Savignano analysis."""
+    import logging
+    import shutil
+
+    try:
+        from acs.core.storage import get_default_storage
+        from acs.core.database import get_database, backup_database_to_storage
+
+        filepath = os.path.join(temp_dir, filename)
+
+        # Track stored paths
+        stored_mtl_path = None
+        stored_texture_paths = []
+
+        # Upload to storage
+        try:
+            storage = get_default_storage()
+            remote_path = f"meshes/{artifact_id}/{filename}"
+
+            # Upload OBJ
+            storage.upload_file(filepath, remote_path)
+            stored_path = remote_path
+            logging.info(f"✅ [BG] Uploaded {filename} to storage")
+
+            # Upload MTL
+            if mtl_filename:
+                mtl_remote_path = f"meshes/{artifact_id}/{mtl_filename}"
+                mtl_local = os.path.join(temp_dir, mtl_filename)
+                storage.upload_file(mtl_local, mtl_remote_path)
+                stored_mtl_path = mtl_remote_path
+                logging.info(f"✅ [BG] Uploaded MTL {mtl_filename}")
+
+            # Upload textures
+            for tex_filename in texture_filenames:
+                tex_remote_path = f"meshes/{artifact_id}/{tex_filename}"
+                tex_local = os.path.join(temp_dir, tex_filename)
+                storage.upload_file(tex_local, tex_remote_path)
+                stored_texture_paths.append(tex_remote_path)
+                logging.info(f"✅ [BG] Uploaded texture {tex_filename}")
+
+            # Update database with storage paths
+            db = get_database()
+            artifact = db.get_artifact(artifact_id)
+            if artifact:
+                import json
+                metadata = json.loads(artifact.get('metadata', '{}')) if artifact.get('metadata') else {}
+                metadata['mtl_path'] = stored_mtl_path
+                metadata['texture_paths'] = stored_texture_paths
+                metadata['has_textures'] = bool(stored_mtl_path or stored_texture_paths)
+                metadata['storage_upload_complete'] = True
+
+                # Update mesh_path to remote path
+                db.add_artifact(
+                    artifact_id=artifact_id,
+                    mesh_path=stored_path,
+                    n_vertices=artifact.get('n_vertices', 0),
+                    n_faces=artifact.get('n_faces', 0),
+                    is_watertight=artifact.get('is_watertight', False),
+                    metadata=metadata,
+                    project_id=artifact.get('project_id')
+                )
+                logging.info(f"✅ [BG] Updated database for {artifact_id}")
+
+        except Exception as e:
+            logging.error(f"[BG] Storage upload failed for {artifact_id}: {e}")
+
+        # Run Savignano analysis in background
+        if enable_savignano:
+            try:
+                from acs.savignano.morphometric_extractor import extract_savignano_features
+
+                savignano_features = extract_savignano_features(
+                    mesh_path=filepath,
+                    artifact_id=artifact_id,
+                    weight=weight,
+                    inventory_number=artifact_id,
+                    mesh_units=mesh_units
+                )
+
+                # Save Savignano features to database
+                db = get_database()
+                db.add_features(artifact_id, {'savignano': savignano_features})
+                logging.info(f"✅ [BG] Savignano analysis complete for {artifact_id}")
+
+            except Exception as e:
+                logging.error(f"[BG] Savignano analysis failed for {artifact_id}: {e}")
+
+        # Backup database
+        try:
+            storage_backend = os.getenv('STORAGE_BACKEND', 'local')
+            if storage_backend != 'local':
+                backup_database_to_storage()
+                logging.info(f"✅ [BG] Database backup complete")
+        except Exception as e:
+            logging.error(f"[BG] Database backup failed: {e}")
+
+    except Exception as e:
+        logging.error(f"[BG] Background upload failed for {artifact_id}: {e}")
+
+    finally:
+        # Clean up temp directory
+        try:
+            shutil.rmtree(temp_dir)
+        except:
+            pass
+
+
 @web_bp.route('/upload-mesh', methods=['POST'])
 def upload_mesh():
     """Handle mesh file upload with database persistence and optional Savignano analysis."""
@@ -289,9 +397,9 @@ def upload_mesh():
 
     filename = secure_filename(file.filename)
 
-    # Save to temporary location first for processing
+    # Save to PERSISTENT temp location (not deleted on request end)
     import tempfile
-    temp_dir = tempfile.mkdtemp()
+    temp_dir = tempfile.mkdtemp(prefix='acs_upload_')
     temp_filepath = os.path.join(temp_dir, filename)
     file.save(temp_filepath)
 
@@ -355,122 +463,35 @@ def upload_mesh():
         # Add to morphometric analyzer
         morphometric_analyzer.add_features(features['id'], features)
 
-        # Extract Savignano features if enabled
-        savignano_features = None
+        # Get weight for Savignano (need to extract before background thread)
+        weight = None
         if enable_savignano:
-            try:
-                from acs.savignano.morphometric_extractor import extract_savignano_features
-                from acs.utils.weight_importer import import_weights_auto
-                import tempfile
+            weight_value = request.form.get('weight')
+            if weight_value:
+                weight = float(weight_value)
 
-                # Get weight
-                weight = None
-                weight_value = request.form.get('weight')
-                if weight_value:
-                    weight = float(weight_value)
+            # Or from weights file
+            if 'weights_file' in request.files and not weight:
+                weights_file = request.files['weights_file']
+                if weights_file.filename != '':
+                    from acs.utils.weight_importer import import_weights_auto
+                    temp_weights_path = os.path.join(temp_dir, secure_filename(weights_file.filename))
+                    weights_file.save(temp_weights_path)
+                    try:
+                        weights_dict = import_weights_auto(temp_weights_path)
+                        weight = weights_dict.get(artifact_id) or weights_dict.get(filename.rsplit('.', 1)[0])
+                    except:
+                        pass
 
-                # Or from weights file (only on first upload in batch)
-                if 'weights_file' in request.files and not weight:
-                    weights_file = request.files['weights_file']
-                    if weights_file.filename != '':
-                        # Save temporarily
-                        temp_weights_path = os.path.join(tempfile.gettempdir(), secure_filename(weights_file.filename))
-                        weights_file.save(temp_weights_path)
-
-                        # Import weights
-                        try:
-                            weights_dict = import_weights_auto(temp_weights_path)
-                            # Try to find weight for this artifact
-                            weight = weights_dict.get(artifact_id) or weights_dict.get(filename.rsplit('.', 1)[0])
-                        finally:
-                            # Clean up temp file
-                            if os.path.exists(temp_weights_path):
-                                os.remove(temp_weights_path)
-
-                # Extract Savignano features
-                savignano_features = extract_savignano_features(
-                    mesh_path=filepath,
-                    artifact_id=artifact_id,
-                    weight=weight,
-                    inventory_number=artifact_id,
-                    mesh_units=mesh_units
-                )
-
-                # Add to features dict
-                features['savignano'] = savignano_features
-
-            except Exception as e:
-                # Log error but don't fail upload
-                import logging
-                logging.error(f"Savignano extraction failed for {artifact_id}: {e}", exc_info=True)
-                features['savignano_error'] = str(e)
-
-        # Upload to storage (Google Drive or local)
-        from acs.core.storage import get_default_storage, LocalStorage
-        import shutil
         import logging
 
-        # Track stored paths for MTL and textures
-        stored_mtl_path = None
-        stored_texture_paths = []
-
-        # Try to get storage backend (Google Drive or local)
-        try:
-            storage = get_default_storage()
-            remote_path = f"meshes/{artifact_id}/{filename}"
-
-            # Upload OBJ to storage backend
-            storage_id = storage.upload_file(filepath, remote_path)
-            stored_path = remote_path  # Use remote path for retrieval
-            logging.info(f"✅ Uploaded {filename} to storage: {remote_path}")
-
-            # Upload MTL file if exists
-            if mtl_filename:
-                mtl_remote_path = f"meshes/{artifact_id}/{mtl_filename}"
-                mtl_local = os.path.join(temp_dir, mtl_filename)
-                storage.upload_file(mtl_local, mtl_remote_path)
-                stored_mtl_path = mtl_remote_path
-                logging.info(f"✅ Uploaded MTL {mtl_filename} to storage")
-
-            # Upload texture files if exist
-            for tex_filename in texture_filenames:
-                tex_remote_path = f"meshes/{artifact_id}/{tex_filename}"
-                tex_local = os.path.join(temp_dir, tex_filename)
-                storage.upload_file(tex_local, tex_remote_path)
-                stored_texture_paths.append(tex_remote_path)
-                logging.info(f"✅ Uploaded texture {tex_filename} to storage")
-
-        except Exception as e:
-            logging.error(f"Storage backend failed, using local fallback: {e}")
-            # Fallback to local storage
-            upload_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], 'meshes', artifact_id)
-            os.makedirs(upload_folder, exist_ok=True)
-
-            # Copy OBJ
-            local_filepath = os.path.join(upload_folder, filename)
-            shutil.copy2(filepath, local_filepath)
-            stored_path = local_filepath
-
-            # Copy MTL if exists
-            if mtl_filename:
-                mtl_local_src = os.path.join(temp_dir, mtl_filename)
-                mtl_local_dst = os.path.join(upload_folder, mtl_filename)
-                shutil.copy2(mtl_local_src, mtl_local_dst)
-                stored_mtl_path = mtl_local_dst
-
-            # Copy textures if exist
-            for tex_filename in texture_filenames:
-                tex_local_src = os.path.join(temp_dir, tex_filename)
-                tex_local_dst = os.path.join(upload_folder, tex_filename)
-                shutil.copy2(tex_local_src, tex_local_dst)
-                stored_texture_paths.append(tex_local_dst)
-
-        # Save to database with storage path
+        # Save to database with LOCAL temp path (fast)
+        # Background thread will update to cloud path after upload
         db = get_database()
         mesh = mesh_processor.meshes[artifact_id]
         db.add_artifact(
             artifact_id=artifact_id,
-            mesh_path=stored_path,  # Save storage path (remote or local)
+            mesh_path=filepath,  # Temp path - will be updated by background upload
             n_vertices=len(mesh.vertices),
             n_faces=len(mesh.faces),
             is_watertight=mesh.is_watertight,
@@ -481,47 +502,47 @@ def upload_mesh():
                 'category': category,
                 'description': description,
                 'material': material,
-                'mesh_units': mesh_units,  # Store mesh units for 3D viewer scaling
+                'mesh_units': mesh_units,
                 'storage_backend': os.getenv('STORAGE_BACKEND', 'local'),
-                'mtl_path': stored_mtl_path,  # MTL material file path
-                'texture_paths': stored_texture_paths,  # List of texture file paths
-                'has_textures': bool(stored_mtl_path or stored_texture_paths)
+                'mtl_path': None,  # Will be set by background upload
+                'texture_paths': [],  # Will be set by background upload
+                'has_textures': bool(mtl_filename or texture_filenames),
+                'storage_upload_complete': False  # Will be set True after background upload
             },
             project_id=project_id
         )
         db.add_features(artifact_id, features)
 
-        # Clean up temporary directory
-        try:
-            shutil.rmtree(temp_dir)
-        except:
-            pass
+        # Start background upload to cloud storage (non-blocking)
+        storage_backend = os.getenv('STORAGE_BACKEND', 'local')
+        if storage_backend != 'local':
+            import threading
+            upload_thread = threading.Thread(
+                target=background_upload_to_storage,
+                args=(artifact_id, temp_dir, filename, mtl_filename, texture_filenames, mesh_units, enable_savignano, weight),
+                daemon=True
+            )
+            upload_thread.start()
+            logging.info(f"🔄 Started background upload for {artifact_id}")
+        else:
+            # Local storage - no background needed, just clean up
+            import shutil
+            try:
+                shutil.rmtree(temp_dir)
+            except:
+                pass
 
-        # Trigger async database backup to cloud (non-blocking)
-        try:
-            storage_backend = os.getenv('STORAGE_BACKEND', 'local')
-            if storage_backend != 'local':
-                import threading
-                from acs.core.database import backup_database_to_storage
-                # Run backup in background thread to not slow down response
-                backup_thread = threading.Thread(target=backup_database_to_storage, daemon=True)
-                backup_thread.start()
-                import logging
-                logging.info(f"🔄 Triggered async backup after upload of {artifact_id}")
-        except Exception as backup_error:
-            import logging
-            logging.warning(f"Could not trigger backup: {backup_error}")
-
-        # Convert numpy types to native Python types for JSON serialization
+        # Return FAST - processing continues in background
         response_data = {
             'status': 'success',
             'artifact_id': features['id'],
             'features': convert_numpy_types(features),
             'persisted': True,
-            'savignano_extracted': savignano_features is not None,
+            'savignano_extracted': False,  # Will happen in background
             'savignano_auto_detected': enable_savignano_explicit is None and enable_savignano,
-            'storage_backend': os.getenv('STORAGE_BACKEND', 'local'),
-            'message': 'Savignano morphometric analysis automatically performed' if (enable_savignano_explicit is None and enable_savignano) else None
+            'storage_backend': storage_backend,
+            'background_processing': storage_backend != 'local',
+            'message': 'Upload complete. Cloud sync and analysis running in background.' if storage_backend != 'local' else None
         }
         return jsonify(response_data)
     except Exception as e:
