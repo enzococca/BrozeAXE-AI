@@ -80,6 +80,15 @@ def create_app(config=None):
     with app.app_context():
         try:
             storage_backend = os.getenv('STORAGE_BACKEND', 'local')
+            db_path = os.getenv('DATABASE_PATH', '/data/acs_artifacts.db')
+
+            print(f"[DB Sync] 📋 Configuration:")
+            print(f"[DB Sync]    STORAGE_BACKEND = {storage_backend}")
+            print(f"[DB Sync]    DATABASE_PATH = {db_path}")
+            print(f"[DB Sync]    DB exists = {os.path.exists(db_path)}")
+            if os.path.exists(db_path):
+                print(f"[DB Sync]    DB size = {os.path.getsize(db_path)} bytes")
+
             if storage_backend != 'local':
                 from acs.core.database import auto_sync_database
                 print(f"[DB Sync] 🔄 Auto-syncing database with {storage_backend}...")
@@ -89,16 +98,24 @@ def create_app(config=None):
                 restore_result = sync_result.get('restore') or {}
                 backup_result = sync_result.get('backup') or {}
 
+                print(f"[DB Sync] 📊 Sync result: {sync_result}")
+
                 if restore_result.get('status') == 'success':
                     print(f"[DB Sync] ✅ Restored from cloud: {restore_result.get('restored_from')}")
                 elif backup_result.get('status') == 'success':
                     print(f"[DB Sync] ✅ Backed up to cloud: {backup_result.get('backup_filename')}")
                 elif restore_result.get('status') == 'skipped':
                     print(f"[DB Sync] ℹ️  Skipped: {restore_result.get('reason')}")
+                    if restore_result.get('error'):
+                        print(f"[DB Sync]    Error detail: {restore_result.get('error')}")
                 elif sync_result.get('error'):
                     print(f"[DB Sync] ⚠️  Error: {sync_result.get('error')}")
+            else:
+                print(f"[DB Sync] ℹ️  Using local storage, no cloud sync")
         except Exception as e:
+            import traceback
             print(f"[DB Sync] ⚠️  Auto-sync failed: {e}")
+            traceback.print_exc()
 
     # Initialize authentication: create default admin if no users exist
     with app.app_context():

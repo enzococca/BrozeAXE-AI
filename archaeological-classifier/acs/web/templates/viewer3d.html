@@ -564,9 +564,6 @@ class ArtifactViewer {
             console.log(`📁 MTL path: ${mtlPath}`);
             console.log(`🔗 Texture base URL: /web/texture-file/${artifactId}/`);
 
-            const mtlLoader = new THREE.MTLLoader();
-            mtlLoader.setPath(`/web/texture-file/${artifactId}/`);
-
             // Add texture load manager for debugging
             const loadingManager = new THREE.LoadingManager();
             loadingManager.onLoad = () => console.log('✅ All textures loaded');
@@ -574,7 +571,10 @@ class ArtifactViewer {
             loadingManager.onProgress = (url, loaded, total) => {
                 console.log(`📥 Loading: ${url} (${loaded}/${total})`);
             };
-            mtlLoader.setManager(loadingManager);
+
+            // Pass manager to constructor (setManager doesn't exist in r128)
+            const mtlLoader = new THREE.MTLLoader(loadingManager);
+            mtlLoader.setPath(`/web/texture-file/${artifactId}/`);
 
             mtlLoader.load(
                 `/web/mtl-file/${artifactId}`,

@@ -416,17 +416,22 @@ class DropboxStorage(StorageBackend):
 
     def list_files(self, folder_path: str = "") -> List[dict]:
         """List files in Dropbox folder."""
-        result = self.dbx.files_list_folder(f"/{folder_path}" if folder_path else "")
+        try:
+            result = self.dbx.files_list_folder(f"/{folder_path}" if folder_path else "")
 
-        return [
-            {
-                'name': entry.name,
-                'path': entry.path_display,
-                'size': getattr(entry, 'size', 0),
-                'modified': getattr(entry, 'server_modified', None)
-            }
-            for entry in result.entries
-        ]
+            return [
+                {
+                    'name': entry.name,
+                    'path': entry.path_display,
+                    'size': getattr(entry, 'size', 0),
+                    'modified': getattr(entry, 'server_modified', None)
+                }
+                for entry in result.entries
+            ]
+        except Exception as e:
+            # Folder might not exist yet - return empty list
+            logger.warning(f"Could not list Dropbox folder '{folder_path}': {e}")
+            return []
 
     def file_exists(self, remote_path: str) -> bool:
         """Check if file exists on Dropbox."""
