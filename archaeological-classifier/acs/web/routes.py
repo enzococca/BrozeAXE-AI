@@ -357,6 +357,7 @@ def upload_mesh():
                 'category': category,
                 'description': description,
                 'material': material,
+                'mesh_units': mesh_units,  # Store mesh units for 3D viewer scaling
                 'storage_backend': os.getenv('STORAGE_BACKEND', 'local')
             },
             project_id=project_id
@@ -759,6 +760,46 @@ def serve_mesh_file(artifact_id):
     except Exception as e:
         import logging
         logging.error(f"Error serving mesh file {artifact_id}: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@web_bp.route('/artifact-metadata/<artifact_id>')
+def get_artifact_metadata(artifact_id):
+    """Get artifact metadata including mesh_units for 3D viewer scaling."""
+    try:
+        from acs.core.database import get_database
+        import json
+
+        db = get_database()
+        artifact = db.get_artifact(artifact_id)
+
+        if not artifact:
+            return jsonify({'error': 'Artifact not found'}), 404
+
+        # Parse metadata JSON
+        metadata = {}
+        if artifact.get('metadata'):
+            try:
+                metadata = json.loads(artifact['metadata']) if isinstance(artifact['metadata'], str) else artifact['metadata']
+            except:
+                metadata = {}
+
+        # Return relevant metadata for 3D viewer
+        return jsonify({
+            'artifact_id': artifact_id,
+            'mesh_units': metadata.get('mesh_units', 'cm'),  # Default to cm
+            'n_vertices': artifact.get('n_vertices'),
+            'n_faces': artifact.get('n_faces'),
+            'is_watertight': artifact.get('is_watertight'),
+            'category': metadata.get('category', ''),
+            'description': metadata.get('description', ''),
+            'material': metadata.get('material', ''),
+            'savignano_enabled': metadata.get('savignano_enabled', False)
+        })
+
+    except Exception as e:
+        import logging
+        logging.error(f"Error getting artifact metadata {artifact_id}: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 
