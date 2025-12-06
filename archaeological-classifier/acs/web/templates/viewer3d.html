@@ -527,14 +527,18 @@ class ArtifactViewer {
             this.scene.remove(this.currentMesh);
         }
 
-        // Fetch artifact metadata to get mesh_units for correct scaling
+        // Fetch artifact metadata to get mesh_units and texture info
         let meshUnits = 'cm'; // Default
+        let hasTextures = false;
+        let mtlPath = null;
         try {
             const metadataResponse = await fetch(`/web/artifact-metadata/${artifactId}`);
             if (metadataResponse.ok) {
                 const metadata = await metadataResponse.json();
                 meshUnits = metadata.mesh_units || 'cm';
-                console.log(`Artifact ${artifactId}: mesh_units = ${meshUnits}`);
+                hasTextures = metadata.has_textures || false;
+                mtlPath = metadata.mtl_path;
+                console.log(`Artifact ${artifactId}: mesh_units = ${meshUnits}, hasTextures = ${hasTextures}`);
             }
         } catch (e) {
             console.warn(`Could not fetch metadata for ${artifactId}, using default cm`, e);
@@ -551,97 +555,150 @@ class ArtifactViewer {
         this.currentMeshUnits = meshUnits;
         this.meshScaleToMm = meshScaleFactor;
 
-        const loader = new THREE.OBJLoader();
         const meshUrl = `/web/mesh-file/${artifactId}`;
+
+        // Load with or without textures
+        if (hasTextures && mtlPath) {
+            // Load with MTL and textures
+            console.log(`Loading ${artifactId} with textures...`);
+            const mtlLoader = new THREE.MTLLoader();
+            mtlLoader.setPath(`/web/texture-file/${artifactId}/`);
+
+            mtlLoader.load(
+                `/web/mtl-file/${artifactId}`,
+                (materials) => {
+                    materials.preload();
+
+                    const objLoader = new THREE.OBJLoader();
+                    objLoader.setMaterials(materials);
+
+                    objLoader.load(
+                        meshUrl,
+                        (object) => this.onModelLoaded(object, artifactId, meshScaleFactor),
+                        (xhr) => this.onLoadProgress(xhr),
+                        (error) => this.onLoadError(error)
+                    );
+                },
+                (xhr) => console.log(`MTL: ${(xhr.loaded / xhr.total * 100).toFixed(0)}% loaded`),
+                (error) => {
+                    console.warn('MTL load failed, falling back to simple OBJ:', error);
+                    // Fallback to simple OBJ loading
+                    this.loadModelSimple(artifactId, meshScaleFactor, meshUrl);
+                }
+            );
+        } else {
+            // Load without textures (simple OBJ)
+            this.loadModelSimple(artifactId, meshScaleFactor, meshUrl);
+        }
+    }
+
+    loadModelSimple(artifactId, meshScaleFactor, meshUrl) {
+        const loader = new THREE.OBJLoader();
 
         loader.load(
             meshUrl,
-            (object) => {
-                this.currentMesh = object;
-
-                // Get ORIGINAL dimensions before scaling
-                const originalBox = new THREE.Box3().setFromObject(object);
-                const originalSize = originalBox.getSize(new THREE.Vector3());
-
-                // Store original dimensions in mm using the correct scale factor
-                this.originalDimensions = {
-                    width: originalSize.x * meshScaleFactor,
-                    height: originalSize.y * meshScaleFactor,
-                    depth: originalSize.z * meshScaleFactor
-                };
-                console.log(`Original dimensions (mm): ${this.originalDimensions.width.toFixed(1)} x ${this.originalDimensions.height.toFixed(1)} x ${this.originalDimensions.depth.toFixed(1)}`);
-
-                // Calculate the scale to fit mesh in viewer
-                const maxDim = Math.max(originalSize.x, originalSize.y, originalSize.z);
-                const viewerScale = 4 / maxDim;
-                object.scale.multiplyScalar(viewerScale);
-
-                // Store scale factor for ruler calculations
-                this.meshToViewerScale = viewerScale;
-
-                // Rotate to make axes stand VERTICALLY (blade up, shaft down)
-                // Rotate 90 degrees around Z-axis to stand upright
-                object.rotation.z = Math.PI / 2;
-
-                // NOW center the model AFTER rotation
-                const box2 = new THREE.Box3().setFromObject(object);
-                const center = box2.getCenter(new THREE.Vector3());
-                object.position.sub(center);
-
-                // Place object at origin with base on the grid
-                object.position.y = 0;
-
-                // Apply material
-                object.traverse((child) => {
-                    if (child instanceof THREE.Mesh) {
-                        child.material = new THREE.MeshPhongMaterial({
-                            color: 0xccaa88,
-                            shininess: 30,
-                            flatShading: false
-                        });
-                        child.castShadow = true;
-                        child.receiveShadow = true;
-                    }
-                });
-
-                this.scene.add(object);
-                this.updateModelStats(object);
-
-                // Add metric rulers for comparison viewers (with REAL dimensions)
-                const box3 = new THREE.Box3().setFromObject(object);
-                this.createMetricRulers(box3);
-
-                // Setup ruler click interaction (only once)
-                if (!this.raycaster) {
-                    this.setupRulerClickInteraction();
-                }
-
-                // Display measurements for comparison viewers
-                this.displayMeasurements(artifactId, box3);
-
-                document.getElementById('loading-indicator').style.display = 'none';
-            },
-            (xhr) => {
-                // Update progress percentage
-                if (xhr.lengthComputable) {
-                    const percentComplete = Math.round((xhr.loaded / xhr.total) * 100);
-                    const loadingPercent = document.getElementById('loading-percent');
-                    const loadingText = document.getElementById('loading-text');
-                    if (loadingPercent) {
-                        loadingPercent.textContent = percentComplete + '%';
-                    }
-                    if (loadingText) {
-                        loadingText.textContent = `Loading 3D model... (${(xhr.loaded / 1024 / 1024).toFixed(1)}MB / ${(xhr.total / 1024 / 1024).toFixed(1)}MB)`;
-                    }
-                    console.log(percentComplete + '% loaded');
-                }
-            },
-            (error) => {
-                console.error('Error loading model:', error);
-                document.getElementById('loading-indicator').style.display = 'none';
-                alert('Error loading 3D model. Please check the console.');
-            }
+            (object) => this.onModelLoaded(object, artifactId, meshScaleFactor, false),
+            (xhr) => this.onLoadProgress(xhr),
+            (error) => this.onLoadError(error)
         );
+    }
+
+    onModelLoaded(object, artifactId, meshScaleFactor, hasTextures = true) {
+        this.currentMesh = object;
+
+        // Get ORIGINAL dimensions before scaling
+        const originalBox = new THREE.Box3().setFromObject(object);
+        const originalSize = originalBox.getSize(new THREE.Vector3());
+
+        // Store original dimensions in mm using the correct scale factor
+        this.originalDimensions = {
+            width: originalSize.x * meshScaleFactor,
+            height: originalSize.y * meshScaleFactor,
+            depth: originalSize.z * meshScaleFactor
+        };
+        console.log(`Original dimensions (mm): ${this.originalDimensions.width.toFixed(1)} x ${this.originalDimensions.height.toFixed(1)} x ${this.originalDimensions.depth.toFixed(1)}`);
+
+        // Calculate the scale to fit mesh in viewer
+        const maxDim = Math.max(originalSize.x, originalSize.y, originalSize.z);
+        const viewerScale = 4 / maxDim;
+        object.scale.multiplyScalar(viewerScale);
+
+        // Store scale factor for ruler calculations
+        this.meshToViewerScale = viewerScale;
+
+        // Rotate to make axes stand VERTICALLY (blade up, shaft down)
+        // Rotate 90 degrees around Z-axis to stand upright
+        object.rotation.z = Math.PI / 2;
+
+        // NOW center the model AFTER rotation
+        const box2 = new THREE.Box3().setFromObject(object);
+        const center = box2.getCenter(new THREE.Vector3());
+        object.position.sub(center);
+
+        // Place object at origin with base on the grid
+        object.position.y = 0;
+
+        // Apply default material only if no textures loaded
+        if (!hasTextures) {
+            object.traverse((child) => {
+                if (child instanceof THREE.Mesh) {
+                    child.material = new THREE.MeshPhongMaterial({
+                        color: 0xccaa88,
+                        shininess: 30,
+                        flatShading: false
+                    });
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                }
+            });
+        } else {
+            // Ensure shadows work with textures
+            object.traverse((child) => {
+                if (child instanceof THREE.Mesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                }
+            });
+        }
+
+        this.scene.add(object);
+        this.updateModelStats(object);
+
+        // Add metric rulers for comparison viewers (with REAL dimensions)
+        const box3 = new THREE.Box3().setFromObject(object);
+        this.createMetricRulers(box3);
+
+        // Setup ruler click interaction (only once)
+        if (!this.raycaster) {
+            this.setupRulerClickInteraction();
+        }
+
+        // Display measurements for comparison viewers
+        this.displayMeasurements(artifactId, box3);
+
+        document.getElementById('loading-indicator').style.display = 'none';
+    }
+
+    onLoadProgress(xhr) {
+        // Update progress percentage
+        if (xhr.lengthComputable) {
+            const percentComplete = Math.round((xhr.loaded / xhr.total) * 100);
+            const loadingPercent = document.getElementById('loading-percent');
+            const loadingText = document.getElementById('loading-text');
+            if (loadingPercent) {
+                loadingPercent.textContent = percentComplete + '%';
+            }
+            if (loadingText) {
+                loadingText.textContent = `Loading 3D model... (${(xhr.loaded / 1024 / 1024).toFixed(1)}MB / ${(xhr.total / 1024 / 1024).toFixed(1)}MB)`;
+            }
+            console.log(percentComplete + '% loaded');
+        }
+    }
+
+    onLoadError(error) {
+        console.error('Error loading model:', error);
+        document.getElementById('loading-indicator').style.display = 'none';
+        alert('Error loading 3D model. Please check the console.');
     }
 
     updateModelStats(object) {
