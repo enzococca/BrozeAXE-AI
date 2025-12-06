@@ -195,7 +195,7 @@ def register_user(username: str, email: str, password: str,
     password_hash = PasswordHasher.hash_password(password)
 
     # Create user
-    user_id = db.create_user(
+    user_id = db.add_user(
         username=username,
         email=email,
         password_hash=password_hash,
