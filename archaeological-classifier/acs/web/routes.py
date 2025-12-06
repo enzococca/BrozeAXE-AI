@@ -46,6 +46,74 @@ morphometric_analyzer = MorphometricAnalyzer()
 taxonomy_system = FormalTaxonomySystem()
 
 
+def ensure_mesh_loaded(artifact_id: str) -> bool:
+    """
+    Ensure a mesh is loaded into memory, downloading from storage if needed.
+
+    This enables lazy loading of meshes after a deploy - artifacts are stored
+    in the database but meshes need to be downloaded from cloud storage.
+
+    Returns True if mesh is loaded successfully, False otherwise.
+    """
+    # Already in memory
+    if artifact_id in mesh_processor.meshes:
+        return True
+
+    try:
+        from acs.core.database import get_database
+        from acs.core.storage import get_default_storage
+        import tempfile
+        import logging
+
+        db = get_database()
+        artifact = db.get_artifact(artifact_id)
+
+        if not artifact:
+            logging.warning(f"Artifact {artifact_id} not found in database")
+            return False
+
+        mesh_path = artifact.get('mesh_path')
+        if not mesh_path:
+            logging.warning(f"No mesh_path for artifact {artifact_id}")
+            return False
+
+        # Check if local file exists
+        if os.path.isabs(mesh_path) and os.path.exists(mesh_path):
+            # Local file - load directly
+            mesh_processor.load_mesh(mesh_path, artifact_id)
+            logging.info(f"Loaded mesh {artifact_id} from local path")
+            return True
+
+        # Remote path - need to download from storage
+        try:
+            storage = get_default_storage()
+
+            # Create cache directory
+            cache_folder = os.path.join(tempfile.gettempdir(), 'acs_mesh_cache')
+            os.makedirs(cache_folder, exist_ok=True)
+
+            # Download to cache
+            cache_path = os.path.join(cache_folder, f'{artifact_id}.obj')
+
+            if not os.path.exists(cache_path):
+                logging.info(f"Downloading mesh {artifact_id} from storage: {mesh_path}")
+                storage.download_file(mesh_path, cache_path)
+
+            # Load mesh
+            mesh_processor.load_mesh(cache_path, artifact_id)
+            logging.info(f"Loaded mesh {artifact_id} from storage cache")
+            return True
+
+        except Exception as e:
+            logging.error(f"Failed to download mesh {artifact_id}: {e}")
+            return False
+
+    except Exception as e:
+        import logging
+        logging.error(f"Error loading mesh {artifact_id}: {e}")
+        return False
+
+
 def init_default_taxonomy_classes():
     """Initialize default taxonomy classes for Bronze Age axes if none exist."""
     if len(taxonomy_system.classes) > 0:
@@ -580,7 +648,8 @@ def classify_artifact():
         data = request.json
         artifact_id = data.get('artifact_id')
 
-        if artifact_id not in mesh_processor.meshes:
+        # Lazy load mesh from storage if not in memory
+        if not ensure_mesh_loaded(artifact_id):
             return jsonify({'error': 'Artifact not found'}), 404
 
         # Get features
@@ -636,7 +705,8 @@ def artifacts_page():
 @web_bp.route('/artifact/<artifact_id>')
 def artifact_detail(artifact_id):
     """Artifact detail page with technological analysis."""
-    if artifact_id not in mesh_processor.meshes:
+    # Lazy load mesh from storage if not in memory
+    if not ensure_mesh_loaded(artifact_id):
         return "Artifact not found", 404
 
     mesh = mesh_processor.meshes[artifact_id]
@@ -769,7 +839,18 @@ def statistics_api():
 @web_bp.route('/viewer')
 def viewer_page():
     """3D viewer page."""
-    artifacts = list(mesh_processor.meshes.keys())
+    from acs.core.database import get_database
+
+    # Get artifacts from database (persisted) instead of in-memory mesh_processor
+    db = get_database()
+    db_artifacts = db.get_all_artifacts()
+    artifacts = [a['artifact_id'] for a in db_artifacts]
+
+    # Also include any in-memory artifacts not yet in DB
+    for aid in mesh_processor.meshes.keys():
+        if aid not in artifacts:
+            artifacts.append(aid)
+
     return render_template('viewer3d.html', artifacts=artifacts)
 
 
@@ -1004,7 +1085,8 @@ def compare_artifacts():
         artifact1 = data.get('artifact1')
         artifact2 = data.get('artifact2')
 
-        if artifact1 not in mesh_processor.meshes or artifact2 not in mesh_processor.meshes:
+        # Lazy load meshes from storage if not in memory
+        if not ensure_mesh_loaded(artifact1) or not ensure_mesh_loaded(artifact2):
             return jsonify({'error': 'One or both artifacts not found'}), 404
 
         # Get morphometric features
@@ -1118,6 +1200,7 @@ def find_similar_artifacts():
     try:
         from acs.core.similarity_search import get_similarity_engine
         from acs.core.stylistic_analyzer import get_stylistic_analyzer
+        from acs.core.database import get_database
 
         data = request.json
         query_id = data.get('query_id')
@@ -1125,18 +1208,24 @@ def find_similar_artifacts():
         metric = data.get('metric', 'cosine')  # cosine or euclidean
         min_similarity = data.get('min_similarity', 0.0)
 
-        if query_id not in mesh_processor.meshes:
+        # Lazy load query mesh from storage if not in memory
+        if not ensure_mesh_loaded(query_id):
             return jsonify({'error': 'Query artifact not found'}), 404
 
         # Build similarity search index
         search_engine = get_similarity_engine()
         stylistic = get_stylistic_analyzer()
 
-        # Add all artifacts to search index
-        for artifact_id, mesh in mesh_processor.meshes.items():
-            morph_features = mesh_processor._extract_features(mesh, artifact_id)
-            style_features = stylistic.analyze_style(mesh, artifact_id, morph_features)
-            search_engine.add_artifact_features(artifact_id, morph_features, style_features)
+        # Get all artifact IDs from database and lazy-load them
+        db = get_database()
+        all_artifacts = db.get_all_artifacts()
+        for artifact in all_artifacts:
+            artifact_id = artifact['artifact_id']
+            if ensure_mesh_loaded(artifact_id):
+                mesh = mesh_processor.meshes[artifact_id]
+                morph_features = mesh_processor._extract_features(mesh, artifact_id)
+                style_features = stylistic.analyze_style(mesh, artifact_id, morph_features)
+                search_engine.add_artifact_features(artifact_id, morph_features, style_features)
 
         # Build index
         search_engine.build_index()
