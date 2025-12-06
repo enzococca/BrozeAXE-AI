@@ -278,7 +278,12 @@ def upload_page():
 
 
 def background_upload_to_storage(artifact_id, temp_dir, filename, mtl_filename, texture_filenames, mesh_units, enable_savignano, weight):
-    """Background task to upload files to cloud storage and run Savignano analysis."""
+    """Background task to upload OBJ to cloud storage and run Savignano analysis.
+
+    Note: MTL and texture files are uploaded synchronously in the main upload function
+    so they're available immediately for the 3D viewer. This function only handles
+    the large OBJ file upload and Savignano analysis.
+    """
     import logging
     import shutil
 
@@ -288,51 +293,27 @@ def background_upload_to_storage(artifact_id, temp_dir, filename, mtl_filename, 
 
         filepath = os.path.join(temp_dir, filename)
 
-        # Track stored paths
-        stored_mtl_path = None
-        stored_texture_paths = []
-
-        # Upload to storage
+        # Upload OBJ to storage (MTL/textures already uploaded synchronously)
         try:
             storage = get_default_storage()
             remote_path = f"meshes/{artifact_id}/{filename}"
 
-            # Upload OBJ
+            # Upload OBJ (the large file)
             storage.upload_file(filepath, remote_path)
-            stored_path = remote_path
             logging.info(f"✅ [BG] Uploaded {filename} to storage")
 
-            # Upload MTL
-            if mtl_filename:
-                mtl_remote_path = f"meshes/{artifact_id}/{mtl_filename}"
-                mtl_local = os.path.join(temp_dir, mtl_filename)
-                storage.upload_file(mtl_local, mtl_remote_path)
-                stored_mtl_path = mtl_remote_path
-                logging.info(f"✅ [BG] Uploaded MTL {mtl_filename}")
-
-            # Upload textures
-            for tex_filename in texture_filenames:
-                tex_remote_path = f"meshes/{artifact_id}/{tex_filename}"
-                tex_local = os.path.join(temp_dir, tex_filename)
-                storage.upload_file(tex_local, tex_remote_path)
-                stored_texture_paths.append(tex_remote_path)
-                logging.info(f"✅ [BG] Uploaded texture {tex_filename}")
-
-            # Update database with storage paths
+            # Update database with remote OBJ path (keep existing MTL/texture paths)
             db = get_database()
             artifact = db.get_artifact(artifact_id)
             if artifact:
                 import json
                 metadata = json.loads(artifact.get('metadata', '{}')) if artifact.get('metadata') else {}
-                metadata['mtl_path'] = stored_mtl_path
-                metadata['texture_paths'] = stored_texture_paths
-                metadata['has_textures'] = bool(stored_mtl_path or stored_texture_paths)
                 metadata['storage_upload_complete'] = True
 
-                # Update mesh_path to remote path
+                # Update mesh_path to remote path, keep existing MTL/texture paths
                 db.add_artifact(
                     artifact_id=artifact_id,
-                    mesh_path=stored_path,
+                    mesh_path=remote_path,
                     n_vertices=artifact.get('n_vertices', 0),
                     n_faces=artifact.get('n_faces', 0),
                     is_watertight=artifact.get('is_watertight', False),
@@ -485,8 +466,36 @@ def upload_mesh():
 
         import logging
 
-        # Save to database with LOCAL temp path (fast)
-        # Background thread will update to cloud path after upload
+        # Upload MTL and textures IMMEDIATELY (they're small) so viewer can use them right away
+        stored_mtl_path = None
+        stored_texture_paths = []
+        storage_backend = os.getenv('STORAGE_BACKEND', 'local')
+
+        if storage_backend != 'local' and (mtl_filename or texture_filenames):
+            try:
+                from acs.core.storage import get_default_storage
+                storage = get_default_storage()
+
+                # Upload MTL file immediately
+                if mtl_filename:
+                    mtl_remote_path = f"meshes/{artifact_id}/{mtl_filename}"
+                    mtl_local = os.path.join(temp_dir, mtl_filename)
+                    storage.upload_file(mtl_local, mtl_remote_path)
+                    stored_mtl_path = mtl_remote_path
+                    logging.info(f"✅ Uploaded MTL {mtl_filename} to storage")
+
+                # Upload texture files immediately
+                for tex_filename in texture_filenames:
+                    tex_remote_path = f"meshes/{artifact_id}/{tex_filename}"
+                    tex_local = os.path.join(temp_dir, tex_filename)
+                    storage.upload_file(tex_local, tex_remote_path)
+                    stored_texture_paths.append(tex_remote_path)
+                    logging.info(f"✅ Uploaded texture {tex_filename} to storage")
+
+            except Exception as e:
+                logging.error(f"Failed to upload textures for {artifact_id}: {e}")
+
+        # Save to database - MTL/texture paths set NOW, OBJ path updated by background
         db = get_database()
         mesh = mesh_processor.meshes[artifact_id]
         db.add_artifact(
@@ -503,18 +512,17 @@ def upload_mesh():
                 'description': description,
                 'material': material,
                 'mesh_units': mesh_units,
-                'storage_backend': os.getenv('STORAGE_BACKEND', 'local'),
-                'mtl_path': None,  # Will be set by background upload
-                'texture_paths': [],  # Will be set by background upload
-                'has_textures': bool(mtl_filename or texture_filenames),
-                'storage_upload_complete': False  # Will be set True after background upload
+                'storage_backend': storage_backend,
+                'mtl_path': stored_mtl_path,  # SET NOW - textures available immediately
+                'texture_paths': stored_texture_paths,  # SET NOW
+                'has_textures': bool(stored_mtl_path or stored_texture_paths),
+                'storage_upload_complete': False  # OBJ still uploading in background
             },
             project_id=project_id
         )
         db.add_features(artifact_id, features)
 
-        # Start background upload to cloud storage (non-blocking)
-        storage_backend = os.getenv('STORAGE_BACKEND', 'local')
+        # Start background upload for large OBJ file and Savignano analysis
         if storage_backend != 'local':
             import threading
             upload_thread = threading.Thread(
