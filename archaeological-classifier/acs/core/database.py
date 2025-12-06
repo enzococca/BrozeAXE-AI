@@ -21,9 +21,16 @@ class ArtifactDatabase:
     def __init__(self, db_path: str = None):
         """Initialize database connection."""
         if db_path is None:
-            db_path = os.getenv('ACS_DB_PATH', 'acs_artifacts.db')
+            # Check DATABASE_PATH first (Railway standard), then ACS_DB_PATH for backwards compatibility
+            db_path = os.getenv('DATABASE_PATH') or os.getenv('ACS_DB_PATH', '/data/acs_artifacts.db')
 
         self.db_path = db_path
+
+        # Ensure parent directory exists
+        db_dir = os.path.dirname(db_path)
+        if db_dir:
+            os.makedirs(db_dir, exist_ok=True)
+
         self._init_database()
 
     @contextmanager
