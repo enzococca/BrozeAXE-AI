@@ -1,8 +1,10 @@
 # Nixpacks configuration for Python Flask app
+# Railway deployment configuration with runtime dependency installation
 providers = ["python"]
 
 [phases.setup]
 nixPkgs = ['python311', 'gcc', 'libstdcxx5']
 
+# Install missing dependencies at runtime to bypass build cache issues
 [start]
-cmd = 'cd archaeological-classifier && python3 -m pip install anthropic>=0.40.0 dropbox>=11.36.0 reportlab>=4.0.0 && python3 -m acs.api.app'
+cmd = 'cd archaeological-classifier && python3 -m pip install --no-cache-dir anthropic>=0.40.0 dropbox>=11.36.0 reportlab>=4.0.0 && python3 -m acs.api.app'
