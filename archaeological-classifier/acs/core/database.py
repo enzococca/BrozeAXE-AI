@@ -1234,17 +1234,28 @@ def auto_sync_database() -> dict:
         restore_result = restore_database_from_storage(db_path)
         results['restore'] = restore_result
 
-        if restore_result['status'] == 'success':
+        if restore_result.get('status') == 'success':
             logger.info(f"✅ Restored database from cloud: {restore_result.get('restored_from')}")
-        elif restore_result['status'] == 'skipped':
-            # Local DB exists, backup to cloud
-            if restore_result.get('reason') == 'local_db_has_data':
-                logger.info("🔄 Auto-sync: Backing up local database to cloud...")
+        elif restore_result.get('status') == 'skipped':
+            skip_reason = restore_result.get('reason', '')
+
+            # Backup to cloud if:
+            # 1. Local DB exists with data
+            # 2. No backups found in cloud (create first backup)
+            # 3. Folder doesn't exist yet
+            should_backup = skip_reason in ('local_db_has_data', 'no_backups', 'no_db_backups', 'no_backups_found')
+
+            if should_backup and os.path.exists(db_path) and os.path.getsize(db_path) > 1000:
+                logger.info(f"🔄 Auto-sync: Backing up local database to cloud (reason: {skip_reason})...")
                 backup_result = backup_database_to_storage(db_path)
                 results['backup'] = backup_result
 
-                if backup_result['status'] == 'success':
+                if backup_result.get('status') == 'success':
                     logger.info(f"✅ Backed up database to cloud: {backup_result.get('backup_filename')}")
+                elif backup_result.get('status') == 'error':
+                    logger.warning(f"⚠️ Backup failed: {backup_result.get('error')}")
+            else:
+                logger.info(f"ℹ️ Skipping backup: {skip_reason}")
 
         return results
 
