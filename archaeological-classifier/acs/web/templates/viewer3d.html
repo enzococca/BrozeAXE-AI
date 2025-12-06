@@ -519,13 +519,37 @@ class ArtifactViewer {
         this.animate();
     }
 
-    loadModel(artifactId) {
+    async loadModel(artifactId) {
         document.getElementById('loading-indicator').style.display = 'flex';
 
         // Remove existing mesh
         if (this.currentMesh) {
             this.scene.remove(this.currentMesh);
         }
+
+        // Fetch artifact metadata to get mesh_units for correct scaling
+        let meshUnits = 'cm'; // Default
+        try {
+            const metadataResponse = await fetch(`/web/artifact-metadata/${artifactId}`);
+            if (metadataResponse.ok) {
+                const metadata = await metadataResponse.json();
+                meshUnits = metadata.mesh_units || 'cm';
+                console.log(`Artifact ${artifactId}: mesh_units = ${meshUnits}`);
+            }
+        } catch (e) {
+            console.warn(`Could not fetch metadata for ${artifactId}, using default cm`, e);
+        }
+
+        // Scale factors to convert to mm (standard display unit)
+        const SCALE_TO_MM = {
+            'mm': 1.0,      // Already in mm
+            'cm': 10.0,     // cm to mm
+            'm': 1000.0,    // m to mm
+            'in': 25.4      // inches to mm
+        };
+        const meshScaleFactor = SCALE_TO_MM[meshUnits] || 10.0;
+        this.currentMeshUnits = meshUnits;
+        this.meshScaleToMm = meshScaleFactor;
 
         const loader = new THREE.OBJLoader();
         const meshUrl = `/web/mesh-file/${artifactId}`;
@@ -535,19 +559,17 @@ class ArtifactViewer {
             (object) => {
                 this.currentMesh = object;
 
-                // Get ORIGINAL dimensions before scaling (in mm from the mesh file)
+                // Get ORIGINAL dimensions before scaling
                 const originalBox = new THREE.Box3().setFromObject(object);
                 const originalSize = originalBox.getSize(new THREE.Vector3());
 
-                // Store original dimensions for ruler display (in mm)
-                // Note: mesh might be in cm, so we apply scale factor from savignano extraction
-                // Default to cm (multiply by 10 to get mm)
-                const meshScaleFactor = 10.0; // cm to mm
+                // Store original dimensions in mm using the correct scale factor
                 this.originalDimensions = {
                     width: originalSize.x * meshScaleFactor,
                     height: originalSize.y * meshScaleFactor,
                     depth: originalSize.z * meshScaleFactor
                 };
+                console.log(`Original dimensions (mm): ${this.originalDimensions.width.toFixed(1)} x ${this.originalDimensions.height.toFixed(1)} x ${this.originalDimensions.depth.toFixed(1)}`);
 
                 // Calculate the scale to fit mesh in viewer
                 const maxDim = Math.max(originalSize.x, originalSize.y, originalSize.z);
