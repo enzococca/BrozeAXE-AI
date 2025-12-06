@@ -535,12 +535,27 @@ class ArtifactViewer {
             (object) => {
                 this.currentMesh = object;
 
-                // First scale the model
-                const box = new THREE.Box3().setFromObject(object);
-                const size = box.getSize(new THREE.Vector3());
-                const maxDim = Math.max(size.x, size.y, size.z);
-                const scale = 4 / maxDim;
-                object.scale.multiplyScalar(scale);
+                // Get ORIGINAL dimensions before scaling (in mm from the mesh file)
+                const originalBox = new THREE.Box3().setFromObject(object);
+                const originalSize = originalBox.getSize(new THREE.Vector3());
+
+                // Store original dimensions for ruler display (in mm)
+                // Note: mesh might be in cm, so we apply scale factor from savignano extraction
+                // Default to cm (multiply by 10 to get mm)
+                const meshScaleFactor = 10.0; // cm to mm
+                this.originalDimensions = {
+                    width: originalSize.x * meshScaleFactor,
+                    height: originalSize.y * meshScaleFactor,
+                    depth: originalSize.z * meshScaleFactor
+                };
+
+                // Calculate the scale to fit mesh in viewer
+                const maxDim = Math.max(originalSize.x, originalSize.y, originalSize.z);
+                const viewerScale = 4 / maxDim;
+                object.scale.multiplyScalar(viewerScale);
+
+                // Store scale factor for ruler calculations
+                this.meshToViewerScale = viewerScale;
 
                 // Rotate to make axes stand VERTICALLY (blade up, shaft down)
                 // Rotate 90 degrees around Z-axis to stand upright
@@ -570,7 +585,7 @@ class ArtifactViewer {
                 this.scene.add(object);
                 this.updateModelStats(object);
 
-                // Add metric rulers for comparison viewers
+                // Add metric rulers for comparison viewers (with REAL dimensions)
                 const box3 = new THREE.Box3().setFromObject(object);
                 this.createMetricRulers(box3);
 
@@ -618,13 +633,21 @@ class ArtifactViewer {
             }
         });
 
-        const box = new THREE.Box3().setFromObject(object);
-        const size = box.getSize(new THREE.Vector3());
-
         document.getElementById('vertex-count').textContent = vertices.toLocaleString();
         document.getElementById('face-count').textContent = Math.floor(faces).toLocaleString();
-        document.getElementById('bbox-size').textContent =
-            `${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)}`;
+
+        // Display REAL dimensions in mm from originalDimensions
+        if (this.originalDimensions) {
+            const w = this.originalDimensions.width.toFixed(1);
+            const h = this.originalDimensions.height.toFixed(1);
+            const d = this.originalDimensions.depth.toFixed(1);
+            document.getElementById('bbox-size').textContent = `${w} × ${h} × ${d} mm`;
+        } else {
+            const box = new THREE.Box3().setFromObject(object);
+            const size = box.getSize(new THREE.Vector3());
+            document.getElementById('bbox-size').textContent =
+                `${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)}`;
+        }
     }
 
     async displayMeasurements(artifactId, boundingBox) {
@@ -638,14 +661,24 @@ class ArtifactViewer {
             return;  // Not a comparison viewer
         }
 
-        // Calculate dimensions from bounding box
-        const size = boundingBox.getSize(new THREE.Vector3());
-        const length = size.y.toFixed(2);  // Length is the longest dimension (vertical)
-        const width = size.x.toFixed(2);
-        const height = size.z.toFixed(2);
+        // Use REAL dimensions in mm from originalDimensions
+        // After rotation: original width -> viewer height (length), original height -> viewer width
+        let length, width, height, volume;
 
-        // Calculate approximate volume
-        const volume = (size.x * size.y * size.z).toFixed(2);
+        if (this.originalDimensions) {
+            // Real measurements in mm
+            length = this.originalDimensions.width.toFixed(1);   // rotated to vertical
+            width = this.originalDimensions.height.toFixed(1);   // rotated to horizontal
+            height = this.originalDimensions.depth.toFixed(1);   // depth stays depth
+            volume = (this.originalDimensions.width * this.originalDimensions.height * this.originalDimensions.depth).toFixed(0);
+        } else {
+            // Fallback to viewer units (should not happen)
+            const size = boundingBox.getSize(new THREE.Vector3());
+            length = (size.y * 10).toFixed(1);  // Approximate cm to mm
+            width = (size.x * 10).toFixed(1);
+            height = (size.z * 10).toFixed(1);
+            volume = (size.x * size.y * size.z * 1000).toFixed(0);
+        }
 
         // Update display
         const lengthEl = document.getElementById(`${prefix}-length`);
@@ -696,42 +729,68 @@ class ArtifactViewer {
         const rulerGroup = new THREE.Group();
         const rulerGroupH = new THREE.Group();
 
-        // Calculate dimensions
-        const height = meshBounds.max.y - meshBounds.min.y;
-        const width = meshBounds.max.x - meshBounds.min.x;
+        // Get viewer dimensions (normalized bounding box)
+        const viewerHeight = meshBounds.max.y - meshBounds.min.y;
+        const viewerWidth = meshBounds.max.x - meshBounds.min.x;
 
-        // VERTICAL RULER (Y axis)
+        // Get REAL dimensions in mm from originalDimensions
+        // After rotation (Z by 90°), the original Y becomes viewer X, original X becomes viewer Y
+        const realHeightMm = this.originalDimensions ? this.originalDimensions.width : viewerHeight * 10;  // rotated
+        const realWidthMm = this.originalDimensions ? this.originalDimensions.height : viewerWidth * 10;   // rotated
+
+        // Calculate scale from viewer units to mm
+        const heightScaleToMm = realHeightMm / viewerHeight;
+        const widthScaleToMm = realWidthMm / viewerWidth;
+
+        // VERTICAL RULER (Y axis) - shows real height in mm
         const verticalMaterial = new THREE.LineBasicMaterial({ color: 0x333333 });
-        const steps = Math.ceil(height * 10); // Every 0.1 units
 
-        for (let i = 0; i <= steps; i++) {
-            const y = meshBounds.min.y + (i * height / steps);
+        // Create ruler ticks every 10mm in real space
+        const tickIntervalMm = 10; // 10mm tick marks
+        const numVerticalTicks = Math.ceil(realHeightMm / tickIntervalMm);
+
+        for (let i = 0; i <= numVerticalTicks; i++) {
+            const realMm = i * tickIntervalMm;
+            if (realMm > realHeightMm) break;
+
+            // Convert mm position to viewer units
+            const viewerY = meshBounds.min.y + (realMm / heightScaleToMm);
+            const isMajorTick = (i % 5 === 0); // Major tick every 50mm
+
             const lineGeometry = new THREE.BufferGeometry().setFromPoints([
-                new THREE.Vector3(meshBounds.max.x + 0.2, y, 0),
-                new THREE.Vector3(meshBounds.max.x + (i % 10 === 0 ? 0.4 : 0.3), y, 0)
+                new THREE.Vector3(meshBounds.max.x + 0.2, viewerY, 0),
+                new THREE.Vector3(meshBounds.max.x + (isMajorTick ? 0.4 : 0.3), viewerY, 0)
             ]);
             const line = new THREE.Line(lineGeometry, verticalMaterial);
             rulerGroup.add(line);
 
-            // Add numbers every unit
-            if (i % 10 === 0) {
-                this.addRulerLabel(meshBounds.max.x + 0.5, y, 0, (i / 10).toFixed(1), rulerGroup);
+            // Add labels at major ticks (every 50mm)
+            if (isMajorTick) {
+                this.addRulerLabel(meshBounds.max.x + 0.5, viewerY, 0, realMm.toFixed(0), rulerGroup);
             }
         }
 
-        // HORIZONTAL RULER (X axis)
-        const stepsH = Math.ceil(width * 10);
-        for (let i = 0; i <= stepsH; i++) {
-            const x = meshBounds.min.x + (i * width / stepsH);
+        // HORIZONTAL RULER (X axis) - shows real width in mm
+        const numHorizontalTicks = Math.ceil(realWidthMm / tickIntervalMm);
+
+        for (let i = 0; i <= numHorizontalTicks; i++) {
+            const realMm = i * tickIntervalMm;
+            if (realMm > realWidthMm) break;
+
+            // Convert mm position to viewer units
+            const viewerX = meshBounds.min.x + (realMm / widthScaleToMm);
+            const isMajorTick = (i % 5 === 0); // Major tick every 50mm
+
             const lineGeometry = new THREE.BufferGeometry().setFromPoints([
-                new THREE.Vector3(x, meshBounds.min.y - 0.2, 0),
-                new THREE.Vector3(x, meshBounds.min.y - (i % 10 === 0 ? 0.4 : 0.3), 0)
+                new THREE.Vector3(viewerX, meshBounds.min.y - 0.2, 0),
+                new THREE.Vector3(viewerX, meshBounds.min.y - (isMajorTick ? 0.4 : 0.3), 0)
             ]);
             const line = new THREE.Line(lineGeometry, verticalMaterial);
             rulerGroupH.add(line);
 
-            if (i % 10 === 0) {
-                this.addRulerLabel(x, meshBounds.min.y - 0.5, 0, (i / 10).toFixed(1), rulerGroupH);
+            // Add labels at major ticks (every 50mm)
+            if (isMajorTick) {
+                this.addRulerLabel(viewerX, meshBounds.min.y - 0.5, 0, realMm.toFixed(0), rulerGroupH);
             }
         }
 
