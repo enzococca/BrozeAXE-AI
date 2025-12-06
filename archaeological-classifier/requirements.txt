@@ -29,6 +29,7 @@ click>=8.1.0
 anthropic>=0.40.0  # Claude AI for technological analysis
 PyDrive2>=1.17.0  # Google Drive integration
 oauth2client>=4.1.3  # Required for Google Drive Service Account auth
+dropbox>=11.36.0  # Dropbox integration for cloud storage
 
 # PDF and Image Processing
 reportlab>=4.0.0  # PDF generation
