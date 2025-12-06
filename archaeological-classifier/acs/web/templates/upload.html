@@ -106,6 +106,49 @@
                 </div>
             </div>
 
+            <!-- Texture/Material Files Section -->
+            <div class="form-group" style="margin-top: 20px; padding: 15px; background: #fff5eb; border-radius: 8px; border-left: 4px solid #f59e0b;">
+                <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                    <span style="font-size: 24px; margin-right: 10px;">🎨</span>
+                    <label style="font-weight: bold; margin: 0;">
+                        Textures & Materials (Optional)
+                    </label>
+                </div>
+                <small style="color: #666; display: block; margin-bottom: 15px;">
+                    Upload MTL and texture files (PNG/JPG) to display colored/textured 3D models
+                </small>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <!-- MTL File -->
+                    <div>
+                        <label style="font-weight: 600; margin-bottom: 8px; display: block;">
+                            📄 MTL Material File
+                        </label>
+                        <input type="file" id="mtl-file" accept=".mtl" class="form-control">
+                        <small style="color: #666; margin-top: 5px; display: block;">
+                            Material file exported with OBJ
+                        </small>
+                    </div>
+
+                    <!-- Texture Files -->
+                    <div>
+                        <label style="font-weight: 600; margin-bottom: 8px; display: block;">
+                            🖼️ Texture Images
+                        </label>
+                        <input type="file" id="texture-files" accept=".png,.jpg,.jpeg,.tga,.bmp" multiple class="form-control">
+                        <small style="color: #666; margin-top: 5px; display: block;">
+                            PNG, JPG textures (can select multiple)
+                        </small>
+                    </div>
+                </div>
+
+                <div id="texture-preview" style="margin-top: 10px; display: none;">
+                    <p style="font-size: 13px; color: #059669; margin: 0;">
+                        ✓ <span id="texture-count">0</span> texture file(s) selected
+                    </p>
+                </div>
+            </div>
+
             <div class="upload-actions">
                 <button onclick="uploadFiles()" id="upload-btn" class="btn btn-success" disabled>
                     Upload Selected Files
@@ -164,6 +207,30 @@ uploadZone.addEventListener('drop', (e) => {
 fileInput.addEventListener('change', (e) => {
     const files = Array.from(e.target.files);
     addFiles(files);
+});
+
+// Texture file preview
+document.getElementById('texture-files')?.addEventListener('change', (e) => {
+    const count = e.target.files.length;
+    const preview = document.getElementById('texture-preview');
+    const countSpan = document.getElementById('texture-count');
+    if (count > 0) {
+        preview.style.display = 'block';
+        countSpan.textContent = count;
+    } else {
+        preview.style.display = 'none';
+    }
+});
+
+// MTL file preview
+document.getElementById('mtl-file')?.addEventListener('change', (e) => {
+    const preview = document.getElementById('texture-preview');
+    const textureCount = document.getElementById('texture-files')?.files?.length || 0;
+    const mtlCount = e.target.files.length;
+    if (mtlCount > 0 || textureCount > 0) {
+        preview.style.display = 'block';
+        document.getElementById('texture-count').textContent = `MTL + ${textureCount} texture`;
+    }
 });
 
 function addFiles(files) {
@@ -285,13 +352,13 @@ async function uploadFiles() {
                 formData.append('project_id', projectSelect.value);
             }
 
+            // Add mesh units (always include for 3D viewer scaling)
+            const meshUnits = document.getElementById('mesh-units')?.value || 'cm';
+            formData.append('mesh_units', meshUnits);
+
             // Add Savignano options
             if (enableSavignano) {
                 formData.append('enable_savignano', 'true');
-
-                // Add mesh units
-                const meshUnits = document.getElementById('mesh-units')?.value || 'cm';
-                formData.append('mesh_units', meshUnits);
 
                 // Add weight if available
                 if (weightMode === 'manual' && fileWeights[file.name]) {
@@ -301,6 +368,22 @@ async function uploadFiles() {
                 // Add weights file (only on first iteration to avoid duplicate uploads)
                 if (weightMode === 'file' && weightsFileData && i === 0) {
                     formData.append('weights_file', weightsFileData);
+                }
+            }
+
+            // Add MTL file if provided (only with first mesh file)
+            if (i === 0) {
+                const mtlFileInput = document.getElementById('mtl-file');
+                if (mtlFileInput && mtlFileInput.files.length > 0) {
+                    formData.append('mtl_file', mtlFileInput.files[0]);
+                }
+
+                // Add texture files if provided
+                const textureFilesInput = document.getElementById('texture-files');
+                if (textureFilesInput && textureFilesInput.files.length > 0) {
+                    for (const texFile of textureFilesInput.files) {
+                        formData.append('texture_files', texFile);
+                    }
                 }
             }
 

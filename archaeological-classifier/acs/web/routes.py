@@ -227,6 +227,26 @@ def upload_mesh():
     temp_filepath = os.path.join(temp_dir, filename)
     file.save(temp_filepath)
 
+    # Handle MTL file if provided
+    mtl_filename = None
+    if 'mtl_file' in request.files:
+        mtl_file = request.files['mtl_file']
+        if mtl_file.filename != '':
+            mtl_filename = secure_filename(mtl_file.filename)
+            mtl_filepath = os.path.join(temp_dir, mtl_filename)
+            mtl_file.save(mtl_filepath)
+
+    # Handle texture files if provided (can be multiple)
+    texture_filenames = []
+    if 'texture_files' in request.files:
+        texture_files = request.files.getlist('texture_files')
+        for tex_file in texture_files:
+            if tex_file.filename != '':
+                tex_filename = secure_filename(tex_file.filename)
+                tex_filepath = os.path.join(temp_dir, tex_filename)
+                tex_file.save(tex_filepath)
+                texture_filenames.append(tex_filename)
+
     # We'll upload to storage after processing
     filepath = temp_filepath
 
@@ -322,24 +342,60 @@ def upload_mesh():
         import shutil
         import logging
 
+        # Track stored paths for MTL and textures
+        stored_mtl_path = None
+        stored_texture_paths = []
+
         # Try to get storage backend (Google Drive or local)
         try:
             storage = get_default_storage()
             remote_path = f"meshes/{artifact_id}/{filename}"
 
-            # Upload to storage backend
+            # Upload OBJ to storage backend
             storage_id = storage.upload_file(filepath, remote_path)
             stored_path = remote_path  # Use remote path for retrieval
             logging.info(f"✅ Uploaded {filename} to storage: {remote_path}")
 
+            # Upload MTL file if exists
+            if mtl_filename:
+                mtl_remote_path = f"meshes/{artifact_id}/{mtl_filename}"
+                mtl_local = os.path.join(temp_dir, mtl_filename)
+                storage.upload_file(mtl_local, mtl_remote_path)
+                stored_mtl_path = mtl_remote_path
+                logging.info(f"✅ Uploaded MTL {mtl_filename} to storage")
+
+            # Upload texture files if exist
+            for tex_filename in texture_filenames:
+                tex_remote_path = f"meshes/{artifact_id}/{tex_filename}"
+                tex_local = os.path.join(temp_dir, tex_filename)
+                storage.upload_file(tex_local, tex_remote_path)
+                stored_texture_paths.append(tex_remote_path)
+                logging.info(f"✅ Uploaded texture {tex_filename} to storage")
+
         except Exception as e:
             logging.error(f"Storage backend failed, using local fallback: {e}")
             # Fallback to local storage
-            upload_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], 'meshes')
+            upload_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], 'meshes', artifact_id)
             os.makedirs(upload_folder, exist_ok=True)
+
+            # Copy OBJ
             local_filepath = os.path.join(upload_folder, filename)
             shutil.copy2(filepath, local_filepath)
             stored_path = local_filepath
+
+            # Copy MTL if exists
+            if mtl_filename:
+                mtl_local_src = os.path.join(temp_dir, mtl_filename)
+                mtl_local_dst = os.path.join(upload_folder, mtl_filename)
+                shutil.copy2(mtl_local_src, mtl_local_dst)
+                stored_mtl_path = mtl_local_dst
+
+            # Copy textures if exist
+            for tex_filename in texture_filenames:
+                tex_local_src = os.path.join(temp_dir, tex_filename)
+                tex_local_dst = os.path.join(upload_folder, tex_filename)
+                shutil.copy2(tex_local_src, tex_local_dst)
+                stored_texture_paths.append(tex_local_dst)
 
         # Save to database with storage path
         db = get_database()
@@ -358,7 +414,10 @@ def upload_mesh():
                 'description': description,
                 'material': material,
                 'mesh_units': mesh_units,  # Store mesh units for 3D viewer scaling
-                'storage_backend': os.getenv('STORAGE_BACKEND', 'local')
+                'storage_backend': os.getenv('STORAGE_BACKEND', 'local'),
+                'mtl_path': stored_mtl_path,  # MTL material file path
+                'texture_paths': stored_texture_paths,  # List of texture file paths
+                'has_textures': bool(stored_mtl_path or stored_texture_paths)
             },
             project_id=project_id
         )
@@ -794,12 +853,144 @@ def get_artifact_metadata(artifact_id):
             'category': metadata.get('category', ''),
             'description': metadata.get('description', ''),
             'material': metadata.get('material', ''),
-            'savignano_enabled': metadata.get('savignano_enabled', False)
+            'savignano_enabled': metadata.get('savignano_enabled', False),
+            'has_textures': metadata.get('has_textures', False),
+            'mtl_path': metadata.get('mtl_path'),
+            'texture_paths': metadata.get('texture_paths', [])
         })
 
     except Exception as e:
         import logging
         logging.error(f"Error getting artifact metadata {artifact_id}: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@web_bp.route('/mtl-file/<artifact_id>')
+def serve_mtl_file(artifact_id):
+    """Serve MTL material file for 3D viewer."""
+    try:
+        from acs.core.database import get_database
+        from acs.core.storage import get_default_storage
+        import json
+
+        db = get_database()
+        artifact = db.get_artifact(artifact_id)
+
+        if not artifact:
+            return jsonify({'error': 'Artifact not found'}), 404
+
+        # Parse metadata
+        metadata = {}
+        if artifact.get('metadata'):
+            try:
+                metadata = json.loads(artifact['metadata']) if isinstance(artifact['metadata'], str) else artifact['metadata']
+            except:
+                metadata = {}
+
+        mtl_path = metadata.get('mtl_path')
+        if not mtl_path:
+            return jsonify({'error': 'No MTL file for this artifact'}), 404
+
+        # Check if remote or local path
+        if not os.path.isabs(mtl_path) or not os.path.exists(mtl_path):
+            # Remote storage - download to cache
+            storage = get_default_storage()
+            cache_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], 'mesh_cache')
+            os.makedirs(cache_folder, exist_ok=True)
+
+            mtl_filename = os.path.basename(mtl_path)
+            cache_path = os.path.join(cache_folder, f'{artifact_id}_{mtl_filename}')
+
+            if not os.path.exists(cache_path):
+                import logging
+                logging.info(f"Downloading {mtl_path} from storage to cache")
+                storage.download_file(mtl_path, cache_path)
+
+            serve_path = cache_path
+        else:
+            serve_path = mtl_path
+
+        response = send_file(serve_path, mimetype='text/plain')
+        response.headers['Cache-Control'] = 'public, max-age=31536000'
+        return response
+
+    except Exception as e:
+        import logging
+        logging.error(f"Error serving MTL file {artifact_id}: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@web_bp.route('/texture-file/<artifact_id>/<filename>')
+def serve_texture_file(artifact_id, filename):
+    """Serve texture file (PNG/JPG) for 3D viewer."""
+    try:
+        from acs.core.database import get_database
+        from acs.core.storage import get_default_storage
+        import json
+
+        db = get_database()
+        artifact = db.get_artifact(artifact_id)
+
+        if not artifact:
+            return jsonify({'error': 'Artifact not found'}), 404
+
+        # Parse metadata
+        metadata = {}
+        if artifact.get('metadata'):
+            try:
+                metadata = json.loads(artifact['metadata']) if isinstance(artifact['metadata'], str) else artifact['metadata']
+            except:
+                metadata = {}
+
+        texture_paths = metadata.get('texture_paths', [])
+
+        # Find the requested texture
+        texture_path = None
+        for tp in texture_paths:
+            if os.path.basename(tp) == filename:
+                texture_path = tp
+                break
+
+        if not texture_path:
+            # Try constructing the path
+            texture_path = f"meshes/{artifact_id}/{filename}"
+
+        # Check if remote or local path
+        if not os.path.isabs(texture_path) or not os.path.exists(texture_path):
+            # Remote storage - download to cache
+            storage = get_default_storage()
+            cache_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], 'mesh_cache')
+            os.makedirs(cache_folder, exist_ok=True)
+
+            cache_path = os.path.join(cache_folder, f'{artifact_id}_{filename}')
+
+            if not os.path.exists(cache_path):
+                import logging
+                logging.info(f"Downloading {texture_path} from storage to cache")
+                storage.download_file(texture_path, cache_path)
+
+            serve_path = cache_path
+        else:
+            serve_path = texture_path
+
+        # Determine mimetype
+        ext = filename.lower().split('.')[-1]
+        mimetypes = {
+            'png': 'image/png',
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'tga': 'image/x-tga',
+            'bmp': 'image/bmp'
+        }
+        mimetype = mimetypes.get(ext, 'application/octet-stream')
+
+        response = send_file(serve_path, mimetype=mimetype)
+        response.headers['Cache-Control'] = 'public, max-age=31536000'
+        return response
+
+    except Exception as e:
+        import logging
+        logging.error(f"Error serving texture file {artifact_id}/{filename}: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 
