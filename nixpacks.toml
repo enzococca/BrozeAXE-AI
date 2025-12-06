@@ -4,11 +4,5 @@ providers = ["python"]
 [phases.setup]
 nixPkgs = ['python311', 'gcc', 'libstdcxx5']
 
-[phases.install]
-# Force install critical dependencies that Railway cache is missing
-cmds = [
-  '/opt/venv/bin/pip install anthropic>=0.40.0 dropbox>=11.36.0 reportlab>=4.0.0'
-]
-
 [start]
-cmd = 'cd archaeological-classifier && python3 -m acs.api.app'
+cmd = 'cd archaeological-classifier && python3 -m pip install anthropic>=0.40.0 dropbox>=11.36.0 reportlab>=4.0.0 && python3 -m acs.api.app'
