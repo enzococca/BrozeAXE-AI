@@ -560,13 +560,27 @@ class ArtifactViewer {
         // Load with or without textures
         if (hasTextures && mtlPath) {
             // Load with MTL and textures
-            console.log(`Loading ${artifactId} with textures...`);
+            console.log(`🖼️ Loading ${artifactId} with textures...`);
+            console.log(`📁 MTL path: ${mtlPath}`);
+            console.log(`🔗 Texture base URL: /web/texture-file/${artifactId}/`);
+
             const mtlLoader = new THREE.MTLLoader();
             mtlLoader.setPath(`/web/texture-file/${artifactId}/`);
+
+            // Add texture load manager for debugging
+            const loadingManager = new THREE.LoadingManager();
+            loadingManager.onLoad = () => console.log('✅ All textures loaded');
+            loadingManager.onError = (url) => console.error('❌ Texture load error:', url);
+            loadingManager.onProgress = (url, loaded, total) => {
+                console.log(`📥 Loading: ${url} (${loaded}/${total})`);
+            };
+            mtlLoader.setManager(loadingManager);
 
             mtlLoader.load(
                 `/web/mtl-file/${artifactId}`,
                 (materials) => {
+                    console.log('✅ MTL loaded successfully');
+                    console.log('📋 Materials:', Object.keys(materials.materials || {}));
                     materials.preload();
 
                     const objLoader = new THREE.OBJLoader();
@@ -581,7 +595,7 @@ class ArtifactViewer {
                 },
                 (xhr) => console.log(`MTL: ${(xhr.loaded / xhr.total * 100).toFixed(0)}% loaded`),
                 (error) => {
-                    console.warn('MTL load failed, falling back to simple OBJ:', error);
+                    console.warn('❌ MTL load failed, falling back to simple OBJ:', error);
                     // Fallback to simple OBJ loading
                     this.loadModelSimple(artifactId, meshScaleFactor, meshUrl);
                 }

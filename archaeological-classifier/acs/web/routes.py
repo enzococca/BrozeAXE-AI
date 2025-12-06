@@ -1022,6 +1022,9 @@ def serve_mtl_file(artifact_id):
 
         response = send_file(serve_path, mimetype='text/plain')
         response.headers['Cache-Control'] = 'public, max-age=31536000'
+        # CORS headers for Three.js MTLLoader
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
         return response
 
     except Exception as e:
@@ -1033,15 +1036,19 @@ def serve_mtl_file(artifact_id):
 @web_bp.route('/texture-file/<artifact_id>/<filename>')
 def serve_texture_file(artifact_id, filename):
     """Serve texture file (PNG/JPG) for 3D viewer."""
+    import logging
     try:
         from acs.core.database import get_database
         from acs.core.storage import get_default_storage
         import json
 
+        logging.info(f"🖼️ Texture request: artifact={artifact_id}, filename={filename}")
+
         db = get_database()
         artifact = db.get_artifact(artifact_id)
 
         if not artifact:
+            logging.warning(f"Texture request failed: Artifact {artifact_id} not found")
             return jsonify({'error': 'Artifact not found'}), 404
 
         # Parse metadata
@@ -1053,6 +1060,7 @@ def serve_texture_file(artifact_id, filename):
                 metadata = {}
 
         texture_paths = metadata.get('texture_paths', [])
+        logging.info(f"Available texture paths: {texture_paths}")
 
         # Find the requested texture
         texture_path = None
@@ -1062,8 +1070,9 @@ def serve_texture_file(artifact_id, filename):
                 break
 
         if not texture_path:
-            # Try constructing the path
+            # Try constructing the path (texture might be uploaded but path not in metadata)
             texture_path = f"meshes/{artifact_id}/{filename}"
+            logging.info(f"Texture not in metadata, trying constructed path: {texture_path}")
 
         # Check if remote or local path
         if not os.path.isabs(texture_path) or not os.path.exists(texture_path):
@@ -1075,31 +1084,44 @@ def serve_texture_file(artifact_id, filename):
             cache_path = os.path.join(cache_folder, f'{artifact_id}_{filename}')
 
             if not os.path.exists(cache_path):
-                import logging
-                logging.info(f"Downloading {texture_path} from storage to cache")
-                storage.download_file(texture_path, cache_path)
+                logging.info(f"📥 Downloading texture {texture_path} from storage to cache")
+                try:
+                    storage.download_file(texture_path, cache_path)
+                    logging.info(f"✅ Texture downloaded successfully: {cache_path}")
+                except Exception as download_err:
+                    logging.error(f"❌ Failed to download texture {texture_path}: {download_err}")
+                    return jsonify({'error': f'Texture file not found in storage: {filename}'}), 404
 
             serve_path = cache_path
         else:
             serve_path = texture_path
 
+        # Verify file exists
+        if not os.path.exists(serve_path):
+            logging.error(f"❌ Texture file does not exist: {serve_path}")
+            return jsonify({'error': f'Texture file not found: {filename}'}), 404
+
+        logging.info(f"✅ Serving texture from: {serve_path}")
+
         # Determine mimetype
         ext = filename.lower().split('.')[-1]
-        mimetypes = {
+        mimetypes_map = {
             'png': 'image/png',
             'jpg': 'image/jpeg',
             'jpeg': 'image/jpeg',
             'tga': 'image/x-tga',
             'bmp': 'image/bmp'
         }
-        mimetype = mimetypes.get(ext, 'application/octet-stream')
+        mimetype = mimetypes_map.get(ext, 'application/octet-stream')
 
         response = send_file(serve_path, mimetype=mimetype)
         response.headers['Cache-Control'] = 'public, max-age=31536000'
+        # CORS headers for Three.js texture loading
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
         return response
 
     except Exception as e:
-        import logging
         logging.error(f"Error serving texture file {artifact_id}/{filename}: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
