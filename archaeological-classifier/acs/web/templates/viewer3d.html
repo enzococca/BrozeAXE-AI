@@ -574,7 +574,8 @@ class ArtifactViewer {
 
             // Pass manager to constructor (setManager doesn't exist in r128)
             const mtlLoader = new THREE.MTLLoader(loadingManager);
-            mtlLoader.setPath(`/web/texture-file/${artifactId}/`);
+            // Use setResourcePath for textures (not setPath which affects MTL loading)
+            mtlLoader.setResourcePath(`/web/texture-file/${artifactId}/`);
 
             mtlLoader.load(
                 `/web/mtl-file/${artifactId}`,
