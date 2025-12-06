@@ -369,6 +369,21 @@ def upload_mesh():
         except:
             pass
 
+        # Trigger async database backup to cloud (non-blocking)
+        try:
+            storage_backend = os.getenv('STORAGE_BACKEND', 'local')
+            if storage_backend != 'local':
+                import threading
+                from acs.core.database import backup_database_to_storage
+                # Run backup in background thread to not slow down response
+                backup_thread = threading.Thread(target=backup_database_to_storage, daemon=True)
+                backup_thread.start()
+                import logging
+                logging.info(f"🔄 Triggered async backup after upload of {artifact_id}")
+        except Exception as backup_error:
+            import logging
+            logging.warning(f"Could not trigger backup: {backup_error}")
+
         # Convert numpy types to native Python types for JSON serialization
         response_data = {
             'status': 'success',
