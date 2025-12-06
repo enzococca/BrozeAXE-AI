@@ -84,12 +84,19 @@ def create_app(config=None):
                 from acs.core.database import auto_sync_database
                 print(f"[DB Sync] 🔄 Auto-syncing database with {storage_backend}...")
                 sync_result = auto_sync_database()
-                if sync_result.get('restore', {}).get('status') == 'success':
-                    print(f"[DB Sync] ✅ Restored from cloud: {sync_result['restore'].get('restored_from')}")
-                elif sync_result.get('backup', {}).get('status') == 'success':
-                    print(f"[DB Sync] ✅ Backed up to cloud: {sync_result['backup'].get('backup_filename')}")
-                elif sync_result.get('restore', {}).get('status') == 'skipped':
-                    print(f"[DB Sync] ℹ️  Skipped: {sync_result['restore'].get('reason')}")
+
+                # Use 'or {}' because values might be explicitly None
+                restore_result = sync_result.get('restore') or {}
+                backup_result = sync_result.get('backup') or {}
+
+                if restore_result.get('status') == 'success':
+                    print(f"[DB Sync] ✅ Restored from cloud: {restore_result.get('restored_from')}")
+                elif backup_result.get('status') == 'success':
+                    print(f"[DB Sync] ✅ Backed up to cloud: {backup_result.get('backup_filename')}")
+                elif restore_result.get('status') == 'skipped':
+                    print(f"[DB Sync] ℹ️  Skipped: {restore_result.get('reason')}")
+                elif sync_result.get('error'):
+                    print(f"[DB Sync] ⚠️  Error: {sync_result.get('error')}")
         except Exception as e:
             print(f"[DB Sync] ⚠️  Auto-sync failed: {e}")
 
