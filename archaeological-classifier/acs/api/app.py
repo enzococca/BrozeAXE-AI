@@ -75,6 +75,24 @@ def create_app(config=None):
     app.register_blueprint(savignano_bp, url_prefix='/api/savignano')
     app.register_blueprint(system_bp, url_prefix='/api/system')
 
+    # Auto-sync database with cloud storage (Dropbox/Google Drive)
+    # Restores from cloud if local DB is empty, or backs up to cloud if local has data
+    with app.app_context():
+        try:
+            storage_backend = os.getenv('STORAGE_BACKEND', 'local')
+            if storage_backend != 'local':
+                from acs.core.database import auto_sync_database
+                print(f"[DB Sync] 🔄 Auto-syncing database with {storage_backend}...")
+                sync_result = auto_sync_database()
+                if sync_result.get('restore', {}).get('status') == 'success':
+                    print(f"[DB Sync] ✅ Restored from cloud: {sync_result['restore'].get('restored_from')}")
+                elif sync_result.get('backup', {}).get('status') == 'success':
+                    print(f"[DB Sync] ✅ Backed up to cloud: {sync_result['backup'].get('backup_filename')}")
+                elif sync_result.get('restore', {}).get('status') == 'skipped':
+                    print(f"[DB Sync] ℹ️  Skipped: {sync_result['restore'].get('reason')}")
+        except Exception as e:
+            print(f"[DB Sync] ⚠️  Auto-sync failed: {e}")
+
     # Initialize authentication: create default admin if no users exist
     with app.app_context():
         from acs.core.auth import create_default_admin
