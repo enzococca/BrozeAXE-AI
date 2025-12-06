@@ -1,12 +1,12 @@
-# Core dependencies
+# CRITICAL DEPENDENCIES - Install first to avoid cache issues
+anthropic>=0.40.0
+dropbox>=11.36.0
+reportlab>=4.0.0
+
+# Core ML dependencies
 numpy>=1.24.0
 scipy>=1.10.0
 scikit-learn>=1.3.0
-
-# CRITICAL DEPENDENCIES - Must be installed
-anthropic>=0.40.0  # Claude AI for technological analysis
-dropbox>=11.36.0  # Dropbox cloud storage
-reportlab>=4.0.0  # PDF generation
 
 # 3D mesh processing
 trimesh>=4.0.0
@@ -30,16 +30,13 @@ mcp>=0.1.0
 # CLI
 click>=8.1.0
 
-# AI and Cloud Storage
-anthropic>=0.40.0  # Claude AI for technological analysis
-PyDrive2>=1.17.0  # Google Drive integration
-oauth2client>=4.1.3  # Required for Google Drive Service Account auth
-dropbox>=11.36.0  # Dropbox integration for cloud storage
+# Cloud Storage
+PyDrive2>=1.17.0
+oauth2client>=4.1.3
 
-# PDF and Image Processing
-reportlab>=4.0.0  # PDF generation
-matplotlib>=3.7.0  # Plots and visualizations
-Pillow>=10.0.0  # Image processing
+# Visualization
+matplotlib>=3.7.0
+Pillow>=10.0.0
 
 # Optional dependencies
 pandas>=2.0.0  # For CSV export
