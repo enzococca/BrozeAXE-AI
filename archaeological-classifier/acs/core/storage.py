@@ -307,20 +307,44 @@ class DropboxStorage(StorageBackend):
         """Initialize Dropbox storage.
 
         Args:
-            access_token: Dropbox access token
+            access_token: Dropbox access token (optional if using refresh token)
+
+        Environment variables:
+            DROPBOX_ACCESS_TOKEN: Short-lived access token
+            DROPBOX_REFRESH_TOKEN: Long-lived refresh token (recommended)
+            DROPBOX_APP_KEY: App key for OAuth
+            DROPBOX_APP_SECRET: App secret for OAuth
         """
         try:
             import dropbox
 
-            token = access_token or os.getenv('DROPBOX_ACCESS_TOKEN')
-            if not token:
-                raise ValueError("Dropbox access token required")
+            # Try OAuth with refresh token first (recommended)
+            app_key = os.getenv('DROPBOX_APP_KEY')
+            app_secret = os.getenv('DROPBOX_APP_SECRET')
+            refresh_token = os.getenv('DROPBOX_REFRESH_TOKEN')
 
-            self.dbx = dropbox.Dropbox(token)
+            if app_key and refresh_token:
+                # Use OAuth with refresh token - tokens auto-renew
+                self.dbx = dropbox.Dropbox(
+                    oauth2_refresh_token=refresh_token,
+                    app_key=app_key,
+                    app_secret=app_secret
+                )
+                logger.info("✅ Dropbox initialized with OAuth refresh token")
+            else:
+                # Fallback to access token (expires after 4 hours)
+                token = access_token or os.getenv('DROPBOX_ACCESS_TOKEN')
+                if not token:
+                    raise ValueError(
+                        "Dropbox credentials required. Set either:\n"
+                        "  - DROPBOX_APP_KEY + DROPBOX_REFRESH_TOKEN (recommended)\n"
+                        "  - DROPBOX_ACCESS_TOKEN (expires in 4 hours)"
+                    )
+                self.dbx = dropbox.Dropbox(token)
+                logger.warning("⚠️ Using short-lived access token. Consider using refresh token.")
 
             # Test connection
             self.dbx.users_get_current_account()
-
             logger.info("✅ Dropbox storage initialized")
 
         except ImportError:
