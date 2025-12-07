@@ -142,24 +142,69 @@ function displayPCAResults(results) {
         </span>
     </div>`;
 
-    html += `<p><strong>Componenti estratte:</strong> ${results.n_components}</p>`;
+    // ============ SELECTION REASONING - NEW ============
+    if (results.selection) {
+        html += `<div style="background: #fef3c7; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #f59e0b;">
+            <h4 style="margin: 0 0 15px 0; color: #d97706;">🎯 Criteri di Selezione Componenti</h4>
+            <div style="background: white; padding: 12px; border-radius: 6px; margin-bottom: 10px;">
+                <strong>Riduzione dimensionale:</strong> ${results.selection.reduction_ratio || `${results.selection.total_features} → ${results.selection.reduced_to}`}
+            </div>
+            <pre style="margin: 0; font-size: 13px; color: #333; white-space: pre-wrap; font-family: inherit; line-height: 1.6;">${results.selection.selection_reasoning || results.selection.criteria_explanation || ''}</pre>
+        </div>`;
+    }
+
+    html += `<p><strong>Componenti selezionate:</strong> ${results.n_components} su ${results.total_possible_components || results.full_cumulative_variance?.length || '?'} possibili</p>`;
     html += `<p><strong>Varianza totale spiegata:</strong> ${totalVariance}%</p>`;
 
-    // Interpretation
-    html += `<div style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin: 10px 0;">
-        <strong>🔍 Interpretazione:</strong><br>`;
+    // ============ ALL COMPONENTS TABLE - NEW ============
+    if (results.all_components && results.all_components.length > 0) {
+        html += `<div style="margin: 20px 0;">
+            <h4>📋 Tabella Completa Componenti (tutte le PC possibili)</h4>
+            <p style="font-size: 13px; color: #666; margin-bottom: 10px;">
+                Questa tabella mostra TUTTE le componenti disponibili e spiega perché alcune sono state selezionate e altre escluse.
+            </p>
+            <div style="max-height: 400px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 8px;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                    <thead style="background: #f8f9fa; position: sticky; top: 0;">
+                        <tr>
+                            <th style="padding: 10px; text-align: left; border-bottom: 2px solid #e0e0e0;">PC</th>
+                            <th style="padding: 10px; text-align: right; border-bottom: 2px solid #e0e0e0;">Eigenvalue</th>
+                            <th style="padding: 10px; text-align: right; border-bottom: 2px solid #e0e0e0;">Varianza %</th>
+                            <th style="padding: 10px; text-align: right; border-bottom: 2px solid #e0e0e0;">Cumulativa %</th>
+                            <th style="padding: 10px; text-align: center; border-bottom: 2px solid #e0e0e0;">Kaiser</th>
+                            <th style="padding: 10px; text-align: left; border-bottom: 2px solid #e0e0e0;">Features principali</th>
+                            <th style="padding: 10px; text-align: left; border-bottom: 2px solid #e0e0e0;">Decisione</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
 
-    if (parseFloat(totalVariance) >= 90) {
-        html += `<span style="color: #10b981;">Eccellente!</span> Le ${results.n_components} componenti catturano il ${totalVariance}% della variabilità. `;
-    } else if (parseFloat(totalVariance) >= 75) {
-        html += `<span style="color: #f59e0b;">Buono.</span> Le componenti catturano il ${totalVariance}% della variabilità. `;
-    } else {
-        html += `<span style="color: #ef4444;">Attenzione:</span> Solo ${totalVariance}% della variabilità è catturata. `;
+        results.all_components.forEach(comp => {
+            const rowBg = comp.selected ? '#e8f5e9' : '#fff';
+            const statusIcon = comp.selected ? '✅' : '❌';
+            const kaiserIcon = comp.passes_kaiser ? '✓' : '✗';
+            const kaiserColor = comp.passes_kaiser ? '#10b981' : '#ef4444';
+            const topFeatures = comp.top_features ? comp.top_features.map(f => f.name).slice(0, 2).join(', ') : '-';
+
+            html += `<tr style="background: ${rowBg}; border-bottom: 1px solid #e0e0e0;">
+                <td style="padding: 10px; font-weight: bold;">PC${comp.pc}</td>
+                <td style="padding: 10px; text-align: right;">${comp.eigenvalue.toFixed(3)}</td>
+                <td style="padding: 10px; text-align: right;">${comp.variance_percent.toFixed(2)}%</td>
+                <td style="padding: 10px; text-align: right; font-weight: bold;">${comp.cumulative_percent.toFixed(2)}%</td>
+                <td style="padding: 10px; text-align: center; color: ${kaiserColor}; font-weight: bold;">${kaiserIcon}</td>
+                <td style="padding: 10px; font-size: 12px;">${topFeatures}</td>
+                <td style="padding: 10px;">${statusIcon}</td>
+            </tr>`;
+        });
+
+        html += `</tbody></table></div>
+            <p style="font-size: 12px; color: #666; margin-top: 8px;">
+                <strong>Legenda:</strong> Kaiser ✓ = eigenvalue > 1 (varianza sopra la media)
+            </p>
+        </div>`;
     }
-    html += `</div>`;
 
-    // Detailed component analysis
-    html += '<h4>📐 Dettaglio Componenti Principali:</h4>';
+    // ============ DETAILED SELECTED COMPONENTS ============
+    html += '<h4 style="margin-top: 25px;">📐 Dettaglio Componenti SELEZIONATE:</h4>';
 
     if (results.component_features) {
         results.component_features.forEach((comp, i) => {
@@ -167,39 +212,67 @@ function displayPCAResults(results) {
             html += `<div style="background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 15px; margin: 10px 0;">
                 <h5 style="margin: 0 0 10px 0; color: #667eea;">
                     PC${comp.pc} - ${pct}% della varianza
-                </h5>
-                <p style="margin: 0 0 10px 0; font-size: 13px; color: #666;">
-                    Questa componente è principalmente influenzata da:
-                </p>
-                <ul style="margin: 0; padding-left: 20px;">`;
+                </h5>`;
+
+            // Why selected - NEW
+            if (comp.why_selected) {
+                html += `<div style="background: #e8f5e9; padding: 10px; border-radius: 6px; margin-bottom: 10px; font-size: 13px;">
+                    <strong>Motivazione:</strong> ${comp.why_selected}
+                </div>`;
+            }
+
+            // Interpretation
+            if (comp.interpretation) {
+                html += `<div style="background: #f0f4ff; padding: 10px; border-radius: 6px; margin-bottom: 10px; font-size: 13px;">
+                    <strong>Interpretazione:</strong> ${comp.interpretation}
+                </div>`;
+            }
+
+            html += `<p style="margin: 0 0 10px 0; font-size: 13px; color: #666;">
+                Features che influenzano maggiormente questa componente:
+            </p>
+            <ul style="margin: 0; padding-left: 20px;">`;
 
             comp.top_features.forEach(feat => {
                 const direction = feat.loading > 0 ? '↑' : '↓';
                 const color = feat.loading > 0 ? '#10b981' : '#ef4444';
+                const dirText = feat.direction || (feat.loading > 0 ? 'positivo' : 'negativo');
                 html += `<li style="margin: 5px 0;">
-                    <strong>${feat.name}</strong>: ${direction}
-                    <span style="color: ${color};">${(feat.loading * 100).toFixed(1)}%</span>
-                    <span style="font-size: 11px; color: #999;">(importanza: ${(feat.importance * 100).toFixed(1)}%)</span>
+                    <strong>${feat.name}</strong>:
+                    <span style="color: ${color};">${direction} ${dirText}</span>
+                    (loading: ${(feat.loading * 100).toFixed(1)}%, importanza: ${(feat.importance * 100).toFixed(1)}%)
                 </li>`;
             });
 
-            html += `</ul>
-                <p style="margin: 10px 0 0 0; font-size: 12px; color: #718096; font-style: italic;">
-                    ${i === 0 ? 'PC1 cattura la direzione di massima variazione morfologica - gli artefatti con valori PC1 simili hanno forme simili.' :
-                      i === 1 ? 'PC2 cattura la seconda direzione di variazione, ortogonale a PC1.' :
-                      `PC${comp.pc} cattura variazioni residue indipendenti dalle componenti precedenti.`}
+            html += `</ul></div>`;
+        });
+    }
+
+    // Show excluded components summary
+    if (results.all_components) {
+        const excluded = results.all_components.filter(c => !c.selected);
+        if (excluded.length > 0) {
+            html += `<div style="background: #fef2f2; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ef4444;">
+                <h4 style="margin: 0 0 10px 0; color: #dc2626;">❌ Componenti ESCLUSE (${excluded.length})</h4>
+                <p style="font-size: 13px; margin-bottom: 10px;">
+                    Queste componenti sono state escluse perché il target di varianza (${(results.selection?.target_variance * 100) || 95}%)
+                    è già stato raggiunto con le prime ${results.n_components} componenti.
                 </p>
-            </div>`;
-        });
-    } else {
-        // Fallback to simple display
-        html += '<ul>';
-        results.explained_variance_ratio.forEach((v, i) => {
-            const pct = (v * 100).toFixed(2);
-            const bar = '█'.repeat(Math.round(v * 20));
-            html += `<li><strong>PC${i + 1}:</strong> ${pct}% <span style="color: #667eea; font-family: monospace;">${bar}</span></li>`;
-        });
-        html += '</ul>';
+                <div style="max-height: 150px; overflow-y: auto;">`;
+
+            excluded.slice(0, 10).forEach(comp => {
+                html += `<div style="background: white; padding: 8px; border-radius: 4px; margin: 5px 0; font-size: 12px;">
+                    <strong>PC${comp.pc}</strong>: ${comp.variance_percent.toFixed(2)}% varianza
+                    <span style="color: #666;"> - ${comp.selection_reason || 'Varianza insufficiente'}</span>
+                </div>`;
+            });
+
+            if (excluded.length > 10) {
+                html += `<p style="font-size: 12px; color: #666; margin: 10px 0 0 0;">... e altre ${excluded.length - 10} componenti</p>`;
+            }
+
+            html += `</div></div>`;
+        }
     }
 
     resultsDiv.innerHTML = html;
@@ -263,12 +336,40 @@ function displayClusteringResults(results) {
         </p>
     </div>`;
 
+    // ============ METHODOLOGY EXPLANATION - NEW ============
+    if (results.clustering_explanation) {
+        const expl = results.clustering_explanation;
+        html += `<div style="background: #fef3c7; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #f59e0b;">
+            <h4 style="margin: 0 0 15px 0; color: #d97706;">🎯 Metodologia e Criteri</h4>
+
+            <div style="background: white; padding: 12px; border-radius: 6px; margin-bottom: 10px;">
+                <strong>Metodo utilizzato:</strong> ${expl.method_used?.toUpperCase() || method}<br>
+                <span style="font-size: 13px; color: #666;">${expl.method_explanation || ''}</span>
+            </div>
+
+            <div style="background: white; padding: 12px; border-radius: 6px; margin-bottom: 10px;">
+                <strong>Numero cluster:</strong> ${expl.n_clusters_reason || `${results.n_clusters} cluster`}
+            </div>
+
+            ${expl.quality_interpretation ? `
+            <div style="background: white; padding: 12px; border-radius: 6px; margin-bottom: 10px;">
+                <strong>Qualità del clustering (Silhouette Score):</strong><br>
+                <span style="font-size: 13px;">${expl.quality_interpretation}</span>
+            </div>` : ''}
+
+            <div style="font-size: 13px; color: #333; margin-top: 10px;">
+                <strong>Procedura:</strong> ${expl.methodology || ''}
+            </div>
+        </div>`;
+    }
+
     // Artifacts analyzed
     html += `<div style="background: #e8f5e9; padding: 12px; border-radius: 6px; margin: 10px 0;">
         <strong>📦 Artefatti analizzati:</strong> ${results.n_artifacts || 'N/A'}
+        ${results.clustering_explanation?.features_used ? `<br><span style="font-size: 12px; color: #666;">Features utilizzate: ${results.clustering_explanation.features_used}</span>` : ''}
     </div>`;
 
-    html += `<p><strong>Metodo:</strong> ${method === 'hierarchical' ? 'Gerarchico (Ward)' : 'DBSCAN'}</p>`;
+    html += `<p><strong>Metodo:</strong> ${method === 'hierarchical' ? `Gerarchico (${results.method || 'Ward'})` : 'DBSCAN'}</p>`;
     html += `<p><strong>Cluster trovati:</strong> ${results.n_clusters}</p>`;
 
     if (results.noise && results.noise.length > 0) {
@@ -314,24 +415,49 @@ function displayClusteringResults(results) {
                 Cluster ${clusterId} - ${members.length} artefatti (${pct}%)
             </h5>`;
 
-        // Distinguishing characteristics
+        // Cluster interpretation - NEW
+        if (stats && stats.interpretation) {
+            html += `<div style="background: #e8f5e9; padding: 10px; border-radius: 6px; margin-bottom: 10px; font-size: 13px;">
+                <strong>📝 Interpretazione:</strong> ${stats.interpretation}
+            </div>`;
+        }
+
+        // Distinguishing characteristics with explanation
         if (stats && stats.distinguishing_features) {
             html += `<div style="background: #f8f9fa; padding: 10px; border-radius: 6px; margin-bottom: 10px;">
                 <strong>🎯 Caratteristiche distintive:</strong>
+                <p style="font-size: 12px; color: #666; margin: 5px 0;">
+                    Queste sono le features che distinguono questo cluster dagli altri (ordinate per importanza):
+                </p>
                 <ul style="margin: 5px 0 0 0; padding-left: 20px;">`;
 
-            stats.distinguishing_features.forEach(feat => {
+            stats.distinguishing_features.forEach((feat, idx) => {
                 const icon = feat.direction === 'alto' ? '↑' : '↓';
                 const colorFeat = feat.direction === 'alto' ? '#10b981' : '#ef4444';
-                html += `<li style="margin: 3px 0;">
+                const zScoreAbs = Math.abs(feat.z_score || 0).toFixed(2);
+                html += `<li style="margin: 5px 0;">
                     <strong>${feat.name}</strong>:
                     <span style="color: ${colorFeat};">${icon} ${feat.direction}</span>
-                    (media cluster: ${feat.cluster_mean.toFixed(2)} vs media generale: ${feat.overall_mean.toFixed(2)})
+                    <br><span style="font-size: 11px; color: #666;">
+                        Media cluster: <strong>${feat.cluster_mean.toFixed(2)}</strong> vs
+                        Media generale: ${feat.overall_mean.toFixed(2)}
+                        (z-score: ${zScoreAbs} = ${zScoreAbs > 2 ? 'molto significativo' : zScoreAbs > 1 ? 'significativo' : 'moderato'})
+                    </span>
                 </li>`;
             });
 
             html += `</ul></div>`;
         }
+
+        // Why this cluster exists - NEW
+        html += `<div style="background: #f0f4ff; padding: 10px; border-radius: 6px; margin-bottom: 10px; font-size: 12px;">
+            <strong>❓ Perché questo cluster?</strong><br>
+            Questi ${members.length} artefatti sono stati raggruppati insieme perché condividono
+            ${stats?.distinguishing_features?.length > 0 ?
+                `valori simili per ${stats.distinguishing_features.slice(0, 2).map(f => f.name).join(' e ')}.` :
+                'caratteristiche morfometriche simili.'}
+            La distanza morfometrica media tra questi artefatti è minore rispetto agli artefatti di altri cluster.
+        </div>`;
 
         // Member list
         html += `<div style="font-size: 12px; color: #666;">
