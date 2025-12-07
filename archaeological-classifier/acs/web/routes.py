@@ -703,29 +703,43 @@ def classify_artifact():
 
 @web_bp.route('/artifacts')
 def artifacts_page():
-    """Artifacts browser page."""
+    """Artifacts browser page - loads from database for persistence."""
+    from acs.core.database import get_database
+
+    db = get_database()
+
+    # Get all artifacts from database (not from memory)
+    result = db.get_artifacts_paginated(page=1, per_page=1000)
+    db_artifacts = result.get('artifacts', [])
+
     artifacts_list = []
-    for aid, mesh in mesh_processor.meshes.items():
-        features = mesh_processor._extract_features(mesh, aid)
+    for artifact in db_artifacts:
+        # Get features from database
+        features = {}
+        try:
+            features = db.get_artifact_features(artifact['artifact_id'])
+        except:
+            pass
 
         # Check if artifact is classified
         classified = False
         class_name = None
         for tc_name, tc in taxonomy_system.classes.items():
-            if aid in tc.validated_samples:
+            if artifact['artifact_id'] in tc.validated_samples:
                 classified = True
                 class_name = tc_name
                 break
 
         artifacts_list.append({
-            'id': aid,
+            'id': artifact['artifact_id'],
             'volume': features.get('volume'),
             'length': features.get('length'),
             'width': features.get('width'),
-            'n_vertices': features.get('n_vertices'),
-            'n_faces': features.get('n_faces'),
+            'n_vertices': artifact.get('n_vertices') or features.get('n_vertices'),
+            'n_faces': artifact.get('n_faces') or features.get('n_faces'),
             'classified': classified,
-            'class_name': class_name
+            'class_name': class_name,
+            'project_id': artifact.get('project_id')
         })
 
     return render_template('artifacts.html', artifacts=artifacts_list)
