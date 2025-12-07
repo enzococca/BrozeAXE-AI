@@ -53,6 +53,9 @@
                 <option value="">Tutti i tipi</option>
                 <option value="savignano_interpretation">Savignano Interpretation</option>
                 <option value="tech_analysis">Tech Analysis</option>
+                <option value="hammering_analysis">Hammering Analysis</option>
+                <option value="casting_analysis">Casting Analysis</option>
+                <option value="comprehensive_report">Comprehensive Report</option>
             </select>
             <input type="text" id="ai-artifact-filter" class="form-control" placeholder="Cerca artefatto..."
                    style="max-width: 200px;" onkeyup="filterAICache()">
@@ -298,8 +301,14 @@ function renderAICache(items) {
 
     container.innerHTML = items.map(item => {
         const content = typeof item.content === 'string' ? item.content : JSON.stringify(item.content, null, 2);
-        const typeLabel = item.cache_type === 'savignano_interpretation' ? 'Savignano' :
-                         item.cache_type === 'tech_analysis' ? 'Tech Analysis' : item.cache_type;
+        const typeLabels = {
+            'savignano_interpretation': 'Savignano Interp.',
+            'tech_analysis': 'Tech Analysis',
+            'hammering_analysis': 'Hammering',
+            'casting_analysis': 'Casting',
+            'comprehensive_report': 'Report Completo'
+        };
+        const typeLabel = typeLabels[item.cache_type] || item.cache_type;
 
         return `
             <div class="cache-item" data-artifact="${item.artifact_id}" data-type="${item.cache_type}" data-content="${content.toLowerCase()}">

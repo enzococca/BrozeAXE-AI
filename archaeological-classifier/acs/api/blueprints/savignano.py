@@ -1207,6 +1207,39 @@ def generate_comprehensive_report_stream(artifact_id: str):
             pdf_path = output_dir / f"{artifact_id}_comprehensive_report_{language}.pdf"
             results = generator.generate_complete_report(str(pdf_path))
 
+            # Save AI-generated analyses to cache for reuse and dashboard visualization
+            yield f"data: {json.dumps({'type': 'log', 'message': '  Salvataggio analisi in cache...', 'level': 'info'})}\n\n"
+
+            try:
+                # Save hammering analysis to cache
+                db.save_ai_cache(artifact_id, 'hammering_analysis', {
+                    'analysis_text': hammer_analysis,
+                    'language': language,
+                    'source': 'comprehensive_report'
+                }, model='morphometric_analysis')
+
+                # Save casting analysis to cache
+                db.save_ai_cache(artifact_id, 'casting_analysis', {
+                    'analysis_text': casting_analysis,
+                    'language': language,
+                    'source': 'comprehensive_report'
+                }, model='morphometric_analysis')
+
+                # Save complete report results to cache
+                db.save_ai_cache(artifact_id, 'comprehensive_report', {
+                    'results': results,
+                    'language': language,
+                    'pdf_path': str(pdf_path)
+                }, model='comprehensive_report_generator')
+
+                # Save features to cache if not already saved
+                db.save_features(artifact_id, {'savignano': savignano_features})
+
+                yield f"data: {json.dumps({'type': 'log', 'message': '✓ Analisi salvate in cache', 'level': 'success'})}\n\n"
+            except Exception as cache_error:
+                logger.warning(f"Could not save to cache: {cache_error}")
+                yield f"data: {json.dumps({'type': 'log', 'message': f'⚠️ Cache save warning: {str(cache_error)[:50]}', 'level': 'warning'})}\n\n"
+
             # Update artifact metadata
             metadata = artifact.get('metadata', '{}')
             if isinstance(metadata, str):

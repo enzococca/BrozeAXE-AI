@@ -120,13 +120,25 @@ class MorphometricAnalyzer:
         self.scaler = StandardScaler()
         X_scaled = self.scaler.fit_transform(X)
 
-        # Fit PCA
+        # Fit PCA - first fit full PCA to analyze all components
+        pca_full = PCA()
+        pca_full.fit(X_scaled)
+        full_cumsum = np.cumsum(pca_full.explained_variance_ratio_)
+
+        # Determine n_components based on selection criteria
+        selection_method = 'user_specified'
         if n_components is None:
-            # Determine n_components from explained variance
-            pca_full = PCA()
-            pca_full.fit(X_scaled)
-            cumsum = np.cumsum(pca_full.explained_variance_ratio_)
-            n_components = int(np.argmax(cumsum >= explained_variance) + 1)
+            # Kaiser criterion: keep components with eigenvalue > 1
+            # (equivalent to variance > 1/n_features after standardization)
+            kaiser_threshold = 1.0 / X.shape[1]
+            kaiser_components = int(np.sum(pca_full.explained_variance_ratio_ > kaiser_threshold))
+
+            # Explained variance criterion
+            variance_components = int(np.argmax(full_cumsum >= explained_variance) + 1)
+
+            # Use the explained variance criterion as primary
+            n_components = variance_components
+            selection_method = 'explained_variance'
 
         self.pca_model = PCA(n_components=n_components)
         X_pca = self.pca_model.fit_transform(X_scaled)
@@ -134,7 +146,7 @@ class MorphometricAnalyzer:
         # Get feature names
         feature_names = getattr(self, 'feature_names', None) or [f'feature_{i}' for i in range(X.shape[1])]
 
-        # Calculate feature importance for each component
+        # Calculate feature importance for each component with interpretation
         component_features = []
         for i, component in enumerate(self.pca_model.components_):
             # Sort features by absolute loading value
@@ -142,30 +154,102 @@ class MorphometricAnalyzer:
             top_features = []
             for idx in sorted_indices[:5]:  # Top 5 features per component
                 if idx < len(feature_names):
+                    loading = float(component[idx])
                     top_features.append({
                         'name': feature_names[idx],
-                        'loading': float(component[idx]),
-                        'importance': float(abs(component[idx]))
+                        'loading': loading,
+                        'importance': float(abs(loading)),
+                        'direction': 'positivo' if loading > 0 else 'negativo'
                     })
+
+            # Generate interpretation for this component
+            pc_interpretation = self._interpret_component(i + 1, top_features)
+
             component_features.append({
                 'pc': i + 1,
                 'variance_explained': float(self.pca_model.explained_variance_ratio_[i]),
-                'top_features': top_features
+                'variance_percent': float(self.pca_model.explained_variance_ratio_[i] * 100),
+                'cumulative_variance_percent': float(full_cumsum[i] * 100),
+                'top_features': top_features,
+                'interpretation': pc_interpretation
             })
+
+        # Build comprehensive selection explanation
+        selection_explanation = {
+            'method': selection_method,
+            'target_variance': explained_variance,
+            'achieved_variance': float(full_cumsum[n_components - 1]),
+            'total_features': X.shape[1],
+            'reduced_to': n_components,
+            'reduction_ratio': f"{X.shape[1]}→{n_components} ({(1 - n_components/X.shape[1])*100:.1f}% riduzione)",
+            'criteria_explanation': self._get_selection_explanation(
+                selection_method, explained_variance, n_components, X.shape[1], full_cumsum
+            )
+        }
 
         return {
             'n_components': n_components,
             'explained_variance_ratio': self.pca_model.explained_variance_ratio_.tolist(),
-            'cumulative_variance': np.cumsum(
-                self.pca_model.explained_variance_ratio_
-            ).tolist(),
+            'cumulative_variance': full_cumsum[:n_components].tolist(),
+            'full_cumulative_variance': full_cumsum.tolist(),  # All components for scree plot
             'components': X_pca.tolist(),
             'artifact_ids': artifact_ids,
             'loadings': self.pca_model.components_.tolist(),
             'feature_names': feature_names,
             'component_features': component_features,
-            'n_artifacts': len(artifact_ids)
+            'n_artifacts': len(artifact_ids),
+            'selection': selection_explanation
         }
+
+    def _interpret_component(self, pc_num: int, top_features: list) -> str:
+        """Generate human-readable interpretation for a principal component."""
+        if not top_features:
+            return "Componente non interpretabile"
+
+        # Get the dominant features
+        dominant = top_features[:3]
+        feature_names = [f['name'] for f in dominant]
+
+        # Check for common patterns
+        size_features = ['length', 'width', 'height', 'area', 'volume', 'perimeter']
+        shape_features = ['ratio', 'aspect', 'circularity', 'elongation', 'compactness']
+        position_features = ['centroid', 'center', 'position', 'offset']
+
+        has_size = any(any(sf in fn.lower() for sf in size_features) for fn in feature_names)
+        has_shape = any(any(sf in fn.lower() for sf in shape_features) for fn in feature_names)
+
+        if has_size and not has_shape:
+            return f"PC{pc_num}: Dimensioni generali (features dominanti: {', '.join(feature_names[:2])})"
+        elif has_shape and not has_size:
+            return f"PC{pc_num}: Forma/proporzioni (features dominanti: {', '.join(feature_names[:2])})"
+        elif has_size and has_shape:
+            return f"PC{pc_num}: Dimensioni e forma combinate (features dominanti: {', '.join(feature_names[:2])})"
+        else:
+            return f"PC{pc_num}: Variazione morfometrica (features dominanti: {', '.join(feature_names[:2])})"
+
+    def _get_selection_explanation(self, method: str, target_variance: float,
+                                    n_components: int, total_features: int,
+                                    cumsum: np.ndarray) -> str:
+        """Generate detailed explanation of component selection criteria."""
+        if method == 'user_specified':
+            return (
+                f"Numero di componenti specificato dall'utente: {n_components}. "
+                f"Queste {n_components} componenti spiegano il {cumsum[n_components-1]*100:.1f}% "
+                f"della varianza totale dei {total_features} features originali."
+            )
+        elif method == 'explained_variance':
+            return (
+                f"Criterio di selezione: Varianza spiegata cumulativa ≥ {target_variance*100:.0f}%.\n\n"
+                f"Il PCA ha identificato che {n_components} componenti principali sono sufficienti "
+                f"per catturare il {cumsum[n_components-1]*100:.1f}% della variabilità presente "
+                f"nei {total_features} features morfometrici originali.\n\n"
+                f"Questo significa che la complessità dei dati è stata ridotta da {total_features} "
+                f"dimensioni a sole {n_components}, mantenendo quasi tutta l'informazione utile.\n\n"
+                f"Interpretazione pratica: Le prime {n_components} componenti rappresentano "
+                f"i pattern di variazione più importanti negli artefatti analizzati."
+            )
+        else:
+            return f"Metodo di selezione: {method}"
 
     def transform_pca(self, features: Dict) -> np.ndarray:
         """Transform new features using fitted PCA model."""
