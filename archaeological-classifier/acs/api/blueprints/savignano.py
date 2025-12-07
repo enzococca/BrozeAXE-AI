@@ -721,7 +721,7 @@ def _save_artifacts_to_database(analysis_id: str, analysis: dict, results: dict)
 
         # Save Savignano features
         savignano_features = row.to_dict()
-        db.save_features(artifact_id, {'savignano': savignano_features})
+        db.add_features(artifact_id, {'savignano': savignano_features})
 
         saved_count += 1
         logger.info(f"Saved artifact {artifact_id} to database")
@@ -1233,7 +1233,7 @@ def generate_comprehensive_report_stream(artifact_id: str):
                 }, model='comprehensive_report_generator')
 
                 # Save features to cache if not already saved
-                db.save_features(artifact_id, {'savignano': savignano_features})
+                db.add_features(artifact_id, {'savignano': savignano_features})
 
                 yield f"data: {json.dumps({'type': 'log', 'message': '✓ Analisi salvate in cache', 'level': 'success'})}\n\n"
             except Exception as cache_error:
