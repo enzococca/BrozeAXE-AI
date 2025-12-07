@@ -1615,10 +1615,10 @@ def ai_classify_artifact_stream():
 
 @web_bp.route('/ai-multi-analyze', methods=['POST'])
 def ai_multi_analyze():
-    """Analyze multiple artifacts together with AI."""
+    """Analyze multiple artifacts together with AI using cached features."""
     try:
         from acs.core.ai_assistant import get_ai_assistant
-        from acs.core.stylistic_analyzer import StylisticAnalyzer
+        from acs.core.database import get_database
 
         data = request.json
         artifact_ids = data.get('artifact_ids', [])
@@ -1627,30 +1627,36 @@ def ai_multi_analyze():
         if not artifact_ids:
             return jsonify({'error': 'No artifacts specified'}), 400
 
-        # Prepare artifacts data with morphometric and stylistic features
+        db = get_database()
+
+        # Prepare artifacts data using CACHED features from database (fast!)
         artifacts = []
-        stylistic_analyzer = StylisticAnalyzer()
 
         for artifact_id in artifact_ids:
-            # Lazy load mesh from storage if not in memory
-            if not ensure_mesh_loaded(artifact_id):
+            # Get artifact info from database
+            artifact_info = db.get_artifact(artifact_id)
+            if not artifact_info:
                 continue
 
-            # Extract morphometric features
-            mesh = mesh_processor.meshes[artifact_id]
-            features = mesh_processor._extract_features(mesh, artifact_id)
+            # Get cached features from database (no mesh loading needed!)
+            features = db.get_features(artifact_id)
 
-            # Extract stylistic features using analyze_style (which does everything)
-            stylistic_features = stylistic_analyzer.analyze_style(mesh, artifact_id, features)
+            # Separate morphometric and stylistic features
+            morphometric = {k: v for k, v in features.items() if not isinstance(v, dict)}
+            stylistic = {k: v for k, v in features.items() if isinstance(v, dict)}
+
+            # Add basic artifact info
+            morphometric['n_vertices'] = artifact_info.get('n_vertices', 0)
+            morphometric['n_faces'] = artifact_info.get('n_faces', 0)
 
             artifacts.append({
                 'id': artifact_id,
-                'features': features,
-                'stylistic_features': stylistic_features
+                'features': morphometric,
+                'stylistic_features': stylistic
             })
 
         if not artifacts:
-            return jsonify({'error': 'No valid artifacts found'}), 404
+            return jsonify({'error': 'No valid artifacts found. Make sure features are computed.'}), 404
 
         # Get existing classes
         classes = [
