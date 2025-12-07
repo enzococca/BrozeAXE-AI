@@ -2490,10 +2490,12 @@ def bulk_assign_artifacts_to_project(project_id):
 @web_bp.route('/batch-extract-features', methods=['POST'])
 def batch_extract_features():
     """
-    Batch extract features for all artifacts that don't have features.
-    Downloads meshes from storage and computes morphometric features.
+    Extract features for artifacts one at a time (avoids timeout).
 
-    This is a long-running operation - use for one-time data recovery.
+    JSON body:
+        limit: Number of artifacts to process (default: 1)
+
+    Call repeatedly until remaining=0.
     """
     import logging
     from acs.core.database import get_database
@@ -2501,24 +2503,36 @@ def batch_extract_features():
     try:
         db = get_database()
 
+        # Get limit from request
+        data = request.json or {}
+        limit = data.get('limit', 1)  # Default: process 1 at a time
+
         # Get all artifacts
         result = db.get_artifacts_paginated(page=1, per_page=10000)
         all_artifacts = result.get('artifacts', [])
 
+        # Find artifacts without features
+        pending = []
+        already_done = 0
+        for artifact in all_artifacts:
+            artifact_id = artifact['artifact_id']
+            existing_features = db.get_features(artifact_id)
+            if existing_features and len(existing_features) > 2:
+                already_done += 1
+            else:
+                pending.append(artifact)
+
+        # Process only 'limit' artifacts
+        to_process = pending[:limit]
+
         processed = []
-        skipped = []
         errors = []
 
-        for artifact in all_artifacts:
+        for artifact in to_process:
             artifact_id = artifact['artifact_id']
 
             try:
-                # Check if features already exist
-                existing_features = db.get_features(artifact_id)
-                if existing_features and len(existing_features) > 2:
-                    # Has meaningful features, skip
-                    skipped.append({'artifact_id': artifact_id, 'reason': 'already has features'})
-                    continue
+                logging.info(f"🔄 Processing {artifact_id}...")
 
                 # Try to load mesh from storage
                 if not ensure_mesh_loaded(artifact_id):
@@ -2537,27 +2551,27 @@ def batch_extract_features():
 
                 processed.append({
                     'artifact_id': artifact_id,
-                    'features_count': len(features),
-                    'volume': features.get('volume'),
-                    'length': features.get('length'),
-                    'width': features.get('width')
+                    'volume': round(features.get('volume', 0), 2),
+                    'length': round(features.get('length', 0), 2),
+                    'width': round(features.get('width', 0), 2)
                 })
 
-                logging.info(f"✅ Extracted features for {artifact_id}: vol={features.get('volume'):.2f}, len={features.get('length'):.2f}")
+                logging.info(f"✅ {artifact_id}: vol={features.get('volume'):.2f}, len={features.get('length'):.2f}")
 
             except Exception as e:
-                logging.error(f"❌ Failed to extract features for {artifact_id}: {e}")
+                logging.error(f"❌ Failed for {artifact_id}: {e}")
                 errors.append({'artifact_id': artifact_id, 'error': str(e)})
+
+        remaining = len(pending) - len(processed) - len(errors)
 
         return jsonify({
             'status': 'success',
-            'total_artifacts': len(all_artifacts),
-            'processed': len(processed),
-            'skipped': len(skipped),
-            'errors': len(errors),
-            'processed_details': processed,
-            'skipped_details': skipped[:10],  # Limit output
-            'error_details': errors
+            'total': len(all_artifacts),
+            'done': already_done + len(processed),
+            'remaining': max(0, remaining),
+            'processed': processed,
+            'errors': errors if errors else None,
+            'message': f"Done {len(processed)}/{len(to_process)}. {remaining} remaining."
         })
 
     except Exception as e:
