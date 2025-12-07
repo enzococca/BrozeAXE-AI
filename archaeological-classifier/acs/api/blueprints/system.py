@@ -312,3 +312,91 @@ def backup_database():
             'status': 'error',
             'error': str(e)
         }), 500
+
+
+@system_bp.route('/backups', methods=['GET'])
+@login_required
+def list_backups():
+    """List available database backups in cloud storage."""
+    try:
+        from acs.core.storage import get_default_storage, LocalStorage
+
+        storage = get_default_storage()
+
+        if isinstance(storage, LocalStorage):
+            return jsonify({
+                'status': 'success',
+                'backups': [],
+                'message': 'Using local storage, no cloud backups'
+            })
+
+        backups = storage.list_files('backups/database')
+        db_backups = [b for b in backups if b['name'].endswith('.db')]
+        db_backups.sort(key=lambda x: x['name'], reverse=True)
+
+        return jsonify({
+            'status': 'success',
+            'backups': db_backups,
+            'count': len(db_backups)
+        })
+
+    except Exception as e:
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@system_bp.route('/restore', methods=['POST'])
+@login_required
+def restore_database():
+    """Restore database from cloud storage backup."""
+    try:
+        from acs.core.storage import get_default_storage
+        import os
+        import shutil
+        import tempfile
+
+        data = request.get_json() or {}
+        backup_name = data.get('backup_name')  # Optional: specific backup
+
+        db_path = os.getenv('DATABASE_PATH', '/data/acs_artifacts.db')
+        storage = get_default_storage()
+
+        # Find backup to restore
+        if not backup_name:
+            backups = storage.list_files('backups/database')
+            db_backups = [b for b in backups if b['name'].endswith('.db')]
+            if not db_backups:
+                return jsonify({'status': 'error', 'error': 'No backups found'}), 404
+            db_backups.sort(key=lambda x: x['name'], reverse=True)
+            backup_name = db_backups[0]['name']
+
+        remote_path = f"backups/database/{backup_name}"
+
+        # Download to temp
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.db') as tmp:
+            tmp_path = tmp.name
+
+        storage.download_file(remote_path, tmp_path)
+
+        # Verify
+        if os.path.getsize(tmp_path) < 1000:
+            os.unlink(tmp_path)
+            return jsonify({'status': 'error', 'error': 'Backup file too small/corrupted'}), 400
+
+        # Replace current DB
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        shutil.move(tmp_path, db_path)
+
+        return jsonify({
+            'status': 'success',
+            'restored_from': backup_name,
+            'db_path': db_path,
+            'message': 'Database restored! Refresh the page to see artifacts.'
+        })
+
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'status': 'error',
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
