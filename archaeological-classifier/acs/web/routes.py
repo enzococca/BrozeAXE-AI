@@ -2308,6 +2308,45 @@ def delete_project(project_id):
         return jsonify({'error': str(e)}), 500
 
 
+@web_bp.route('/projects/<project_id>/owner', methods=['PUT', 'POST'])
+def update_project_owner(project_id):
+    """Update the owner of a project."""
+    try:
+        from acs.core.database import get_database
+        from acs.core.auth import JWTManager
+
+        db = get_database()
+        project = db.get_project(project_id)
+
+        if not project:
+            return jsonify({'error': 'Project not found'}), 404
+
+        data = request.json or {}
+        new_owner_id = data.get('owner_id')
+
+        # If no owner_id provided, use current user from token
+        if not new_owner_id:
+            token = JWTManager.get_token_from_request()
+            if token:
+                payload = JWTManager.decode_token(token)
+                if payload:
+                    new_owner_id = payload.get('user_id')
+
+        if not new_owner_id:
+            return jsonify({'error': 'owner_id is required'}), 400
+
+        db.update_project_owner(project_id, new_owner_id)
+
+        return jsonify({
+            'status': 'success',
+            'project_id': project_id,
+            'new_owner_id': new_owner_id,
+            'message': f'Project owner updated to user {new_owner_id}'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @web_bp.route('/projects/<project_id>/artifacts/<artifact_id>', methods=['POST'])
 def assign_artifact_to_project(project_id, artifact_id):
     """Assign an artifact to a project."""
