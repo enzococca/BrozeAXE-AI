@@ -5,7 +5,7 @@ System Blueprint
 Endpoints for system health, status, and monitoring.
 """
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 import os
 import sys
 from datetime import datetime
