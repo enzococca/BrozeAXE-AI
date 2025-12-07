@@ -1,0 +1,587 @@
+{% extends "base.html" %}
+
+{% block title %}Cache Dashboard - Archaeological Classifier{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>📊 Cache Dashboard</h1>
+    <p>Visualizza, cerca e aggrega i dati salvati nel database</p>
+</div>
+
+<!-- Statistics Cards -->
+<div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px;">
+    <div class="stat-card card" style="text-align: center; padding: 20px;">
+        <h3 style="color: #667eea; font-size: 2em;" id="stat-ai-cache">-</h3>
+        <p>Interpretazioni AI</p>
+    </div>
+    <div class="stat-card card" style="text-align: center; padding: 20px;">
+        <h3 style="color: #48bb78; font-size: 2em;" id="stat-comparisons">-</h3>
+        <p>Comparazioni</p>
+    </div>
+    <div class="stat-card card" style="text-align: center; padding: 20px;">
+        <h3 style="color: #ed8936; font-size: 2em;" id="stat-features">-</h3>
+        <p>Artefatti con Features</p>
+    </div>
+    <div class="stat-card card" style="text-align: center; padding: 20px;">
+        <h3 style="color: #9f7aea; font-size: 2em;" id="stat-analyses">-</h3>
+        <p>Analisi (PCA/Clustering)</p>
+    </div>
+</div>
+
+<!-- Action Buttons -->
+<div class="action-bar" style="margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap;">
+    <button class="btn btn-primary" onclick="exportAllData()">📥 Export Tutto (JSON)</button>
+    <button class="btn btn-secondary" onclick="refreshStats()">🔄 Aggiorna</button>
+</div>
+
+<!-- Tabs -->
+<div class="tabs" style="margin-bottom: 20px;">
+    <button class="tab-btn active" onclick="showTab('ai-cache')">🤖 Interpretazioni AI</button>
+    <button class="tab-btn" onclick="showTab('comparisons')">🔍 Comparazioni</button>
+    <button class="tab-btn" onclick="showTab('analyses')">📈 Analisi</button>
+    <button class="tab-btn" onclick="showTab('aggregation')">📊 Aggregazione</button>
+</div>
+
+<!-- AI Cache Tab -->
+<div id="ai-cache-tab" class="tab-content active">
+    <div class="card">
+        <h3>🤖 Interpretazioni AI Cached</h3>
+
+        <!-- Filters -->
+        <div class="filters" style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
+            <select id="ai-type-filter" class="form-control" style="max-width: 200px;" onchange="filterAICache()">
+                <option value="">Tutti i tipi</option>
+                <option value="savignano_interpretation">Savignano Interpretation</option>
+                <option value="tech_analysis">Tech Analysis</option>
+            </select>
+            <input type="text" id="ai-artifact-filter" class="form-control" placeholder="Cerca artefatto..."
+                   style="max-width: 200px;" onkeyup="filterAICache()">
+            <input type="text" id="ai-content-filter" class="form-control" placeholder="Cerca nel contenuto..."
+                   style="max-width: 300px;" onkeyup="filterAICache()">
+        </div>
+
+        <div id="ai-cache-list" style="max-height: 500px; overflow-y: auto;">
+            <p class="loading">Caricamento...</p>
+        </div>
+    </div>
+</div>
+
+<!-- Comparisons Tab -->
+<div id="comparisons-tab" class="tab-content" style="display: none;">
+    <div class="card">
+        <h3>🔍 Comparazioni Cached</h3>
+
+        <!-- Filters -->
+        <div class="filters" style="display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap;">
+            <input type="text" id="comp-artifact-filter" class="form-control" placeholder="Cerca artefatto..."
+                   style="max-width: 200px;" onkeyup="filterComparisons()">
+            <select id="comp-similarity-filter" class="form-control" style="max-width: 200px;" onchange="filterComparisons()">
+                <option value="">Tutte le similarità</option>
+                <option value="high">Alta (>80%)</option>
+                <option value="medium">Media (50-80%)</option>
+                <option value="low">Bassa (<50%)</option>
+            </select>
+        </div>
+
+        <div id="comparisons-list" style="max-height: 500px; overflow-y: auto;">
+            <p class="loading">Caricamento...</p>
+        </div>
+    </div>
+</div>
+
+<!-- Analyses Tab -->
+<div id="analyses-tab" class="tab-content" style="display: none;">
+    <div class="card">
+        <h3>📈 Analisi Cached (PCA, Clustering, Similarity Search)</h3>
+
+        <!-- Filters -->
+        <div class="filters" style="display: flex; gap: 10px; margin-bottom: 15px;">
+            <select id="analysis-type-filter" class="form-control" style="max-width: 200px;" onchange="filterAnalyses()">
+                <option value="">Tutti i tipi</option>
+                <option value="pca">PCA</option>
+                <option value="clustering">Clustering</option>
+                <option value="similarity_search">Similarity Search</option>
+            </select>
+        </div>
+
+        <div id="analyses-list" style="max-height: 500px; overflow-y: auto;">
+            <p class="loading">Caricamento...</p>
+        </div>
+    </div>
+</div>
+
+<!-- Aggregation Tab -->
+<div id="aggregation-tab" class="tab-content" style="display: none;">
+    <div class="card">
+        <h3>📊 Aggregazione Dati</h3>
+
+        <div class="aggregation-controls" style="margin-bottom: 20px;">
+            <h4>Raggruppa interpretazioni AI per:</h4>
+            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                <button class="btn btn-secondary" onclick="aggregateBy('artifact')">Per Artefatto</button>
+                <button class="btn btn-secondary" onclick="aggregateBy('type')">Per Tipo</button>
+                <button class="btn btn-secondary" onclick="aggregateBy('date')">Per Data</button>
+            </div>
+        </div>
+
+        <div id="aggregation-results">
+            <p style="color: #666;">Seleziona un tipo di aggregazione per visualizzare i risultati.</p>
+        </div>
+
+        <hr style="margin: 30px 0;">
+
+        <h4>Statistiche Comparazioni</h4>
+        <div id="comparison-stats" style="margin-top: 15px;">
+            <p class="loading">Caricamento statistiche...</p>
+        </div>
+    </div>
+</div>
+
+<style>
+.tab-btn {
+    padding: 10px 20px;
+    border: none;
+    background: #e2e8f0;
+    cursor: pointer;
+    border-radius: 5px 5px 0 0;
+    margin-right: 5px;
+}
+.tab-btn.active {
+    background: #667eea;
+    color: white;
+}
+.tab-content {
+    background: white;
+    border-radius: 0 5px 5px 5px;
+}
+.cache-item {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 10px;
+    background: #f7fafc;
+}
+.cache-item:hover {
+    background: #edf2f7;
+}
+.cache-item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+.cache-item-content {
+    font-size: 0.9em;
+    color: #4a5568;
+    max-height: 150px;
+    overflow-y: auto;
+    background: white;
+    padding: 10px;
+    border-radius: 5px;
+    white-space: pre-wrap;
+}
+.badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 0.8em;
+    font-weight: bold;
+}
+.badge-primary { background: #667eea; color: white; }
+.badge-success { background: #48bb78; color: white; }
+.badge-warning { background: #ed8936; color: white; }
+.badge-info { background: #4299e1; color: white; }
+.similarity-bar {
+    height: 8px;
+    background: #e2e8f0;
+    border-radius: 4px;
+    overflow: hidden;
+}
+.similarity-fill {
+    height: 100%;
+    border-radius: 4px;
+}
+.agg-card {
+    background: #f7fafc;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 10px;
+}
+.agg-card h5 {
+    margin: 0 0 10px 0;
+    color: #2d3748;
+}
+</style>
+
+<script>
+let allAICache = [];
+let allComparisons = [];
+let allAnalyses = [];
+
+// Load all data on page load
+document.addEventListener('DOMContentLoaded', async () => {
+    await refreshStats();
+    await loadAllData();
+});
+
+async function refreshStats() {
+    try {
+        const response = await fetch('/web/cache-statistics');
+        const data = await response.json();
+
+        // Count AI cache entries
+        let aiTotal = 0;
+        if (data.ai_cache) {
+            for (const [type, count] of Object.entries(data.ai_cache)) {
+                aiTotal += count;
+            }
+        }
+        document.getElementById('stat-ai-cache').textContent = aiTotal;
+        document.getElementById('stat-comparisons').textContent = data.comparisons_count || 0;
+        document.getElementById('stat-features').textContent = data.artifacts_with_features || 0;
+
+        // Count analyses
+        let analysesTotal = 0;
+        if (data.analysis_results) {
+            for (const [type, count] of Object.entries(data.analysis_results)) {
+                analysesTotal += count;
+            }
+        }
+        document.getElementById('stat-analyses').textContent = analysesTotal;
+    } catch (error) {
+        console.error('Error loading stats:', error);
+    }
+}
+
+async function loadAllData() {
+    // Load AI cache
+    try {
+        const aiResponse = await fetch('/web/all-ai-cache');
+        const aiData = await aiResponse.json();
+        allAICache = aiData.entries || [];
+        renderAICache(allAICache);
+    } catch (error) {
+        console.error('Error loading AI cache:', error);
+    }
+
+    // Load comparisons
+    try {
+        const compResponse = await fetch('/web/all-comparisons');
+        const compData = await compResponse.json();
+        allComparisons = compData.comparisons || [];
+        renderComparisons(allComparisons);
+    } catch (error) {
+        console.error('Error loading comparisons:', error);
+    }
+
+    // Load analyses
+    try {
+        const analysesResponse = await fetch('/web/all-analyses?limit=50');
+        const analysesData = await analysesResponse.json();
+        allAnalyses = analysesData.results || [];
+        renderAnalyses(allAnalyses);
+    } catch (error) {
+        console.error('Error loading analyses:', error);
+    }
+
+    // Load comparison stats for aggregation
+    loadComparisonStats();
+}
+
+function renderAICache(items) {
+    const container = document.getElementById('ai-cache-list');
+
+    if (items.length === 0) {
+        container.innerHTML = '<p style="color: #666;">Nessuna interpretazione AI cached.</p>';
+        return;
+    }
+
+    container.innerHTML = items.map(item => {
+        const content = typeof item.content === 'string' ? item.content : JSON.stringify(item.content, null, 2);
+        const typeLabel = item.cache_type === 'savignano_interpretation' ? 'Savignano' :
+                         item.cache_type === 'tech_analysis' ? 'Tech Analysis' : item.cache_type;
+
+        return `
+            <div class="cache-item" data-artifact="${item.artifact_id}" data-type="${item.cache_type}" data-content="${content.toLowerCase()}">
+                <div class="cache-item-header">
+                    <div>
+                        <strong>${item.artifact_id}</strong>
+                        <span class="badge badge-primary">${typeLabel}</span>
+                    </div>
+                    <small style="color: #666;">${new Date(item.created_date).toLocaleDateString('it-IT')}</small>
+                </div>
+                <div class="cache-item-content">${content.substring(0, 500)}${content.length > 500 ? '...' : ''}</div>
+                <div style="margin-top: 10px;">
+                    <button class="btn btn-sm btn-secondary" onclick="viewFullContent('${item.artifact_id}', '${item.cache_type}')">
+                        👁️ Vedi Tutto
+                    </button>
+                    <button class="btn btn-sm btn-secondary" onclick="copyContent(this)" data-content="${encodeURIComponent(content)}">
+                        📋 Copia
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function renderComparisons(items) {
+    const container = document.getElementById('comparisons-list');
+
+    if (items.length === 0) {
+        container.innerHTML = '<p style="color: #666;">Nessuna comparazione cached.</p>';
+        return;
+    }
+
+    container.innerHTML = items.map(item => {
+        const similarity = item.similarity_score * 100;
+        const barColor = similarity > 80 ? '#48bb78' : similarity > 50 ? '#ed8936' : '#e53e3e';
+
+        return `
+            <div class="cache-item" data-artifact1="${item.artifact1_id}" data-artifact2="${item.artifact2_id}" data-similarity="${similarity}">
+                <div class="cache-item-header">
+                    <div>
+                        <strong>${item.artifact1_id}</strong> ↔️ <strong>${item.artifact2_id}</strong>
+                    </div>
+                    <span class="badge ${similarity > 80 ? 'badge-success' : similarity > 50 ? 'badge-warning' : 'badge-info'}">
+                        ${similarity.toFixed(1)}% simili
+                    </span>
+                </div>
+                <div class="similarity-bar">
+                    <div class="similarity-fill" style="width: ${similarity}%; background: ${barColor};"></div>
+                </div>
+                <small style="color: #666; display: block; margin-top: 5px;">
+                    ${new Date(item.comparison_date).toLocaleDateString('it-IT')}
+                </small>
+            </div>
+        `;
+    }).join('');
+}
+
+function renderAnalyses(items) {
+    const container = document.getElementById('analyses-list');
+
+    if (items.length === 0) {
+        container.innerHTML = '<p style="color: #666;">Nessuna analisi cached.</p>';
+        return;
+    }
+
+    container.innerHTML = items.map(item => {
+        const typeLabel = item.analysis_type === 'pca' ? 'PCA' :
+                         item.analysis_type === 'clustering' ? 'Clustering' :
+                         item.analysis_type === 'similarity_search' ? 'Similarity Search' : item.analysis_type;
+        const artifacts = item.artifact_ids || [];
+
+        return `
+            <div class="cache-item" data-type="${item.analysis_type}">
+                <div class="cache-item-header">
+                    <span class="badge badge-info">${typeLabel}</span>
+                    <small style="color: #666;">${new Date(item.analysis_date).toLocaleDateString('it-IT')}</small>
+                </div>
+                <p style="margin: 5px 0; font-size: 0.9em;">
+                    <strong>Artefatti coinvolti:</strong> ${artifacts.length}
+                </p>
+                <p style="margin: 5px 0; font-size: 0.85em; color: #666;">
+                    ${artifacts.slice(0, 5).join(', ')}${artifacts.length > 5 ? ', ...' : ''}
+                </p>
+            </div>
+        `;
+    }).join('');
+}
+
+function filterAICache() {
+    const typeFilter = document.getElementById('ai-type-filter').value.toLowerCase();
+    const artifactFilter = document.getElementById('ai-artifact-filter').value.toLowerCase();
+    const contentFilter = document.getElementById('ai-content-filter').value.toLowerCase();
+
+    const filtered = allAICache.filter(item => {
+        const matchType = !typeFilter || item.cache_type.toLowerCase().includes(typeFilter);
+        const matchArtifact = !artifactFilter || item.artifact_id.toLowerCase().includes(artifactFilter);
+        const content = typeof item.content === 'string' ? item.content : JSON.stringify(item.content);
+        const matchContent = !contentFilter || content.toLowerCase().includes(contentFilter);
+        return matchType && matchArtifact && matchContent;
+    });
+
+    renderAICache(filtered);
+}
+
+function filterComparisons() {
+    const artifactFilter = document.getElementById('comp-artifact-filter').value.toLowerCase();
+    const similarityFilter = document.getElementById('comp-similarity-filter').value;
+
+    const filtered = allComparisons.filter(item => {
+        const matchArtifact = !artifactFilter ||
+            item.artifact1_id.toLowerCase().includes(artifactFilter) ||
+            item.artifact2_id.toLowerCase().includes(artifactFilter);
+
+        let matchSimilarity = true;
+        const sim = item.similarity_score * 100;
+        if (similarityFilter === 'high') matchSimilarity = sim > 80;
+        else if (similarityFilter === 'medium') matchSimilarity = sim >= 50 && sim <= 80;
+        else if (similarityFilter === 'low') matchSimilarity = sim < 50;
+
+        return matchArtifact && matchSimilarity;
+    });
+
+    renderComparisons(filtered);
+}
+
+function filterAnalyses() {
+    const typeFilter = document.getElementById('analysis-type-filter').value;
+
+    const filtered = allAnalyses.filter(item => {
+        return !typeFilter || item.analysis_type === typeFilter;
+    });
+
+    renderAnalyses(filtered);
+}
+
+function showTab(tabName) {
+    // Hide all tabs
+    document.querySelectorAll('.tab-content').forEach(tab => tab.style.display = 'none');
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+
+    // Show selected tab
+    document.getElementById(tabName + '-tab').style.display = 'block';
+    event.target.classList.add('active');
+}
+
+function aggregateBy(groupBy) {
+    const container = document.getElementById('aggregation-results');
+
+    if (groupBy === 'artifact') {
+        // Group by artifact
+        const grouped = {};
+        allAICache.forEach(item => {
+            if (!grouped[item.artifact_id]) grouped[item.artifact_id] = [];
+            grouped[item.artifact_id].push(item);
+        });
+
+        container.innerHTML = Object.entries(grouped).map(([artifact, items]) => `
+            <div class="agg-card">
+                <h5>📦 ${artifact}</h5>
+                <p>${items.length} interpretazione/i cached</p>
+                <ul style="margin: 0; padding-left: 20px;">
+                    ${items.map(i => `<li>${i.cache_type} - ${new Date(i.created_date).toLocaleDateString('it-IT')}</li>`).join('')}
+                </ul>
+            </div>
+        `).join('');
+
+    } else if (groupBy === 'type') {
+        // Group by type
+        const grouped = {};
+        allAICache.forEach(item => {
+            if (!grouped[item.cache_type]) grouped[item.cache_type] = [];
+            grouped[item.cache_type].push(item);
+        });
+
+        container.innerHTML = Object.entries(grouped).map(([type, items]) => `
+            <div class="agg-card">
+                <h5>🏷️ ${type}</h5>
+                <p>${items.length} interpretazione/i</p>
+                <p style="font-size: 0.9em; color: #666;">
+                    Artefatti: ${items.map(i => i.artifact_id).join(', ')}
+                </p>
+            </div>
+        `).join('');
+
+    } else if (groupBy === 'date') {
+        // Group by date (month)
+        const grouped = {};
+        allAICache.forEach(item => {
+            const date = new Date(item.created_date);
+            const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(item);
+        });
+
+        container.innerHTML = Object.entries(grouped).sort().reverse().map(([date, items]) => `
+            <div class="agg-card">
+                <h5>📅 ${date}</h5>
+                <p>${items.length} interpretazione/i generate</p>
+            </div>
+        `).join('');
+    }
+}
+
+function loadComparisonStats() {
+    const container = document.getElementById('comparison-stats');
+
+    if (allComparisons.length === 0) {
+        container.innerHTML = '<p style="color: #666;">Nessuna comparazione disponibile.</p>';
+        return;
+    }
+
+    // Calculate stats
+    const similarities = allComparisons.map(c => c.similarity_score * 100);
+    const avg = similarities.reduce((a, b) => a + b, 0) / similarities.length;
+    const max = Math.max(...similarities);
+    const min = Math.min(...similarities);
+
+    // Find most compared artifacts
+    const artifactCounts = {};
+    allComparisons.forEach(c => {
+        artifactCounts[c.artifact1_id] = (artifactCounts[c.artifact1_id] || 0) + 1;
+        artifactCounts[c.artifact2_id] = (artifactCounts[c.artifact2_id] || 0) + 1;
+    });
+    const topArtifacts = Object.entries(artifactCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5);
+
+    container.innerHTML = `
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
+            <div class="agg-card" style="text-align: center;">
+                <h5>Media</h5>
+                <p style="font-size: 1.5em; color: #667eea; margin: 0;">${avg.toFixed(1)}%</p>
+            </div>
+            <div class="agg-card" style="text-align: center;">
+                <h5>Max</h5>
+                <p style="font-size: 1.5em; color: #48bb78; margin: 0;">${max.toFixed(1)}%</p>
+            </div>
+            <div class="agg-card" style="text-align: center;">
+                <h5>Min</h5>
+                <p style="font-size: 1.5em; color: #e53e3e; margin: 0;">${min.toFixed(1)}%</p>
+            </div>
+        </div>
+        <div class="agg-card" style="margin-top: 15px;">
+            <h5>🏆 Artefatti più comparati</h5>
+            <ol style="margin: 0; padding-left: 20px;">
+                ${topArtifacts.map(([artifact, count]) => `<li>${artifact}: ${count} comparazioni</li>`).join('')}
+            </ol>
+        </div>
+    `;
+}
+
+async function viewFullContent(artifactId, cacheType) {
+    const item = allAICache.find(i => i.artifact_id === artifactId && i.cache_type === cacheType);
+    if (item) {
+        const content = typeof item.content === 'string' ? item.content : JSON.stringify(item.content, null, 2);
+        alert(content); // Simple alert, could be replaced with modal
+    }
+}
+
+function copyContent(button) {
+    const content = decodeURIComponent(button.dataset.content);
+    navigator.clipboard.writeText(content).then(() => {
+        button.textContent = '✓ Copiato!';
+        setTimeout(() => button.textContent = '📋 Copia', 2000);
+    });
+}
+
+async function exportAllData() {
+    try {
+        const response = await fetch('/web/export-all-data');
+        const data = await response.json();
+
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `acs_cache_export_${new Date().toISOString().split('T')[0]}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+    } catch (error) {
+        alert('Errore durante l\'export: ' + error.message);
+    }
+}
+</script>
+{% endblock %}
