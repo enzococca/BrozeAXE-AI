@@ -646,6 +646,14 @@ class ArtifactDatabase:
                 VALUES (?, ?, ?, ?, ?, 'active')
             ''', (project_id, name, description, owner_id, datetime.now().isoformat()))
 
+    def update_project_owner(self, project_id: str, new_owner_id: int):
+        """Update the owner of a project."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                UPDATE projects SET owner_id = ? WHERE project_id = ?
+            ''', (new_owner_id, project_id))
+
     def get_project(self, project_id: str) -> Optional[Dict]:
         """Get project information."""
         with self.get_connection() as conn:
