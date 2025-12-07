@@ -24,8 +24,11 @@ class MorphometricAnalyzer:
     def __init__(self):
         """Initialize morphometric analyzer."""
         self.features: Dict[str, np.ndarray] = {}
+        self.features_dict: Dict[str, Dict[str, float]] = {}  # Store as dicts for normalization
         self.pca_model: Optional[PCA] = None
         self.scaler: Optional[StandardScaler] = None
+        self.feature_names: Optional[List[str]] = None
+        self._normalized = False
 
     def add_features(self, artifact_id: str, features: Dict):
         """
@@ -51,19 +54,42 @@ class MorphometricAnalyzer:
                         if isinstance(sav_val, bool):
                             numeric_features[f'sav_{sav_key}'] = float(sav_val)
                         else:
-                            numeric_features[f'sav_{sav_key}'] = sav_val
+                            numeric_features[f'sav_{sav_key}'] = float(sav_val)
 
             # Regular numeric features
             elif isinstance(v, (int, float)):
-                numeric_features[k] = v
+                numeric_features[k] = float(v)
 
-        # Store feature names for later use
-        if not hasattr(self, 'feature_names') or self.feature_names is None:
-            self.feature_names = list(numeric_features.keys())
+        # Store as dictionary for later normalization
+        self.features_dict[artifact_id] = numeric_features
+        self._normalized = False
 
-        # Convert to array
-        feature_vector = np.array(list(numeric_features.values()))
-        self.features[artifact_id] = feature_vector
+    def _normalize_features(self):
+        """
+        Normalize all feature vectors to use the same set of features.
+        Missing features are filled with 0.
+        """
+        if self._normalized and self.feature_names is not None:
+            return
+
+        # Collect all unique feature names across all artifacts
+        all_feature_names = set()
+        for feat_dict in self.features_dict.values():
+            all_feature_names.update(feat_dict.keys())
+
+        # Sort for consistent ordering
+        self.feature_names = sorted(list(all_feature_names))
+
+        # Create normalized feature vectors
+        self.features = {}
+        for artifact_id, feat_dict in self.features_dict.items():
+            # Create vector with all features, filling missing with 0
+            feature_vector = np.array([
+                feat_dict.get(fname, 0.0) for fname in self.feature_names
+            ])
+            self.features[artifact_id] = feature_vector
+
+        self._normalized = True
 
     def fit_pca(
         self,
@@ -80,6 +106,9 @@ class MorphometricAnalyzer:
         Returns:
             Dictionary with PCA results
         """
+        # Normalize features to common set before analysis
+        self._normalize_features()
+
         if len(self.features) < 2:
             raise ValueError("Need at least 2 artifacts for PCA")
 
@@ -172,6 +201,9 @@ class MorphometricAnalyzer:
         Returns:
             Dictionary with clustering results
         """
+        # Normalize features to common set before analysis
+        self._normalize_features()
+
         if len(self.features) < 2:
             raise ValueError("Need at least 2 artifacts for clustering")
 
@@ -267,6 +299,9 @@ class MorphometricAnalyzer:
         Returns:
             Dictionary with clustering results
         """
+        # Normalize features to common set before analysis
+        self._normalize_features()
+
         if len(self.features) < min_samples:
             raise ValueError(f"Need at least {min_samples} artifacts for DBSCAN")
 
@@ -317,6 +352,9 @@ class MorphometricAnalyzer:
         """
         from scipy.spatial.distance import pdist, squareform
 
+        # Normalize features to common set before analysis
+        self._normalize_features()
+
         artifact_ids = list(self.features.keys())
         X = np.vstack([self.features[aid] for aid in artifact_ids])
 
@@ -357,6 +395,9 @@ class MorphometricAnalyzer:
         """
         from scipy.spatial.distance import cdist
 
+        # Normalize features to common set before analysis
+        self._normalize_features()
+
         if query_id not in self.features:
             raise ValueError(f"Query artifact {query_id} not found")
 
@@ -393,6 +434,9 @@ class MorphometricAnalyzer:
         """
         if len(artifact_ids) < 2:
             raise ValueError("Need at least 2 artifacts for Procrustes")
+
+        # Normalize features to common set before analysis
+        self._normalize_features()
 
         # Get feature matrices
         matrices = [self.features[aid] for aid in artifact_ids]
@@ -455,8 +499,11 @@ class MorphometricAnalyzer:
         Returns:
             Dictionary with mean, std, min, max for each feature
         """
-        if len(self.features) == 0:
+        if len(self.features_dict) == 0:
             return {}
+
+        # Normalize features to common set before analysis
+        self._normalize_features()
 
         artifact_ids = list(self.features.keys())
         X = np.vstack([self.features[aid] for aid in artifact_ids])
