@@ -2199,6 +2199,7 @@ def list_projects():
     """List all projects."""
     try:
         from acs.core.database import get_database
+        from acs.core.auth import JWTManager
 
         db = get_database()
         status = request.args.get('status')  # Optional filter
@@ -2207,10 +2208,36 @@ def list_projects():
             status = None
         projects = db.list_projects(status=status)
 
-        # Get statistics for each project
+        # Get current user ID from JWT token (if authenticated)
+        current_user_id = None
+        try:
+            token = JWTManager.get_token_from_request()
+            if token:
+                payload = JWTManager.verify_token(token)
+                if payload:
+                    current_user_id = payload.get('user_id')
+        except:
+            pass
+
+        # Get statistics and user_role for each project
         for project in projects:
             stats = db.get_project_statistics(project['project_id'])
             project['stats'] = stats
+
+            # Determine user_role based on owner_id
+            if current_user_id is not None:
+                if project.get('owner_id') == current_user_id:
+                    project['user_role'] = 'owner'
+                else:
+                    # Check if user is a collaborator
+                    collaborators = db.get_project_collaborators(project['project_id'])
+                    user_collab = next((c for c in collaborators if c.get('user_id') == current_user_id), None)
+                    if user_collab:
+                        project['user_role'] = user_collab.get('role', 'collaborator')
+                    else:
+                        project['user_role'] = 'viewer'
+            else:
+                project['user_role'] = 'viewer'
 
         return jsonify({
             'status': 'success',
