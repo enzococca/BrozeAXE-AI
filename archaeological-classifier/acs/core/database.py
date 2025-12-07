@@ -1147,11 +1147,25 @@ def restore_database_from_storage(db_path: str = None) -> dict:
             logger.info("Database restore is disabled")
             return {'status': 'disabled', 'message': 'DB_RESTORE_ENABLED is false'}
 
-        # Check if local DB already has data
-        if os.path.exists(db_path) and os.path.getsize(db_path) > 10000:
-            # DB exists and has significant data, skip restore
-            logger.info(f"Local database exists with data ({os.path.getsize(db_path)} bytes), skipping restore")
-            return {'status': 'skipped', 'reason': 'local_db_has_data', 'size': os.path.getsize(db_path)}
+        # Check if local DB already has ACTUAL DATA (not just schema)
+        local_artifact_count = 0
+        if os.path.exists(db_path):
+            try:
+                import sqlite3
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                cursor.execute('SELECT COUNT(*) FROM artifacts')
+                local_artifact_count = cursor.fetchone()[0]
+                conn.close()
+                logger.info(f"Local database has {local_artifact_count} artifacts")
+            except Exception as e:
+                logger.warning(f"Could not count local artifacts: {e}")
+                local_artifact_count = 0
+
+        # Only skip restore if local DB has actual artifacts
+        if local_artifact_count > 0:
+            logger.info(f"Local database has {local_artifact_count} artifacts, skipping restore")
+            return {'status': 'skipped', 'reason': 'local_db_has_data', 'artifact_count': local_artifact_count}
 
         # Get storage backend
         storage = get_default_storage()
@@ -1263,17 +1277,30 @@ def auto_sync_database() -> dict:
             if should_backup:
                 if not os.path.exists(db_path):
                     logger.info(f"ℹ️ No local database yet at {db_path}, nothing to backup")
-                elif os.path.getsize(db_path) <= 1000:
-                    logger.info(f"ℹ️ Local database is empty/new ({os.path.getsize(db_path)} bytes), nothing to backup")
                 else:
-                    logger.info(f"🔄 Auto-sync: Backing up local database to cloud (reason: {skip_reason})...")
-                    backup_result = backup_database_to_storage(db_path)
-                    results['backup'] = backup_result
+                    # Check if local DB has actual artifacts before backing up
+                    local_artifact_count = 0
+                    try:
+                        import sqlite3
+                        conn = sqlite3.connect(db_path)
+                        cursor = conn.cursor()
+                        cursor.execute('SELECT COUNT(*) FROM artifacts')
+                        local_artifact_count = cursor.fetchone()[0]
+                        conn.close()
+                    except:
+                        pass
 
-                    if backup_result.get('status') == 'success':
-                        logger.info(f"✅ Backed up database to cloud: {backup_result.get('backup_filename')}")
-                    elif backup_result.get('status') == 'error':
-                        logger.warning(f"⚠️ Backup failed: {backup_result.get('error')}")
+                    if local_artifact_count == 0:
+                        logger.info(f"ℹ️ Local database has 0 artifacts, skipping backup to avoid overwriting good data")
+                    else:
+                        logger.info(f"🔄 Auto-sync: Backing up local database ({local_artifact_count} artifacts) to cloud...")
+                        backup_result = backup_database_to_storage(db_path)
+                        results['backup'] = backup_result
+
+                        if backup_result.get('status') == 'success':
+                            logger.info(f"✅ Backed up database to cloud: {backup_result.get('backup_filename')}")
+                        elif backup_result.get('status') == 'error':
+                            logger.warning(f"⚠️ Backup failed: {backup_result.get('error')}")
             else:
                 logger.info(f"ℹ️ Skipping sync: {skip_reason}")
 
