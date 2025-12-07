@@ -2213,7 +2213,7 @@ def list_projects():
         try:
             token = JWTManager.get_token_from_request()
             if token:
-                payload = JWTManager.verify_token(token)
+                payload = JWTManager.decode_token(token)
                 if payload:
                     current_user_id = payload.get('user_id')
         except:
