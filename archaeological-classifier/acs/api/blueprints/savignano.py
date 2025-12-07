@@ -1085,7 +1085,12 @@ def generate_comprehensive_report_stream(artifact_id: str):
     Returns:
         Server-Sent Events stream with progress updates
     """
+    from flask import current_app
+
     language = request.args.get('language', 'it')
+
+    # Capture config values BEFORE entering the generator (to avoid app context issues)
+    upload_folder = current_app.config.get('UPLOAD_FOLDER', '/tmp')
 
     def generate():
         import sys
@@ -1124,10 +1129,9 @@ def generate_comprehensive_report_stream(artifact_id: str):
 
                 try:
                     from acs.core.storage import get_default_storage
-                    from flask import current_app
 
                     storage = get_default_storage()
-                    cache_folder = Path(current_app.config.get('UPLOAD_FOLDER', '/tmp')) / 'mesh_cache'
+                    cache_folder = Path(upload_folder) / 'mesh_cache'
                     cache_folder.mkdir(parents=True, exist_ok=True)
 
                     local_mesh_path = cache_folder / f'{artifact_id}.obj'
