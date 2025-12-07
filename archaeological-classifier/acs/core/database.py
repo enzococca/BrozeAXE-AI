@@ -172,6 +172,20 @@ class ArtifactDatabase:
                 )
             ''')
 
+            # AI cache table (stores AI-generated interpretations)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS ai_cache (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    artifact_id TEXT,
+                    cache_type TEXT,
+                    content_json TEXT,
+                    model_used TEXT,
+                    created_date TEXT,
+                    FOREIGN KEY (artifact_id) REFERENCES artifacts(artifact_id),
+                    UNIQUE(artifact_id, cache_type)
+                )
+            ''')
+
             # Users table (for authentication)
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS users (
@@ -596,6 +610,57 @@ class ArtifactDatabase:
                 results.append(data)
 
             return results
+
+    # ========== AI CACHE OPERATIONS ==========
+
+    def get_ai_cache(self, artifact_id: str, cache_type: str) -> Optional[Dict]:
+        """Get cached AI interpretation for an artifact."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT content_json, model_used, created_date
+                FROM ai_cache
+                WHERE artifact_id = ? AND cache_type = ?
+            ''', (artifact_id, cache_type))
+            row = cursor.fetchone()
+            if row:
+                return {
+                    'content': json.loads(row['content_json']),
+                    'model': row['model_used'],
+                    'created_date': row['created_date'],
+                    'cached': True
+                }
+            return None
+
+    def save_ai_cache(self, artifact_id: str, cache_type: str, content: Any, model: str = None):
+        """Save AI interpretation to cache."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT OR REPLACE INTO ai_cache
+                (artifact_id, cache_type, content_json, model_used, created_date)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (
+                artifact_id,
+                cache_type,
+                json.dumps(content),
+                model,
+                datetime.now().isoformat()
+            ))
+
+    def clear_ai_cache(self, artifact_id: str = None, cache_type: str = None):
+        """Clear AI cache. If no params, clears all. Can filter by artifact or type."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if artifact_id and cache_type:
+                cursor.execute('DELETE FROM ai_cache WHERE artifact_id = ? AND cache_type = ?',
+                             (artifact_id, cache_type))
+            elif artifact_id:
+                cursor.execute('DELETE FROM ai_cache WHERE artifact_id = ?', (artifact_id,))
+            elif cache_type:
+                cursor.execute('DELETE FROM ai_cache WHERE cache_type = ?', (cache_type,))
+            else:
+                cursor.execute('DELETE FROM ai_cache')
 
     # ========== COMPARISON OPERATIONS ==========
 

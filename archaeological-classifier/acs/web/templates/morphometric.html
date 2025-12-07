@@ -119,14 +119,43 @@ async function runPCA() {
 
 function displayPCAResults(results) {
     const resultsDiv = document.getElementById('pca-results');
+    const totalVariance = (results.cumulative_variance[results.cumulative_variance.length - 1] * 100).toFixed(2);
 
-    let html = '<div class="success-message">✓ PCA completed successfully</div>';
-    html += `<p><strong>Components:</strong> ${results.n_components}</p>`;
-    html += `<p><strong>Total Variance Explained:</strong> ${(results.cumulative_variance[results.cumulative_variance.length - 1] * 100).toFixed(2)}%</p>`;
+    let html = '<div class="success-message">✓ PCA completata con successo</div>';
 
-    html += '<h3>Variance per Component</h3><ul>';
+    // Explanation box
+    html += `<div style="background: #f0f4ff; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #667eea;">
+        <h4 style="margin: 0 0 10px 0; color: #667eea;">📊 Cos'è la PCA?</h4>
+        <p style="margin: 0; font-size: 14px; color: #333;">
+            La <strong>Principal Component Analysis (PCA)</strong> riduce le dimensioni dei dati morfometrici
+            mantenendo le informazioni più importanti. Ogni "componente principale" (PC) cattura una direzione
+            di massima variabilità nei dati.
+        </p>
+    </div>`;
+
+    html += `<p><strong>Componenti estratte:</strong> ${results.n_components}</p>`;
+    html += `<p><strong>Varianza totale spiegata:</strong> ${totalVariance}%</p>`;
+
+    // Interpretation
+    html += `<div style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin: 10px 0;">
+        <strong>🔍 Interpretazione:</strong><br>`;
+
+    if (parseFloat(totalVariance) >= 90) {
+        html += `<span style="color: #10b981;">Eccellente!</span> Le ${results.n_components} componenti catturano il ${totalVariance}% della variabilità. `;
+    } else if (parseFloat(totalVariance) >= 75) {
+        html += `<span style="color: #f59e0b;">Buono.</span> Le componenti catturano il ${totalVariance}% della variabilità. `;
+    } else {
+        html += `<span style="color: #ef4444;">Attenzione:</span> Solo ${totalVariance}% della variabilità è catturata. `;
+    }
+
+    html += `La <strong>PC1</strong> (${(results.explained_variance_ratio[0] * 100).toFixed(1)}%) rappresenta la direzione di massima variazione morfologica tra gli artefatti.`;
+    html += `</div>`;
+
+    html += '<h4>Varianza per Componente:</h4><ul>';
     results.explained_variance_ratio.forEach((v, i) => {
-        html += `<li>PC${i + 1}: ${(v * 100).toFixed(2)}%</li>`;
+        const pct = (v * 100).toFixed(2);
+        const bar = '█'.repeat(Math.round(v * 20));
+        html += `<li><strong>PC${i + 1}:</strong> ${pct}% <span style="color: #667eea; font-family: monospace;">${bar}</span></li>`;
     });
     html += '</ul>';
 
@@ -173,19 +202,64 @@ async function runClustering() {
 
 function displayClusteringResults(results) {
     const resultsDiv = document.getElementById('clustering-results');
+    const method = document.getElementById('cluster-method').value;
 
-    let html = '<div class="success-message">✓ Clustering completed successfully</div>';
-    html += `<p><strong>Clusters Found:</strong> ${results.n_clusters}</p>`;
+    let html = '<div class="success-message">✓ Clustering completato con successo</div>';
+
+    // Explanation box
+    html += `<div style="background: #fff7ed; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #f59e0b;">
+        <h4 style="margin: 0 0 10px 0; color: #d97706;">🔬 Cos'è il Clustering?</h4>
+        <p style="margin: 0; font-size: 14px; color: #333;">
+            Il <strong>Clustering</strong> raggruppa automaticamente gli artefatti in base alla loro
+            similarità morfometrica. Artefatti nello stesso cluster condividono caratteristiche simili
+            (dimensioni, proporzioni, forma).
+        </p>
+    </div>`;
+
+    html += `<p><strong>Metodo:</strong> ${method === 'hierarchical' ? 'Gerarchico (Ward)' : 'DBSCAN'}</p>`;
+    html += `<p><strong>Cluster trovati:</strong> ${results.n_clusters}</p>`;
 
     if (results.noise && results.noise.length > 0) {
-        html += `<p><strong>Noise Points:</strong> ${results.noise.length}</p>`;
+        html += `<p><strong>Punti rumore (outliers):</strong> ${results.noise.length}
+            <span style="color: #666; font-size: 12px;">- artefatti atipici che non rientrano in nessun gruppo</span></p>`;
     }
 
-    html += '<h3>Cluster Distribution</h3><ul>';
-    for (const [clusterId, members] of Object.entries(results.clusters)) {
-        html += `<li>Cluster ${clusterId}: ${members.length} artifacts</li>`;
+    // Interpretation
+    html += `<div style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin: 10px 0;">
+        <strong>🔍 Interpretazione archeologica:</strong><br>`;
+
+    const totalArtifacts = Object.values(results.clusters).reduce((sum, arr) => sum + arr.length, 0);
+
+    if (results.n_clusters === 1) {
+        html += `Tutti gli artefatti appartengono a un <strong>unico gruppo omogeneo</strong>,
+                 suggerendo una produzione standardizzata o una stessa tradizione artigianale.`;
+    } else if (results.n_clusters <= 3) {
+        html += `${results.n_clusters} gruppi distinti identificati. Questo potrebbe indicare
+                 <strong>diverse tipologie</strong>, fasi cronologiche, o tradizioni produttive.`;
+    } else {
+        html += `${results.n_clusters} gruppi identificati, indicando una <strong>significativa variabilità morfologica</strong>.
+                 Potrebbero rappresentare diverse botteghe, periodi, o funzioni.`;
     }
-    html += '</ul>';
+    html += `</div>`;
+
+    html += '<h4>Distribuzione dei Cluster:</h4>';
+    html += '<div style="display: grid; gap: 10px;">';
+
+    const sortedClusters = Object.entries(results.clusters).sort((a, b) => b[1].length - a[1].length);
+
+    for (const [clusterId, members] of sortedClusters) {
+        const pct = ((members.length / totalArtifacts) * 100).toFixed(1);
+        const colors = ['#667eea', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
+        const color = colors[parseInt(clusterId) % colors.length];
+
+        html += `<div style="background: white; padding: 10px; border-radius: 6px; border-left: 4px solid ${color};">
+            <strong>Cluster ${clusterId}</strong>: ${members.length} artefatti (${pct}%)
+            <div style="font-size: 12px; color: #666; margin-top: 5px;">
+                ${members.slice(0, 5).join(', ')}${members.length > 5 ? ` ... e altri ${members.length - 5}` : ''}
+            </div>
+        </div>`;
+    }
+    html += '</div>';
 
     resultsDiv.innerHTML = html;
 
