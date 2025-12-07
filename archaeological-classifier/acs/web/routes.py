@@ -2487,6 +2487,85 @@ def bulk_assign_artifacts_to_project(project_id):
         return jsonify({'error': str(e)}), 500
 
 
+@web_bp.route('/batch-extract-features', methods=['POST'])
+def batch_extract_features():
+    """
+    Batch extract features for all artifacts that don't have features.
+    Downloads meshes from storage and computes morphometric features.
+
+    This is a long-running operation - use for one-time data recovery.
+    """
+    import logging
+    from acs.core.database import get_database
+
+    try:
+        db = get_database()
+
+        # Get all artifacts
+        result = db.get_artifacts_paginated(page=1, per_page=10000)
+        all_artifacts = result.get('artifacts', [])
+
+        processed = []
+        skipped = []
+        errors = []
+
+        for artifact in all_artifacts:
+            artifact_id = artifact['artifact_id']
+
+            try:
+                # Check if features already exist
+                existing_features = db.get_features(artifact_id)
+                if existing_features and len(existing_features) > 2:
+                    # Has meaningful features, skip
+                    skipped.append({'artifact_id': artifact_id, 'reason': 'already has features'})
+                    continue
+
+                # Try to load mesh from storage
+                if not ensure_mesh_loaded(artifact_id):
+                    errors.append({'artifact_id': artifact_id, 'error': 'Could not load mesh from storage'})
+                    continue
+
+                # Extract features
+                mesh = mesh_processor.meshes[artifact_id]
+                features = mesh_processor._extract_features(mesh, artifact_id)
+
+                # Save to database
+                db.add_features(artifact_id, features)
+
+                # Also add to morphometric analyzer
+                morphometric_analyzer.add_features(artifact_id, features)
+
+                processed.append({
+                    'artifact_id': artifact_id,
+                    'features_count': len(features),
+                    'volume': features.get('volume'),
+                    'length': features.get('length'),
+                    'width': features.get('width')
+                })
+
+                logging.info(f"✅ Extracted features for {artifact_id}: vol={features.get('volume'):.2f}, len={features.get('length'):.2f}")
+
+            except Exception as e:
+                logging.error(f"❌ Failed to extract features for {artifact_id}: {e}")
+                errors.append({'artifact_id': artifact_id, 'error': str(e)})
+
+        return jsonify({
+            'status': 'success',
+            'total_artifacts': len(all_artifacts),
+            'processed': len(processed),
+            'skipped': len(skipped),
+            'errors': len(errors),
+            'processed_details': processed,
+            'skipped_details': skipped[:10],  # Limit output
+            'error_details': errors
+        })
+
+    except Exception as e:
+        import traceback
+        logging.error(f"Batch feature extraction failed: {traceback.format_exc()}")
+        return jsonify({'error': str(e)}), 500
+
+
 @web_bp.route('/projects/merge', methods=['POST'])
 def merge_projects():
     """Merge multiple projects into one."""
