@@ -8,7 +8,7 @@ Uses trimesh with pyrender for high-quality offline rendering.
 
 import os
 import numpy as np
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Any
 import tempfile
 
 try:
@@ -18,6 +18,7 @@ try:
     RENDERING_AVAILABLE = True
 except ImportError:
     RENDERING_AVAILABLE = False
+    Image = None  # Define as None when not available
     print("Warning: pyrender or PIL not installed. 3D rendering disabled.")
 
 
@@ -81,7 +82,7 @@ class MeshRenderer:
     def _render_single_view(self,
                            mesh,
                            view: str,
-                           lighting: str) -> Optional[Image.Image]:
+                           lighting: str) -> Optional[Any]:
         """
         Render mesh from single viewpoint.
 
@@ -272,7 +273,7 @@ class MeshRenderer:
         matrix[:3, 3] = translation
         return matrix
 
-    def _create_composite(self, images: list, view_names: list) -> Image.Image:
+    def _create_composite(self, images: list, view_names: list) -> Any:
         """
         Create composite image from multiple views.
 
