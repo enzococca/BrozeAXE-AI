@@ -8,17 +8,24 @@ Uses trimesh with pyrender for high-quality offline rendering.
 
 import os
 import numpy as np
-from typing import Optional, Tuple, Any
+from typing import Optional, Tuple, Any, List
 import tempfile
 
+# Conditional imports - pyrender may not be available in all environments
+RENDERING_AVAILABLE = False
+trimesh = None
+pyrender = None
+Image = None
+
 try:
-    import trimesh
-    import pyrender
-    from PIL import Image
+    import trimesh as _trimesh
+    import pyrender as _pyrender
+    from PIL import Image as _Image
+    trimesh = _trimesh
+    pyrender = _pyrender
+    Image = _Image
     RENDERING_AVAILABLE = True
 except ImportError:
-    RENDERING_AVAILABLE = False
-    Image = None  # Define as None when not available
     print("Warning: pyrender or PIL not installed. 3D rendering disabled.")
 
 
@@ -124,7 +131,7 @@ class MeshRenderer:
             print(f"Failed to render view '{view}': {e}")
             return None
 
-    def _setup_camera(self, mesh, view: str) -> pyrender.Camera:
+    def _setup_camera(self, mesh, view: str) -> Any:
         """
         Setup camera position and orientation for view.
 
@@ -198,7 +205,7 @@ class MeshRenderer:
 
         return matrix
 
-    def _setup_lighting(self, mesh, view: str, lighting: str) -> list:
+    def _setup_lighting(self, mesh, view: str, lighting: str) -> List[Any]:
         """
         Setup scene lighting.
 
