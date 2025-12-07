@@ -57,6 +57,10 @@ class MorphometricAnalyzer:
             elif isinstance(v, (int, float)):
                 numeric_features[k] = v
 
+        # Store feature names for later use
+        if not hasattr(self, 'feature_names') or self.feature_names is None:
+            self.feature_names = list(numeric_features.keys())
+
         # Convert to array
         feature_vector = np.array(list(numeric_features.values()))
         self.features[artifact_id] = feature_vector
@@ -98,6 +102,28 @@ class MorphometricAnalyzer:
         self.pca_model = PCA(n_components=n_components)
         X_pca = self.pca_model.fit_transform(X_scaled)
 
+        # Get feature names
+        feature_names = getattr(self, 'feature_names', None) or [f'feature_{i}' for i in range(X.shape[1])]
+
+        # Calculate feature importance for each component
+        component_features = []
+        for i, component in enumerate(self.pca_model.components_):
+            # Sort features by absolute loading value
+            sorted_indices = np.argsort(np.abs(component))[::-1]
+            top_features = []
+            for idx in sorted_indices[:5]:  # Top 5 features per component
+                if idx < len(feature_names):
+                    top_features.append({
+                        'name': feature_names[idx],
+                        'loading': float(component[idx]),
+                        'importance': float(abs(component[idx]))
+                    })
+            component_features.append({
+                'pc': i + 1,
+                'variance_explained': float(self.pca_model.explained_variance_ratio_[i]),
+                'top_features': top_features
+            })
+
         return {
             'n_components': n_components,
             'explained_variance_ratio': self.pca_model.explained_variance_ratio_.tolist(),
@@ -106,7 +132,10 @@ class MorphometricAnalyzer:
             ).tolist(),
             'components': X_pca.tolist(),
             'artifact_ids': artifact_ids,
-            'loadings': self.pca_model.components_.tolist()
+            'loadings': self.pca_model.components_.tolist(),
+            'feature_names': feature_names,
+            'component_features': component_features,
+            'n_artifacts': len(artifact_ids)
         }
 
     def transform_pca(self, features: Dict) -> np.ndarray:
@@ -169,19 +198,58 @@ class MorphometricAnalyzer:
 
         labels = clustering.fit_predict(X_scaled)
 
-        # Organize by cluster
+        # Get feature names
+        feature_names = getattr(self, 'feature_names', None) or [f'feature_{i}' for i in range(X.shape[1])]
+
+        # Organize by cluster with statistics
         clusters = {}
+        cluster_stats = {}
+
         for artifact_id, label in zip(artifact_ids, labels):
             label = int(label)
             if label not in clusters:
                 clusters[label] = []
             clusters[label].append(artifact_id)
 
+        # Calculate cluster characteristics
+        for label, members in clusters.items():
+            # Get feature vectors for cluster members
+            member_features = np.array([self.features[aid] for aid in members])
+            mean_features = np.mean(member_features, axis=0)
+            std_features = np.std(member_features, axis=0)
+
+            # Find distinguishing features (highest mean values relative to overall)
+            overall_mean = np.mean(X, axis=0)
+            overall_std = np.std(X, axis=0) + 1e-6  # Avoid division by zero
+            z_scores = (mean_features - overall_mean) / overall_std
+
+            # Top distinguishing features
+            sorted_indices = np.argsort(np.abs(z_scores))[::-1]
+            distinguishing_features = []
+            for idx in sorted_indices[:5]:
+                if idx < len(feature_names):
+                    distinguishing_features.append({
+                        'name': feature_names[idx],
+                        'cluster_mean': float(mean_features[idx]),
+                        'overall_mean': float(overall_mean[idx]),
+                        'z_score': float(z_scores[idx]),
+                        'direction': 'alto' if z_scores[idx] > 0 else 'basso'
+                    })
+
+            cluster_stats[label] = {
+                'n_members': len(members),
+                'members': members,
+                'distinguishing_features': distinguishing_features
+            }
+
         return {
             'n_clusters': len(clusters),
             'clusters': clusters,
+            'cluster_stats': cluster_stats,
             'labels': {aid: int(label) for aid, label in zip(artifact_ids, labels)},
-            'method': method
+            'method': method,
+            'feature_names': feature_names,
+            'n_artifacts': len(artifact_ids)
         }
 
     def dbscan_clustering(
