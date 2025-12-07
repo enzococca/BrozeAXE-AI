@@ -533,6 +533,9 @@
                                 <button class="btn btn-manage" onclick="manageCollaborators('${proj.project_id}', '${proj.project_name}')">
                                     👥 Gestisci
                                 </button>
+                                <button class="btn btn-danger" onclick="deleteProject('${proj.project_id}', '${proj.project_name}')" style="background: #dc3545;">
+                                    🗑️ Elimina
+                                </button>
                                 ` : ''}
                             </div>
                         </div>
@@ -601,6 +604,35 @@
         function goToReport(projectId) {
             sessionStorage.setItem('currentProject', projectId);
             window.location.href = `/web/savignano-comprehensive-report?project=${projectId}`;
+        }
+
+        async function deleteProject(projectId, projectName) {
+            if (!confirm(`⚠️ Sei sicuro di voler eliminare il progetto "${projectName}"?\n\nQuesta azione è IRREVERSIBILE!\nGli artifact associati NON verranno eliminati.`)) {
+                return;
+            }
+
+            // Double confirmation for safety
+            if (!confirm(`⚠️ CONFERMA FINALE: Eliminare definitivamente "${projectName}"?`)) {
+                return;
+            }
+
+            try {
+                const response = await AuthHelper.fetch(`/web/projects/${projectId}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    alert('Progetto eliminato con successo!');
+                    await loadProjects();
+                } else {
+                    alert('Errore: ' + (data.error || 'Impossibile eliminare il progetto'));
+                }
+            } catch (error) {
+                console.error('Error deleting project:', error);
+                alert('Errore: ' + error.message);
+            }
         }
 
         // ========== COLLABORATORS MANAGEMENT ==========
