@@ -577,8 +577,22 @@ def morphometric_page():
 def run_pca():
     """Run PCA analysis."""
     try:
+        from acs.core.database import get_database
+
         n_components = request.json.get('n_components')
         explained_variance = request.json.get('explained_variance', 0.95)
+
+        # Load features from database into morphometric analyzer
+        db = get_database()
+        all_features = db.get_all_features()
+
+        # Clear existing and add from database
+        morphometric_analyzer.features = {}
+        for artifact_id, features in all_features.items():
+            morphometric_analyzer.add_features(artifact_id, features)
+
+        if len(morphometric_analyzer.features) < 2:
+            return jsonify({'error': f'Need at least 2 artifacts with features. Found {len(morphometric_analyzer.features)}.'}), 400
 
         results = morphometric_analyzer.fit_pca(
             n_components=n_components,
@@ -594,8 +608,22 @@ def run_pca():
 def run_clustering():
     """Run clustering analysis."""
     try:
+        from acs.core.database import get_database
+
         method = request.json.get('method', 'hierarchical')
         n_clusters = request.json.get('n_clusters')
+
+        # Load features from database into morphometric analyzer
+        db = get_database()
+        all_features = db.get_all_features()
+
+        # Clear existing and add from database
+        morphometric_analyzer.features = {}
+        for artifact_id, features in all_features.items():
+            morphometric_analyzer.add_features(artifact_id, features)
+
+        if len(morphometric_analyzer.features) < 2:
+            return jsonify({'error': f'Need at least 2 artifacts with features. Found {len(morphometric_analyzer.features)}.'}), 400
 
         if method == 'hierarchical':
             results = morphometric_analyzer.hierarchical_clustering(
@@ -717,7 +745,7 @@ def artifacts_page():
         # Get features from database
         features = {}
         try:
-            features = db.get_artifact_features(artifact['artifact_id'])
+            features = db.get_features(artifact['artifact_id'])
         except:
             pass
 
