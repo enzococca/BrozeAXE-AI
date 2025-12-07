@@ -318,13 +318,20 @@
 
                 <!-- AI Interpretation -->
                 <div class="ai-interpretation">
-                    <div class="ai-interpretation-header">
-                        <div class="tech-icon">🤖</div>
-                        <div class="tech-title">AI Archaeological Interpretation</div>
+                    <div class="ai-interpretation-header" style="display: flex; justify-content: space-between; align-items: center;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <div class="tech-icon">🤖</div>
+                            <div class="tech-title">AI Archaeological Interpretation</div>
+                        </div>
+                        <button id="regenerate-tech-ai" onclick="regenerateAI()"
+                                style="background: #f59e0b; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px;">
+                            🔄 Rigenera
+                        </button>
                     </div>
                     <div id="ai-interpretation-content" class="ai-interpretation-content">
                         Generating AI interpretation...
                     </div>
+                    <div id="ai-cache-status" style="margin-top: 10px; font-size: 12px; color: #718096;"></div>
                 </div>
             </div>
         </div>
@@ -342,9 +349,10 @@
             loadAnalysis(artifactId);
         }
 
-        async function loadAnalysis(artifactId) {
+        async function loadAnalysis(artifactId, regenerate = false) {
             try {
-                const response = await fetch(`/web/technological-analysis/${artifactId}`);
+                const url = `/web/technological-analysis/${artifactId}` + (regenerate ? '?regenerate=true' : '');
+                const response = await fetch(url);
                 const data = await response.json();
 
                 if (!response.ok) {
@@ -355,6 +363,20 @@
             } catch (error) {
                 showError(error.message);
             }
+        }
+
+        async function regenerateAI() {
+            const btn = document.getElementById('regenerate-tech-ai');
+            btn.disabled = true;
+            btn.textContent = '⏳ Rigenerazione...';
+
+            document.getElementById('ai-interpretation-content').innerHTML =
+                '<em style="color: #667eea;">🔄 Rigenerazione in corso...</em>';
+
+            await loadAnalysis(artifactId, true);
+
+            btn.disabled = false;
+            btn.textContent = '🔄 Rigenera';
         }
 
         function displayResults(data) {
@@ -386,10 +408,26 @@
 
             // AI Interpretation
             if (data.ai_interpretation) {
-                document.getElementById('ai-interpretation-content').textContent = data.ai_interpretation;
+                // Handle both string and object formats
+                let interpretationText = data.ai_interpretation;
+                if (typeof data.ai_interpretation === 'object') {
+                    interpretationText = data.ai_interpretation.interpretation ||
+                                        data.ai_interpretation.raw_response ||
+                                        JSON.stringify(data.ai_interpretation, null, 2);
+                }
+                document.getElementById('ai-interpretation-content').textContent = interpretationText;
+
+                // Show cache status
+                const cacheStatus = document.getElementById('ai-cache-status');
+                if (data.ai_cached) {
+                    cacheStatus.innerHTML = '📦 <em>Risultato dalla cache - clicca "Rigenera" per aggiornare</em>';
+                } else {
+                    cacheStatus.innerHTML = '✨ <em>Appena generato</em>';
+                }
             } else {
                 document.getElementById('ai-interpretation-content').innerHTML =
                     '<em style="color: #718096;">AI interpretation not available. Configure ANTHROPIC_API_KEY to enable.</em>';
+                document.getElementById('ai-cache-status').innerHTML = '';
             }
         }
 
