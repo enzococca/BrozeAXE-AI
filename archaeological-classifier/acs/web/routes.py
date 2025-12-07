@@ -927,11 +927,15 @@ def viewer_page():
 
 @web_bp.route('/mesh-file/<artifact_id>')
 def serve_mesh_file(artifact_id):
-    """Serve mesh file for 3D viewer, downloading from storage if needed."""
+    """Serve mesh file for 3D viewer, downloading from storage if needed.
+
+    Supports gzip compression for faster transfer (60-80% size reduction).
+    """
     try:
         from acs.core.database import get_database
         from acs.core.storage import get_default_storage
-        import shutil
+        import gzip
+        import logging
 
         db = get_database()
         artifact = db.get_artifact(artifact_id)
@@ -943,18 +947,22 @@ def serve_mesh_file(artifact_id):
         if not mesh_path:
             return jsonify({'error': 'Mesh file path not found'}), 404
 
+        # Setup cache folders
+        cache_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], 'mesh_cache')
+        gzip_cache_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], 'mesh_cache_gzip')
+        os.makedirs(cache_folder, exist_ok=True)
+        os.makedirs(gzip_cache_folder, exist_ok=True)
+
+        cache_path = os.path.join(cache_folder, f'{artifact_id}.obj')
+        gzip_cache_path = os.path.join(gzip_cache_folder, f'{artifact_id}.obj.gz')
+
         # Check if this is a remote storage path (not an absolute local path)
         if not os.path.isabs(mesh_path) or not os.path.exists(mesh_path):
             # Remote storage path - download to cache
             storage = get_default_storage()
-            cache_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], 'mesh_cache')
-            os.makedirs(cache_folder, exist_ok=True)
-
-            cache_path = os.path.join(cache_folder, f'{artifact_id}.obj')
 
             # Download if not cached
             if not os.path.exists(cache_path):
-                import logging
                 logging.info(f"Downloading {mesh_path} from storage to cache")
                 storage.download_file(mesh_path, cache_path)
 
@@ -963,9 +971,36 @@ def serve_mesh_file(artifact_id):
             # Local path - serve directly
             serve_path = mesh_path
 
-        # Serve the file
-        response = send_file(serve_path, mimetype='text/plain')
+        # Check if client accepts gzip encoding
+        accept_encoding = request.headers.get('Accept-Encoding', '')
+        use_gzip = 'gzip' in accept_encoding.lower()
+
+        if use_gzip:
+            # Check if gzip version exists and is up to date
+            if not os.path.exists(gzip_cache_path) or \
+               os.path.getmtime(serve_path) > os.path.getmtime(gzip_cache_path):
+                # Create gzip compressed version
+                logging.info(f"Creating gzip compressed version of {artifact_id}")
+                with open(serve_path, 'rb') as f_in:
+                    with gzip.open(gzip_cache_path, 'wb', compresslevel=6) as f_out:
+                        f_out.writelines(f_in)
+
+                # Log compression ratio
+                original_size = os.path.getsize(serve_path)
+                compressed_size = os.path.getsize(gzip_cache_path)
+                ratio = (1 - compressed_size / original_size) * 100
+                logging.info(f"Compressed {artifact_id}: {original_size/1024/1024:.1f}MB -> {compressed_size/1024/1024:.1f}MB ({ratio:.0f}% reduction)")
+
+            # Serve gzip compressed file
+            response = send_file(gzip_cache_path, mimetype='application/octet-stream')
+            response.headers['Content-Encoding'] = 'gzip'
+            response.headers['Content-Type'] = 'text/plain'
+        else:
+            # Serve uncompressed file
+            response = send_file(serve_path, mimetype='text/plain')
+
         response.headers['Cache-Control'] = 'public, max-age=31536000'  # 1 year
+        response.headers['Vary'] = 'Accept-Encoding'
         return response
 
     except Exception as e:

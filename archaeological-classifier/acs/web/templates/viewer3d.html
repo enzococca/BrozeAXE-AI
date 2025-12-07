@@ -203,6 +203,11 @@
     <div class="split-viewport">
         <div id="canvas-container-left" class="viewport-half">
             <h4 id="left-label">Original</h4>
+            <div id="loading-left" class="loading-overlay" style="display:none;">
+                <div class="spinner"></div>
+                <p>Caricamento...</p>
+                <p id="loading-percent-left" style="font-size: 24px; font-weight: bold;">0%</p>
+            </div>
             <div id="left-measurements" class="viewer-measurements">
                 <div class="measurements-content">
                     <p><strong>Dimensions:</strong></p>
@@ -215,6 +220,11 @@
         </div>
         <div id="canvas-container-right" class="viewport-half">
             <h4 id="right-label">Comparison</h4>
+            <div id="loading-right" class="loading-overlay" style="display:none;">
+                <div class="spinner"></div>
+                <p>Caricamento...</p>
+                <p id="loading-percent-right" style="font-size: 24px; font-weight: bold;">0%</p>
+            </div>
             <div id="right-measurements" class="viewer-measurements">
                 <div class="measurements-content">
                     <p><strong>Dimensions:</strong></p>
@@ -520,7 +530,8 @@ class ArtifactViewer {
     }
 
     async loadModel(artifactId) {
-        document.getElementById('loading-indicator').style.display = 'flex';
+        // Show appropriate loading overlay based on container
+        this.showLoadingOverlay(true, 0);
 
         // Remove existing mesh
         if (this.currentMesh) {
@@ -691,28 +702,24 @@ class ArtifactViewer {
         // Display measurements for comparison viewers
         this.displayMeasurements(artifactId, box3);
 
-        document.getElementById('loading-indicator').style.display = 'none';
+        // Hide loading overlay
+        this.showLoadingOverlay(false);
     }
 
     onLoadProgress(xhr) {
-        // Update progress percentage
+        // Update progress percentage using container-specific overlay
         if (xhr.lengthComputable) {
             const percentComplete = Math.round((xhr.loaded / xhr.total) * 100);
-            const loadingPercent = document.getElementById('loading-percent');
-            const loadingText = document.getElementById('loading-text');
-            if (loadingPercent) {
-                loadingPercent.textContent = percentComplete + '%';
-            }
-            if (loadingText) {
-                loadingText.textContent = `Loading 3D model... (${(xhr.loaded / 1024 / 1024).toFixed(1)}MB / ${(xhr.total / 1024 / 1024).toFixed(1)}MB)`;
-            }
-            console.log(percentComplete + '% loaded');
+            const loadedMB = xhr.loaded / 1024 / 1024;
+            const totalMB = xhr.total / 1024 / 1024;
+            this.showLoadingOverlay(true, percentComplete, loadedMB, totalMB);
+            console.log(`${this.containerId}: ${percentComplete}% loaded`);
         }
     }
 
     onLoadError(error) {
         console.error('Error loading model:', error);
-        document.getElementById('loading-indicator').style.display = 'none';
+        this.showLoadingOverlay(false);
         alert('Error loading 3D model. Please check the console.');
     }
 
@@ -1077,6 +1084,40 @@ class ArtifactViewer {
         };
 
         this.renderer.domElement.addEventListener('click', onCanvasClick);
+    }
+
+    showLoadingOverlay(show, percent = 0, loadedMB = 0, totalMB = 0) {
+        // Determine which loading overlay to use based on containerId
+        let loadingId, percentId, textId;
+
+        if (this.containerId === 'canvas-container-left') {
+            loadingId = 'loading-left';
+            percentId = 'loading-percent-left';
+            textId = null;  // Comparison viewers don't have text element
+        } else if (this.containerId === 'canvas-container-right') {
+            loadingId = 'loading-right';
+            percentId = 'loading-percent-right';
+            textId = null;
+        } else {
+            // Main viewer
+            loadingId = 'loading-indicator';
+            percentId = 'loading-percent';
+            textId = 'loading-text';
+        }
+
+        const loadingEl = document.getElementById(loadingId);
+        const percentEl = document.getElementById(percentId);
+        const textEl = textId ? document.getElementById(textId) : null;
+
+        if (loadingEl) {
+            loadingEl.style.display = show ? 'flex' : 'none';
+        }
+        if (percentEl && show) {
+            percentEl.textContent = percent + '%';
+        }
+        if (textEl && show && totalMB > 0) {
+            textEl.textContent = `Loading 3D model... (${loadedMB.toFixed(1)}MB / ${totalMB.toFixed(1)}MB)`;
+        }
     }
 
     animate() {
