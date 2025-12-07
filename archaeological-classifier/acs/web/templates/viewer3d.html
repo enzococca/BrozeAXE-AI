@@ -41,6 +41,54 @@
             </label>
         </div>
 
+        <!-- Lighting Controls -->
+        <div class="control-group">
+            <h4>💡 Lighting</h4>
+
+            <label for="ambient-light" style="font-size: 12px; color: #666;">Ambient Light:</label>
+            <input type="range" id="ambient-light" min="0" max="200" value="60" style="width: 100%; margin: 5px 0;">
+            <span id="ambient-light-value" style="font-size: 11px; color: #999;">60%</span>
+
+            <label for="directional-light" style="font-size: 12px; color: #666; margin-top: 8px;">Main Light:</label>
+            <input type="range" id="directional-light" min="0" max="200" value="80" style="width: 100%; margin: 5px 0;">
+            <span id="directional-light-value" style="font-size: 11px; color: #999;">80%</span>
+
+            <label for="fill-light" style="font-size: 12px; color: #666; margin-top: 8px;">Fill Light:</label>
+            <input type="range" id="fill-light" min="0" max="200" value="40" style="width: 100%; margin: 5px 0;">
+            <span id="fill-light-value" style="font-size: 11px; color: #999;">40%</span>
+
+            <div style="margin-top: 10px;">
+                <button id="light-preset-bright" class="btn btn-sm btn-outline">Bright</button>
+                <button id="light-preset-soft" class="btn btn-sm btn-outline">Soft</button>
+                <button id="light-preset-dramatic" class="btn btn-sm btn-outline">Dramatic</button>
+            </div>
+        </div>
+
+        <!-- Material Controls -->
+        <div class="control-group">
+            <h4>🎨 Material</h4>
+
+            <label for="shininess" style="font-size: 12px; color: #666;">Shininess:</label>
+            <input type="range" id="shininess" min="0" max="100" value="30" style="width: 100%; margin: 5px 0;">
+            <span id="shininess-value" style="font-size: 11px; color: #999;">30</span>
+
+            <label for="metalness" style="font-size: 12px; color: #666; margin-top: 8px;">Metallic:</label>
+            <input type="range" id="metalness" min="0" max="100" value="0" style="width: 100%; margin: 5px 0;">
+            <span id="metalness-value" style="font-size: 11px; color: #999;">0%</span>
+
+            <div style="margin-top: 10px;">
+                <label>
+                    <input type="checkbox" id="show-texture" checked> Show Texture
+                </label>
+            </div>
+
+            <div style="margin-top: 8px;">
+                <button id="material-preset-clay" class="btn btn-sm btn-outline">Clay</button>
+                <button id="material-preset-bronze" class="btn btn-sm btn-outline">Bronze</button>
+                <button id="material-preset-stone" class="btn btn-sm btn-outline">Stone</button>
+            </div>
+        </div>
+
         <!-- Advanced Camera Controls -->
         <div class="control-group">
             <h4>📷 Camera Controls</h4>
@@ -471,6 +519,13 @@ class ArtifactViewer {
         this.sectionAxis = 'y';  // 'y' or 'x'
         this.clippingPlanes = [];
         this.isTrimmed = false;  // Track if mesh is trimmed
+        // Lighting references
+        this.ambientLight = null;
+        this.mainLight = null;
+        this.fillLight = null;
+        // Material settings
+        this.showTexture = true;
+        this.originalMaterials = new Map();  // Store original materials for texture toggle
         this.init();
     }
 
@@ -501,18 +556,18 @@ class ArtifactViewer {
         this.controls.enableDamping = true;
         this.controls.dampingFactor = 0.05;
 
-        // Lights
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-        this.scene.add(ambientLight);
+        // Lights - store references for later modification
+        this.ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        this.scene.add(this.ambientLight);
 
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        directionalLight.position.set(10, 10, 5);
-        directionalLight.castShadow = true;
-        this.scene.add(directionalLight);
+        this.mainLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        this.mainLight.position.set(10, 10, 5);
+        this.mainLight.castShadow = true;
+        this.scene.add(this.mainLight);
 
-        const directionalLight2 = new THREE.DirectionalLight(0xffffff, 0.4);
-        directionalLight2.position.set(-10, -10, -5);
-        this.scene.add(directionalLight2);
+        this.fillLight = new THREE.DirectionalLight(0xffffff, 0.4);
+        this.fillLight.position.set(-10, -10, -5);
+        this.scene.add(this.fillLight);
 
         // Axes helper
         this.axes = new THREE.AxesHelper(5);
@@ -1120,6 +1175,158 @@ class ArtifactViewer {
         }
     }
 
+    // Lighting control methods
+    setAmbientLight(intensity) {
+        if (this.ambientLight) {
+            this.ambientLight.intensity = intensity;
+        }
+    }
+
+    setMainLight(intensity) {
+        if (this.mainLight) {
+            this.mainLight.intensity = intensity;
+        }
+    }
+
+    setFillLight(intensity) {
+        if (this.fillLight) {
+            this.fillLight.intensity = intensity;
+        }
+    }
+
+    setLightingPreset(preset) {
+        switch (preset) {
+            case 'bright':
+                this.setAmbientLight(1.0);
+                this.setMainLight(1.2);
+                this.setFillLight(0.8);
+                break;
+            case 'soft':
+                this.setAmbientLight(0.8);
+                this.setMainLight(0.5);
+                this.setFillLight(0.5);
+                break;
+            case 'dramatic':
+                this.setAmbientLight(0.2);
+                this.setMainLight(1.5);
+                this.setFillLight(0.1);
+                break;
+            default:
+                this.setAmbientLight(0.6);
+                this.setMainLight(0.8);
+                this.setFillLight(0.4);
+        }
+    }
+
+    // Material control methods
+    setShininess(value) {
+        if (!this.currentMesh) return;
+
+        this.currentMesh.traverse((child) => {
+            if (child instanceof THREE.Mesh && child.material) {
+                if (child.material.shininess !== undefined) {
+                    child.material.shininess = value;
+                    child.material.needsUpdate = true;
+                }
+            }
+        });
+    }
+
+    setMetalness(value) {
+        if (!this.currentMesh) return;
+
+        this.currentMesh.traverse((child) => {
+            if (child instanceof THREE.Mesh && child.material) {
+                // For MeshStandardMaterial
+                if (child.material.metalness !== undefined) {
+                    child.material.metalness = value;
+                    child.material.needsUpdate = true;
+                }
+            }
+        });
+    }
+
+    toggleTexture(show) {
+        if (!this.currentMesh) return;
+
+        this.showTexture = show;
+
+        this.currentMesh.traverse((child) => {
+            if (child instanceof THREE.Mesh && child.material) {
+                if (show) {
+                    // Restore original material if we saved it
+                    const original = this.originalMaterials.get(child.uuid);
+                    if (original) {
+                        child.material = original;
+                    }
+                } else {
+                    // Save original material and replace with flat color
+                    if (!this.originalMaterials.has(child.uuid)) {
+                        this.originalMaterials.set(child.uuid, child.material.clone());
+                    }
+                    // Create a simple material without texture
+                    const flatMaterial = new THREE.MeshPhongMaterial({
+                        color: 0xccaa88,  // Bronze/clay color
+                        shininess: 30,
+                        flatShading: false
+                    });
+                    child.material = flatMaterial;
+                }
+            }
+        });
+    }
+
+    setMaterialPreset(preset) {
+        if (!this.currentMesh) return;
+
+        let color, shininess, metalness;
+
+        switch (preset) {
+            case 'clay':
+                color = 0xc4a882;
+                shininess = 10;
+                metalness = 0;
+                break;
+            case 'bronze':
+                color = 0xcd7f32;
+                shininess = 80;
+                metalness = 0.6;
+                break;
+            case 'stone':
+                color = 0x808080;
+                shininess = 5;
+                metalness = 0;
+                break;
+            default:
+                color = 0xccaa88;
+                shininess = 30;
+                metalness = 0;
+        }
+
+        this.currentMesh.traverse((child) => {
+            if (child instanceof THREE.Mesh && child.material) {
+                // Only apply preset if texture is off
+                if (!this.showTexture) {
+                    child.material.color.setHex(color);
+                }
+                if (child.material.shininess !== undefined) {
+                    child.material.shininess = shininess;
+                }
+                if (child.material.metalness !== undefined) {
+                    child.material.metalness = metalness;
+                }
+                child.material.needsUpdate = true;
+            }
+        });
+
+        // Update UI sliders
+        const shininessSlider = document.getElementById('shininess');
+        if (shininessSlider) {
+            shininessSlider.value = shininess;
+            document.getElementById('shininess-value').textContent = shininess;
+        }
+    }
+
     animate() {
         requestAnimationFrame(() => this.animate());
 
@@ -1224,6 +1431,95 @@ document.addEventListener('DOMContentLoaded', () => {
             mainViewer.camera.zoom = scale;
             mainViewer.camera.updateProjectionMatrix();
         }
+    });
+
+    // Lighting controls
+    document.getElementById('ambient-light').addEventListener('input', (e) => {
+        const value = parseFloat(e.target.value) / 100;
+        document.getElementById('ambient-light-value').textContent = e.target.value + '%';
+        if (mainViewer) mainViewer.setAmbientLight(value);
+    });
+
+    document.getElementById('directional-light').addEventListener('input', (e) => {
+        const value = parseFloat(e.target.value) / 100;
+        document.getElementById('directional-light-value').textContent = e.target.value + '%';
+        if (mainViewer) mainViewer.setMainLight(value);
+    });
+
+    document.getElementById('fill-light').addEventListener('input', (e) => {
+        const value = parseFloat(e.target.value) / 100;
+        document.getElementById('fill-light-value').textContent = e.target.value + '%';
+        if (mainViewer) mainViewer.setFillLight(value);
+    });
+
+    // Lighting presets
+    document.getElementById('light-preset-bright').addEventListener('click', () => {
+        if (mainViewer) {
+            mainViewer.setLightingPreset('bright');
+            // Update UI
+            document.getElementById('ambient-light').value = 100;
+            document.getElementById('ambient-light-value').textContent = '100%';
+            document.getElementById('directional-light').value = 120;
+            document.getElementById('directional-light-value').textContent = '120%';
+            document.getElementById('fill-light').value = 80;
+            document.getElementById('fill-light-value').textContent = '80%';
+        }
+    });
+
+    document.getElementById('light-preset-soft').addEventListener('click', () => {
+        if (mainViewer) {
+            mainViewer.setLightingPreset('soft');
+            // Update UI
+            document.getElementById('ambient-light').value = 80;
+            document.getElementById('ambient-light-value').textContent = '80%';
+            document.getElementById('directional-light').value = 50;
+            document.getElementById('directional-light-value').textContent = '50%';
+            document.getElementById('fill-light').value = 50;
+            document.getElementById('fill-light-value').textContent = '50%';
+        }
+    });
+
+    document.getElementById('light-preset-dramatic').addEventListener('click', () => {
+        if (mainViewer) {
+            mainViewer.setLightingPreset('dramatic');
+            // Update UI
+            document.getElementById('ambient-light').value = 20;
+            document.getElementById('ambient-light-value').textContent = '20%';
+            document.getElementById('directional-light').value = 150;
+            document.getElementById('directional-light-value').textContent = '150%';
+            document.getElementById('fill-light').value = 10;
+            document.getElementById('fill-light-value').textContent = '10%';
+        }
+    });
+
+    // Material controls
+    document.getElementById('shininess').addEventListener('input', (e) => {
+        const value = parseFloat(e.target.value);
+        document.getElementById('shininess-value').textContent = value;
+        if (mainViewer) mainViewer.setShininess(value);
+    });
+
+    document.getElementById('metalness').addEventListener('input', (e) => {
+        const value = parseFloat(e.target.value) / 100;
+        document.getElementById('metalness-value').textContent = e.target.value + '%';
+        if (mainViewer) mainViewer.setMetalness(value);
+    });
+
+    document.getElementById('show-texture').addEventListener('change', (e) => {
+        if (mainViewer) mainViewer.toggleTexture(e.target.checked);
+    });
+
+    // Material presets
+    document.getElementById('material-preset-clay').addEventListener('click', () => {
+        if (mainViewer) mainViewer.setMaterialPreset('clay');
+    });
+
+    document.getElementById('material-preset-bronze').addEventListener('click', () => {
+        if (mainViewer) mainViewer.setMaterialPreset('bronze');
+    });
+
+    document.getElementById('material-preset-stone').addEventListener('click', () => {
+        if (mainViewer) mainViewer.setMaterialPreset('stone');
     });
 
     // Object rotation controls
