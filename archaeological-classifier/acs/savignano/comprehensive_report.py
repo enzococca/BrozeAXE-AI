@@ -387,9 +387,19 @@ class SavignanoComprehensiveReport:
 
         f = self.features
 
-        # Total length
-        if 'lunghezza_totale' in f:
+        # Total length (support both old and new feature names)
+        if 'length' in f:
+            data.append([self.t('length') + ' totale', f'{f["length"]:.2f}', 'mm'])
+        elif 'lunghezza_totale' in f:
             data.append([self.t('length') + ' totale', f'{f["lunghezza_totale"]:.2f}', 'mm'])
+
+        # Width
+        if 'width' in f:
+            data.append([self.t('width') + ' max', f'{f["width"]:.2f}', 'mm'])
+
+        # Thickness
+        if 'spessore_massimo_con_margini' in f:
+            data.append([self.t('thickness') + ' max', f'{f["spessore_massimo_con_margini"]:.2f}', 'mm'])
 
         # Socket (Incavo)
         socket_status = self.t('present') if f.get('incavo_presente', False) else self.t('absent')
@@ -2063,25 +2073,43 @@ class SavignanoComprehensiveReport:
 
             if len(savignano_artifacts) >= 3:  # Need at least 3 samples for PCA
                 # Extract numerical features for PCA
-                feature_names = ['lunghezza_totale', 'larghezza_max', 'spessore_max',
+                # Use correct feature names from SavignanoMorphometricExtractor
+                feature_names = ['length', 'width', 'spessore_massimo_con_margini',
                                'tallone_larghezza', 'tallone_spessore',
                                'tagliente_larghezza', 'incavo_larghezza', 'incavo_profondita']
+
+                # Collect all available numeric features across artifacts
+                all_numeric_features = set()
+                for aid, features in savignano_artifacts.items():
+                    for k, v in features.items():
+                        if isinstance(v, (int, float)) and not isinstance(v, bool):
+                            all_numeric_features.add(k)
+
+                # Use preferred features if available, otherwise use what's available
+                available_features = [f for f in feature_names if f in all_numeric_features]
+                if len(available_features) < 3:
+                    # Fallback to any numeric features available
+                    available_features = sorted(list(all_numeric_features))[:8]
+                feature_names = available_features
 
                 artifact_ids = []
                 X = []
 
                 for aid, features in savignano_artifacts.items():
-                    # Extract feature vector
+                    # Extract feature vector - allow partial data with 0 for missing
                     vector = []
-                    valid = True
+                    valid_count = 0
                     for fname in feature_names:
-                        val = features.get(fname, None)
-                        if val is None or not isinstance(val, (int, float)):
-                            valid = False
-                            break
-                        vector.append(float(val))
+                        val = features.get(fname, 0)
+                        if isinstance(val, (int, float)) and not isinstance(val, bool):
+                            vector.append(float(val))
+                            if val != 0:
+                                valid_count += 1
+                        else:
+                            vector.append(0.0)
 
-                    if valid:
+                    # Only include if at least 50% of features have data
+                    if valid_count >= len(feature_names) * 0.5:
                         artifact_ids.append(aid)
                         X.append(vector)
 
@@ -2243,24 +2271,43 @@ class SavignanoComprehensiveReport:
 
             if len(savignano_artifacts) >= 2 and self.artifact_id in savignano_artifacts:
                 # Extract numerical features for comparison
-                feature_names = ['lunghezza_totale', 'larghezza_max', 'spessore_max',
+                # Use correct feature names from SavignanoMorphometricExtractor
+                feature_names = ['length', 'width', 'spessore_massimo_con_margini',
                                'tallone_larghezza', 'tallone_spessore',
                                'tagliente_larghezza', 'incavo_larghezza', 'incavo_profondita']
+
+                # Collect all available numeric features across artifacts
+                all_numeric_features = set()
+                for aid, features in savignano_artifacts.items():
+                    for k, v in features.items():
+                        if isinstance(v, (int, float)) and not isinstance(v, bool):
+                            all_numeric_features.add(k)
+
+                # Use preferred features if available, otherwise use what's available
+                available_features = [f for f in feature_names if f in all_numeric_features]
+                if len(available_features) < 3:
+                    # Fallback to any numeric features available
+                    available_features = sorted(list(all_numeric_features))[:8]
+                feature_names = available_features
 
                 artifact_ids = []
                 X = []
 
                 for aid, features in savignano_artifacts.items():
+                    # Extract feature vector - allow partial data with 0 for missing
                     vector = []
-                    valid = True
+                    valid_count = 0
                     for fname in feature_names:
-                        val = features.get(fname, None)
-                        if val is None or not isinstance(val, (int, float)):
-                            valid = False
-                            break
-                        vector.append(float(val))
+                        val = features.get(fname, 0)
+                        if isinstance(val, (int, float)) and not isinstance(val, bool):
+                            vector.append(float(val))
+                            if val != 0:
+                                valid_count += 1
+                        else:
+                            vector.append(0.0)
 
-                    if valid:
+                    # Only include if at least 50% of features have data
+                    if valid_count >= len(feature_names) * 0.5:
                         artifact_ids.append(aid)
                         X.append(vector)
 
@@ -2310,7 +2357,8 @@ class SavignanoComprehensiveReport:
                         ax_radar = fig.add_subplot(gs[2], projection='polar')
 
                         # Select subset of features for radar (to avoid clutter)
-                        radar_features = ['lunghezza_totale', 'larghezza_max', 'tallone_larghezza',
+                        # Use correct feature names from SavignanoMorphometricExtractor
+                        radar_features = ['length', 'width', 'tallone_larghezza',
                                         'tagliente_larghezza', 'incavo_larghezza']
                         radar_indices = [i for i, fname in enumerate(feature_names) if fname in radar_features]
 
