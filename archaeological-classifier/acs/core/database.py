@@ -424,10 +424,20 @@ class ArtifactDatabase:
 
             return result
 
-    def get_all_features(self) -> Dict[str, Dict[str, float]]:
-        """Get features for all artifacts."""
+    def get_all_features(self, include_stylistic: bool = True) -> Dict[str, Dict[str, Any]]:
+        """Get features for all artifacts.
+
+        Args:
+            include_stylistic: If True, also include stylistic features (e.g., savignano)
+
+        Returns:
+            Dict mapping artifact_id to dict of features
+        """
+        import json
         with self.get_connection() as conn:
             cursor = conn.cursor()
+
+            # Get numeric features
             cursor.execute('SELECT artifact_id, feature_name, feature_value FROM features')
 
             result = {}
@@ -436,6 +446,18 @@ class ArtifactDatabase:
                 if artifact_id not in result:
                     result[artifact_id] = {}
                 result[artifact_id][row['feature_name']] = row['feature_value']
+
+            # Also get stylistic features if requested
+            if include_stylistic:
+                cursor.execute('SELECT artifact_id, feature_category, features_json FROM stylistic_features')
+                for row in cursor.fetchall():
+                    artifact_id = row['artifact_id']
+                    if artifact_id not in result:
+                        result[artifact_id] = {}
+                    try:
+                        result[artifact_id][row['feature_category']] = json.loads(row['features_json'])
+                    except (json.JSONDecodeError, TypeError):
+                        pass
 
             return result
 

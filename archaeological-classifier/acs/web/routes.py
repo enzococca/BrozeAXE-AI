@@ -1324,57 +1324,46 @@ def compare_artifacts():
 
 @web_bp.route('/find-similar', methods=['POST'])
 def find_similar_artifacts():
-    """Find similar artifacts using batch comparison (1:many)."""
+    """Find similar artifacts using database features (no mesh download required).
+
+    This optimized version uses pre-computed features stored in the database,
+    avoiding the need to download and process mesh files for each comparison.
+    """
     try:
-        from acs.core.similarity_search import get_similarity_engine
-        from acs.core.stylistic_analyzer import get_stylistic_analyzer
         from acs.core.database import get_database
+        import logging
 
         data = request.json
         query_id = data.get('query_id')
         n_results = data.get('n_results', 10)
-        metric = data.get('metric', 'cosine')  # cosine or euclidean
         min_similarity = data.get('min_similarity', 0.0)
+        include_stylistic = data.get('include_stylistic', False)  # Future: stylistic comparison
 
-        # Lazy load query mesh from storage if not in memory
-        if not ensure_mesh_loaded(query_id):
-            return jsonify({'error': 'Query artifact not found'}), 404
-
-        # Build similarity search index
-        search_engine = get_similarity_engine()
-        stylistic = get_stylistic_analyzer()
-
-        # Get all artifact IDs from database and lazy-load them
         db = get_database()
-        all_artifacts = db.get_all_artifacts()
-        for artifact in all_artifacts:
-            artifact_id = artifact['artifact_id']
-            if ensure_mesh_loaded(artifact_id):
-                mesh = mesh_processor.meshes[artifact_id]
-                morph_features = mesh_processor._extract_features(mesh, artifact_id)
-                style_features = stylistic.analyze_style(mesh, artifact_id, morph_features)
-                search_engine.add_artifact_features(artifact_id, morph_features, style_features)
 
-        # Build index
-        search_engine.build_index()
+        # Get query artifact features from database (NO mesh download needed)
+        query_features = db.get_features(query_id)
+        if not query_features:
+            return jsonify({'error': f'No features found for artifact {query_id}. Run feature extraction first.'}), 404
 
-        # Find similar artifacts using SIMPLE comparison (same as 1:1)
-        # Don't use search_engine's complex cosine similarity
-        query_features = mesh_processor._extract_features(
-            mesh_processor.meshes[query_id],
-            query_id
-        )
+        # Get ALL features from database (NO mesh downloads!)
+        all_features = db.get_all_features()
 
-        similar_artifacts = []
+        if len(all_features) < 2:
+            return jsonify({'error': 'Need at least 2 artifacts with features for comparison'}), 400
+
+        logging.info(f"[FIND-SIMILAR] Query: {query_id}, comparing against {len(all_features)} artifacts from DB")
+
+        # Feature keys for morphometric comparison
         feature_keys = ['volume', 'surface_area', 'length', 'width', 'height', 'compactness']
 
-        for artifact_id, mesh in mesh_processor.meshes.items():
+        similar_artifacts = []
+
+        for artifact_id, other_features in all_features.items():
             if artifact_id == query_id:
                 continue
 
-            # Compare using same method as 1:1 comparison
-            other_features = mesh_processor._extract_features(mesh, artifact_id)
-
+            # Calculate morphometric similarity
             similarity_sum = 0
             valid_features = 0
 
@@ -1382,6 +1371,11 @@ def find_similar_artifacts():
                 if key in query_features and key in other_features:
                     val1 = query_features[key]
                     val2 = other_features[key]
+
+                    # Skip if both values are very small
+                    if val1 is None or val2 is None:
+                        continue
+
                     max_val = max(abs(val1), abs(val2))
 
                     if max_val > 1e-10:
@@ -1392,43 +1386,63 @@ def find_similar_artifacts():
 
             if valid_features > 0:
                 avg_similarity = similarity_sum / valid_features
+
+                # Include stylistic similarity if requested and available
+                if include_stylistic:
+                    # Get stylistic features from database (already stored)
+                    query_stylistic = query_features.get('savignano', {})
+                    other_stylistic = other_features.get('savignano', {})
+
+                    if query_stylistic and other_stylistic:
+                        # Simple stylistic similarity based on stored features
+                        style_keys = ['symmetry_score', 'edge_regularity', 'surface_smoothness']
+                        style_sum = 0
+                        style_count = 0
+
+                        for sk in style_keys:
+                            if sk in query_stylistic and sk in other_stylistic:
+                                s1 = query_stylistic[sk]
+                                s2 = other_stylistic[sk]
+                                if s1 is not None and s2 is not None:
+                                    style_sum += 1 - abs(s1 - s2)
+                                    style_count += 1
+
+                        if style_count > 0:
+                            style_similarity = style_sum / style_count
+                            # Combine morphometric (70%) and stylistic (30%)
+                            avg_similarity = avg_similarity * 0.7 + style_similarity * 0.3
+
                 if avg_similarity >= min_similarity:
-                    similar_artifacts.append((artifact_id, avg_similarity))
+                    similar_artifacts.append((artifact_id, avg_similarity, other_features))
 
         # Sort by similarity descending
         similar_artifacts.sort(key=lambda x: x[1], reverse=True)
         similar_artifacts = similar_artifacts[:n_results]
 
-        import sys
-        print(f"\n=== FIND SIMILAR DEBUG ===", flush=True)
-        print(f"Query ID: {query_id}", flush=True)
-        print(f"Min similarity threshold: {min_similarity}", flush=True)
-        print(f"Found {len(similar_artifacts)} similar artifacts", flush=True)
-        print(f"Similar artifacts: {similar_artifacts}", flush=True)
-        print(f"=== END DEBUG ===\n", flush=True)
-        sys.stdout.flush()
+        logging.info(f"[FIND-SIMILAR] Found {len(similar_artifacts)} similar artifacts")
 
-        # Get detailed info for each result
+        # Build results
         results = []
-        for artifact_id, similarity_score in similar_artifacts:
-            morph_features = mesh_processor._extract_features(
-                mesh_processor.meshes[artifact_id],
-                artifact_id
-            )
+        for artifact_id, similarity_score, features in similar_artifacts:
             results.append({
                 'artifact_id': artifact_id,
                 'similarity_score': float(similarity_score),
-                'features': morph_features
+                'features': {k: v for k, v in features.items() if isinstance(v, (int, float))}
             })
 
         return jsonify({
             'status': 'success',
             'query_id': query_id,
             'n_results': len(results),
+            'comparison_type': 'morphometric' + ('+stylistic' if include_stylistic else ''),
             'results': results
         })
 
     except Exception as e:
+        import logging
+        import traceback
+        logging.error(f"Error in find-similar: {e}")
+        logging.error(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
 
