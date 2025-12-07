@@ -588,11 +588,13 @@ def run_pca():
 
         # Clear existing and add from database
         morphometric_analyzer.features = {}
+        morphometric_analyzer.features_dict = {}
+        morphometric_analyzer._normalized = False
         for artifact_id, features in all_features.items():
             morphometric_analyzer.add_features(artifact_id, features)
 
-        if len(morphometric_analyzer.features) < 2:
-            return jsonify({'error': f'Need at least 2 artifacts with features. Found {len(morphometric_analyzer.features)}.'}), 400
+        if len(morphometric_analyzer.features_dict) < 2:
+            return jsonify({'error': f'Need at least 2 artifacts with features. Found {len(morphometric_analyzer.features_dict)}.'}), 400
 
         results = morphometric_analyzer.fit_pca(
             n_components=n_components,
@@ -619,11 +621,13 @@ def run_clustering():
 
         # Clear existing and add from database
         morphometric_analyzer.features = {}
+        morphometric_analyzer.features_dict = {}
+        morphometric_analyzer._normalized = False
         for artifact_id, features in all_features.items():
             morphometric_analyzer.add_features(artifact_id, features)
 
-        if len(morphometric_analyzer.features) < 2:
-            return jsonify({'error': f'Need at least 2 artifacts with features. Found {len(morphometric_analyzer.features)}.'}), 400
+        if len(morphometric_analyzer.features_dict) < 2:
+            return jsonify({'error': f'Need at least 2 artifacts with features. Found {len(morphometric_analyzer.features_dict)}.'}), 400
 
         if method == 'hierarchical':
             results = morphometric_analyzer.hierarchical_clustering(
