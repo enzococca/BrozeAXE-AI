@@ -601,6 +601,23 @@ def run_pca():
             explained_variance=explained_variance
         )
 
+        # Save PCA results to cache for dashboard
+        try:
+            from datetime import datetime
+            db.save_ai_cache('_global_pca', 'pca_analysis', {
+                'n_components': results['n_components'],
+                'total_possible_components': results.get('total_possible_components'),
+                'n_artifacts': results['n_artifacts'],
+                'artifact_ids': results['artifact_ids'],
+                'explained_variance': results['selection']['achieved_variance'],
+                'selection_method': results['selection']['method'],
+                'feature_names': results['feature_names'],
+                'run_date': datetime.now().isoformat()
+            }, model='morphometric_pca')
+        except Exception as cache_err:
+            import logging
+            logging.warning(f"Could not cache PCA results: {cache_err}")
+
         return jsonify({'status': 'success', 'results': results})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -641,6 +658,23 @@ def run_clustering():
             )
         else:
             return jsonify({'error': 'Unknown method'}), 400
+
+        # Save clustering results to cache for dashboard
+        try:
+            from datetime import datetime
+            cluster_summary = {cluster_id: len(members) for cluster_id, members in results['clusters'].items()}
+            db.save_ai_cache('_global_clustering', 'clustering_analysis', {
+                'method': method,
+                'n_clusters': results['n_clusters'],
+                'n_artifacts': results['n_artifacts'],
+                'cluster_sizes': cluster_summary,
+                'silhouette_score': results.get('clustering_explanation', {}).get('quality_score'),
+                'feature_names': results.get('feature_names', []),
+                'run_date': datetime.now().isoformat()
+            }, model='morphometric_clustering')
+        except Exception as cache_err:
+            import logging
+            logging.warning(f"Could not cache clustering results: {cache_err}")
 
         return jsonify({'status': 'success', 'results': results})
     except Exception as e:

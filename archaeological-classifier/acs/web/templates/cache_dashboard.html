@@ -56,6 +56,8 @@
                 <option value="hammering_analysis">Hammering Analysis</option>
                 <option value="casting_analysis">Casting Analysis</option>
                 <option value="comprehensive_report">Comprehensive Report</option>
+                <option value="pca_analysis">PCA Analysis</option>
+                <option value="clustering_analysis">Clustering Analysis</option>
             </select>
             <input type="text" id="ai-artifact-filter" class="form-control" placeholder="Cerca artefatto..."
                    style="max-width: 200px;" onkeyup="filterAICache()">
@@ -306,7 +308,9 @@ function renderAICache(items) {
             'tech_analysis': 'Tech Analysis',
             'hammering_analysis': 'Hammering',
             'casting_analysis': 'Casting',
-            'comprehensive_report': 'Report Completo'
+            'comprehensive_report': 'Report Completo',
+            'pca_analysis': 'PCA Analysis',
+            'clustering_analysis': 'Clustering'
         };
         const typeLabel = typeLabels[item.cache_type] || item.cache_type;
 
