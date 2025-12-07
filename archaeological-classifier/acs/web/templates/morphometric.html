@@ -133,6 +133,15 @@ function displayPCAResults(results) {
         </p>
     </div>`;
 
+    // Artifacts analyzed
+    html += `<div style="background: #e8f5e9; padding: 12px; border-radius: 6px; margin: 10px 0;">
+        <strong>📦 Artefatti analizzati:</strong> ${results.n_artifacts || results.artifact_ids?.length || 'N/A'}<br>
+        <span style="font-size: 12px; color: #666;">
+            ${results.artifact_ids ? results.artifact_ids.slice(0, 10).join(', ') : ''}
+            ${results.artifact_ids && results.artifact_ids.length > 10 ? ` ... e altri ${results.artifact_ids.length - 10}` : ''}
+        </span>
+    </div>`;
+
     html += `<p><strong>Componenti estratte:</strong> ${results.n_components}</p>`;
     html += `<p><strong>Varianza totale spiegata:</strong> ${totalVariance}%</p>`;
 
@@ -147,17 +156,51 @@ function displayPCAResults(results) {
     } else {
         html += `<span style="color: #ef4444;">Attenzione:</span> Solo ${totalVariance}% della variabilità è catturata. `;
     }
-
-    html += `La <strong>PC1</strong> (${(results.explained_variance_ratio[0] * 100).toFixed(1)}%) rappresenta la direzione di massima variazione morfologica tra gli artefatti.`;
     html += `</div>`;
 
-    html += '<h4>Varianza per Componente:</h4><ul>';
-    results.explained_variance_ratio.forEach((v, i) => {
-        const pct = (v * 100).toFixed(2);
-        const bar = '█'.repeat(Math.round(v * 20));
-        html += `<li><strong>PC${i + 1}:</strong> ${pct}% <span style="color: #667eea; font-family: monospace;">${bar}</span></li>`;
-    });
-    html += '</ul>';
+    // Detailed component analysis
+    html += '<h4>📐 Dettaglio Componenti Principali:</h4>';
+
+    if (results.component_features) {
+        results.component_features.forEach((comp, i) => {
+            const pct = (comp.variance_explained * 100).toFixed(2);
+            html += `<div style="background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 15px; margin: 10px 0;">
+                <h5 style="margin: 0 0 10px 0; color: #667eea;">
+                    PC${comp.pc} - ${pct}% della varianza
+                </h5>
+                <p style="margin: 0 0 10px 0; font-size: 13px; color: #666;">
+                    Questa componente è principalmente influenzata da:
+                </p>
+                <ul style="margin: 0; padding-left: 20px;">`;
+
+            comp.top_features.forEach(feat => {
+                const direction = feat.loading > 0 ? '↑' : '↓';
+                const color = feat.loading > 0 ? '#10b981' : '#ef4444';
+                html += `<li style="margin: 5px 0;">
+                    <strong>${feat.name}</strong>: ${direction}
+                    <span style="color: ${color};">${(feat.loading * 100).toFixed(1)}%</span>
+                    <span style="font-size: 11px; color: #999;">(importanza: ${(feat.importance * 100).toFixed(1)}%)</span>
+                </li>`;
+            });
+
+            html += `</ul>
+                <p style="margin: 10px 0 0 0; font-size: 12px; color: #718096; font-style: italic;">
+                    ${i === 0 ? 'PC1 cattura la direzione di massima variazione morfologica - gli artefatti con valori PC1 simili hanno forme simili.' :
+                      i === 1 ? 'PC2 cattura la seconda direzione di variazione, ortogonale a PC1.' :
+                      `PC${comp.pc} cattura variazioni residue indipendenti dalle componenti precedenti.`}
+                </p>
+            </div>`;
+        });
+    } else {
+        // Fallback to simple display
+        html += '<ul>';
+        results.explained_variance_ratio.forEach((v, i) => {
+            const pct = (v * 100).toFixed(2);
+            const bar = '█'.repeat(Math.round(v * 20));
+            html += `<li><strong>PC${i + 1}:</strong> ${pct}% <span style="color: #667eea; font-family: monospace;">${bar}</span></li>`;
+        });
+        html += '</ul>';
+    }
 
     resultsDiv.innerHTML = html;
 
@@ -200,9 +243,13 @@ async function runClustering() {
     }
 }
 
+// Store clustering results globally for download
+let lastClusteringResults = null;
+
 function displayClusteringResults(results) {
     const resultsDiv = document.getElementById('clustering-results');
     const method = document.getElementById('cluster-method').value;
+    lastClusteringResults = results; // Store for download
 
     let html = '<div class="success-message">✓ Clustering completato con successo</div>';
 
@@ -216,6 +263,11 @@ function displayClusteringResults(results) {
         </p>
     </div>`;
 
+    // Artifacts analyzed
+    html += `<div style="background: #e8f5e9; padding: 12px; border-radius: 6px; margin: 10px 0;">
+        <strong>📦 Artefatti analizzati:</strong> ${results.n_artifacts || 'N/A'}
+    </div>`;
+
     html += `<p><strong>Metodo:</strong> ${method === 'hierarchical' ? 'Gerarchico (Ward)' : 'DBSCAN'}</p>`;
     html += `<p><strong>Cluster trovati:</strong> ${results.n_clusters}</p>`;
 
@@ -224,11 +276,16 @@ function displayClusteringResults(results) {
             <span style="color: #666; font-size: 12px;">- artefatti atipici che non rientrano in nessun gruppo</span></p>`;
     }
 
+    // Download button
+    html += `<button onclick="downloadClusterList()" style="background: #10b981; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; margin: 10px 0;">
+        📥 Scarica Lista Cluster (CSV)
+    </button>`;
+
     // Interpretation
+    const totalArtifacts = Object.values(results.clusters).reduce((sum, arr) => sum + arr.length, 0);
+
     html += `<div style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin: 10px 0;">
         <strong>🔍 Interpretazione archeologica:</strong><br>`;
-
-    const totalArtifacts = Object.values(results.clusters).reduce((sum, arr) => sum + arr.length, 0);
 
     if (results.n_clusters === 1) {
         html += `Tutti gli artefatti appartengono a un <strong>unico gruppo omogeneo</strong>,
@@ -242,29 +299,89 @@ function displayClusteringResults(results) {
     }
     html += `</div>`;
 
-    html += '<h4>Distribuzione dei Cluster:</h4>';
-    html += '<div style="display: grid; gap: 10px;">';
+    html += '<h4>📊 Dettaglio Cluster:</h4>';
 
     const sortedClusters = Object.entries(results.clusters).sort((a, b) => b[1].length - a[1].length);
+    const colors = ['#667eea', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
 
     for (const [clusterId, members] of sortedClusters) {
         const pct = ((members.length / totalArtifacts) * 100).toFixed(1);
-        const colors = ['#667eea', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
         const color = colors[parseInt(clusterId) % colors.length];
+        const stats = results.cluster_stats ? results.cluster_stats[clusterId] : null;
 
-        html += `<div style="background: white; padding: 10px; border-radius: 6px; border-left: 4px solid ${color};">
-            <strong>Cluster ${clusterId}</strong>: ${members.length} artefatti (${pct}%)
-            <div style="font-size: 12px; color: #666; margin-top: 5px;">
-                ${members.slice(0, 5).join(', ')}${members.length > 5 ? ` ... e altri ${members.length - 5}` : ''}
+        html += `<div style="background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 15px; margin: 10px 0; border-left: 4px solid ${color};">
+            <h5 style="margin: 0 0 10px 0; color: ${color};">
+                Cluster ${clusterId} - ${members.length} artefatti (${pct}%)
+            </h5>`;
+
+        // Distinguishing characteristics
+        if (stats && stats.distinguishing_features) {
+            html += `<div style="background: #f8f9fa; padding: 10px; border-radius: 6px; margin-bottom: 10px;">
+                <strong>🎯 Caratteristiche distintive:</strong>
+                <ul style="margin: 5px 0 0 0; padding-left: 20px;">`;
+
+            stats.distinguishing_features.forEach(feat => {
+                const icon = feat.direction === 'alto' ? '↑' : '↓';
+                const colorFeat = feat.direction === 'alto' ? '#10b981' : '#ef4444';
+                html += `<li style="margin: 3px 0;">
+                    <strong>${feat.name}</strong>:
+                    <span style="color: ${colorFeat};">${icon} ${feat.direction}</span>
+                    (media cluster: ${feat.cluster_mean.toFixed(2)} vs media generale: ${feat.overall_mean.toFixed(2)})
+                </li>`;
+            });
+
+            html += `</ul></div>`;
+        }
+
+        // Member list
+        html += `<div style="font-size: 12px; color: #666;">
+            <strong>Membri:</strong><br>
+            <div style="max-height: 100px; overflow-y: auto; background: #f5f5f5; padding: 8px; border-radius: 4px; margin-top: 5px;">
+                ${members.join(', ')}
             </div>
+        </div>
         </div>`;
     }
-    html += '</div>';
 
     resultsDiv.innerHTML = html;
 
     // Plot clusters
     plotClusters(results);
+}
+
+function downloadClusterList() {
+    if (!lastClusteringResults) {
+        alert('Esegui prima il clustering');
+        return;
+    }
+
+    let csv = 'Artifact_ID,Cluster\n';
+    for (const [clusterId, members] of Object.entries(lastClusteringResults.clusters)) {
+        members.forEach(member => {
+            csv += `${member},${clusterId}\n`;
+        });
+    }
+
+    // Add characteristics summary
+    csv += '\n\n--- CARATTERISTICHE CLUSTER ---\n';
+    if (lastClusteringResults.cluster_stats) {
+        for (const [clusterId, stats] of Object.entries(lastClusteringResults.cluster_stats)) {
+            csv += `\nCluster ${clusterId} (${stats.n_members} artefatti):\n`;
+            if (stats.distinguishing_features) {
+                stats.distinguishing_features.forEach(feat => {
+                    csv += `  - ${feat.name}: ${feat.direction} (media: ${feat.cluster_mean.toFixed(2)})\n`;
+                });
+            }
+        }
+    }
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'cluster_analysis.csv';
+    a.click();
+    URL.revokeObjectURL(url);
 }
 
 function plotPCA(results) {
