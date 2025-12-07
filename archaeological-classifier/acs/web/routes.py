@@ -2225,6 +2225,8 @@ def create_project():
     """Create a new project."""
     try:
         from acs.core.database import get_database
+        from acs.core.auth import JWTManager
+        from flask import g
 
         data = request.json
         project_id = data.get('project_id')
@@ -2234,12 +2236,21 @@ def create_project():
         if not project_id or not name:
             return jsonify({'error': 'project_id and name are required'}), 400
 
+        # Get owner_id from JWT token if available
+        owner_id = 1  # Default to admin
+        token = JWTManager.get_token_from_request()
+        if token:
+            payload = JWTManager.decode_token(token)
+            if payload:
+                owner_id = payload.get('user_id', 1)
+
         db = get_database()
-        db.create_project(project_id, name, description)
+        db.create_project(project_id, name, owner_id, description)
 
         return jsonify({
             'status': 'success',
             'project_id': project_id,
+            'owner_id': owner_id,
             'message': f'Project "{name}" created successfully'
         })
     except Exception as e:
@@ -2309,6 +2320,53 @@ def assign_artifact_to_project(project_id, artifact_id):
         return jsonify({
             'status': 'success',
             'message': f'Artifact {artifact_id} assigned to project {project_id}'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@web_bp.route('/projects/<project_id>/bulk-assign', methods=['POST'])
+def bulk_assign_artifacts_to_project(project_id):
+    """Bulk assign multiple artifacts to a project.
+
+    JSON body:
+        - artifact_ids: list of artifact IDs to assign
+        - all: if true, assign ALL artifacts to the project
+    """
+    try:
+        from acs.core.database import get_database
+
+        db = get_database()
+        data = request.json or {}
+
+        artifact_ids = data.get('artifact_ids', [])
+        assign_all = data.get('all', False)
+
+        if assign_all:
+            # Get all artifacts from database
+            all_artifacts = db.get_all_artifacts()
+            artifact_ids = [a['artifact_id'] for a in all_artifacts]
+
+        if not artifact_ids:
+            return jsonify({'error': 'No artifact_ids provided'}), 400
+
+        # Assign each artifact
+        assigned = []
+        errors = []
+        for artifact_id in artifact_ids:
+            try:
+                db.assign_artifact_to_project(artifact_id, project_id)
+                assigned.append(artifact_id)
+            except Exception as e:
+                errors.append({'artifact_id': artifact_id, 'error': str(e)})
+
+        return jsonify({
+            'status': 'success',
+            'project_id': project_id,
+            'assigned_count': len(assigned),
+            'assigned': assigned,
+            'errors': errors if errors else None,
+            'message': f'{len(assigned)} artifacts assigned to project {project_id}'
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
