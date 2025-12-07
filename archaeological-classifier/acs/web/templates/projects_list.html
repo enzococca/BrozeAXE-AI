@@ -124,13 +124,16 @@
 
         .project-actions {
             display: flex;
-            gap: 10px;
+            flex-wrap: wrap;
+            gap: 8px;
             margin-top: 15px;
         }
 
         .project-actions .btn {
-            flex: 1;
+            flex: 0 0 auto;
             text-align: center;
+            padding: 8px 12px;
+            font-size: 12px;
         }
 
         .empty-state {
@@ -533,7 +536,7 @@
                                 <button class="btn btn-manage" onclick="manageCollaborators('${proj.project_id}', '${proj.project_name}')">
                                     👥 Gestisci
                                 </button>
-                                <button class="btn btn-danger" onclick="deleteProject('${proj.project_id}', '${proj.project_name}')" style="background: #dc3545;">
+                                <button class="btn btn-danger" onclick="deleteProject('${proj.project_id}', '${proj.project_name}')">
                                     🗑️ Elimina
                                 </button>
                                 ` : ''}

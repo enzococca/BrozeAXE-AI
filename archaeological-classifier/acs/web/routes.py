@@ -1632,7 +1632,8 @@ def ai_multi_analyze():
         stylistic_analyzer = StylisticAnalyzer()
 
         for artifact_id in artifact_ids:
-            if artifact_id not in mesh_processor.meshes:
+            # Lazy load mesh from storage if not in memory
+            if not ensure_mesh_loaded(artifact_id):
                 continue
 
             # Extract morphometric features
