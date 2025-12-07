@@ -3671,6 +3671,31 @@ def compare_savignano_axes():
             import logging
             logging.warning(f"AI interpretation failed: {e}")
 
+        # Save comparison to cache
+        try:
+            from datetime import datetime
+            comparison_data = {
+                'axe1_id': axe1_id,
+                'axe2_id': axe2_id,
+                'overall_similarity': overall_similarity,
+                'feature_comparison': feature_comparison,
+                'ai_interpretation': ai_interpretation,
+                'comparison_date': datetime.now().isoformat()
+            }
+            db.save_comparison(axe1_id, axe2_id, overall_similarity, comparison_data)
+
+            # Also save AI interpretation if present
+            if ai_interpretation:
+                db.save_ai_cache(f'{axe1_id}_vs_{axe2_id}', 'savignano_comparison', {
+                    'axe1_id': axe1_id,
+                    'axe2_id': axe2_id,
+                    'similarity': overall_similarity,
+                    'interpretation': ai_interpretation
+                }, model='comparison_ai')
+        except Exception as cache_err:
+            import logging
+            logging.warning(f"Could not cache comparison: {cache_err}")
+
         return jsonify({
             'status': 'success',
             'axe1_id': axe1_id,

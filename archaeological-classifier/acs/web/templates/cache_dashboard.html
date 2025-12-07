@@ -8,6 +8,67 @@
     <p>Visualizza, cerca e aggrega i dati salvati nel database</p>
 </div>
 
+<!-- Help Section (collapsible) -->
+<div class="card" style="margin-bottom: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+    <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="toggleHelp()">
+        <h3 style="margin: 0;">❓ Come funziona il sistema di Cache</h3>
+        <span id="help-toggle-icon" style="font-size: 1.5em;">▼</span>
+    </div>
+    <div id="help-content" style="display: none; margin-top: 15px; padding: 15px; background: rgba(255,255,255,0.1); border-radius: 8px;">
+        <h4>📝 Cosa deve fare l'utente PRIMA di vedere dati qui:</h4>
+        <ol style="margin: 10px 0; padding-left: 20px;">
+            <li><strong>Caricare artefatti</strong> - Vai su Upload e carica le mesh 3D (.obj)</li>
+            <li><strong>Estrarre features</strong> - Vai su Savignano Analysis per estrarre le misure morfometriche</li>
+            <li><strong>Eseguire analisi</strong> - I dati vengono salvati automaticamente quando esegui:
+                <ul style="margin: 5px 0;">
+                    <li>🔬 <strong>PCA/Clustering</strong> (Morphometric Analysis)</li>
+                    <li>🔍 <strong>Comparazioni</strong> (Compare o Find Similar)</li>
+                    <li>📄 <strong>Report comprensivi</strong> (Savignano Comprehensive Report)</li>
+                    <li>🤖 <strong>Interpretazioni AI</strong> (quando chiedi analisi all'AI)</li>
+                </ul>
+            </li>
+        </ol>
+
+        <h4 style="margin-top: 15px;">📊 Tipi di dati salvati:</h4>
+        <table style="width: 100%; margin-top: 10px; font-size: 0.9em;">
+            <tr><td>🔬 <code>pca_analysis</code></td><td>Risultati PCA con componenti selezionate</td></tr>
+            <tr><td>📊 <code>clustering_analysis</code></td><td>Risultati clustering con assegnazioni</td></tr>
+            <tr><td>🔨 <code>hammering_analysis</code></td><td>Analisi martellatura dal report</td></tr>
+            <tr><td>🔥 <code>casting_analysis</code></td><td>Analisi fusione dal report</td></tr>
+            <tr><td>📄 <code>comprehensive_report</code></td><td>Report completo generato</td></tr>
+            <tr><td>🏺 <code>savignano_interpretation</code></td><td>Interpretazione AI Savignano</td></tr>
+            <tr><td>⚙️ <code>tech_analysis</code></td><td>Analisi tecnologica AI</td></tr>
+            <tr><td>🔍 <code>savignano_comparison</code></td><td>Comparazioni Savignano con AI</td></tr>
+        </table>
+
+        <h4 style="margin-top: 15px;">💡 Vantaggi della cache:</h4>
+        <ul style="margin: 5px 0; padding-left: 20px;">
+            <li>✅ <strong>Risparmio token AI</strong> - Non rigenera analisi già fatte</li>
+            <li>✅ <strong>Risposte immediate</strong> - Dati già calcolati</li>
+            <li>✅ <strong>Ricerca e aggregazione</strong> - Trova pattern nei dati</li>
+            <li>✅ <strong>Export completo</strong> - Scarica tutto in JSON</li>
+        </ul>
+    </div>
+</div>
+
+<!-- Search/Query Bar -->
+<div class="card" style="margin-bottom: 20px;">
+    <h3>🔎 Ricerca Globale</h3>
+    <p style="font-size: 0.9em; color: #666; margin-bottom: 10px;">
+        Cerca in tutti i dati cached (interpretazioni AI, comparazioni, analisi)
+    </p>
+    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <input type="text" id="global-search" class="form-control" placeholder="Cerca parola chiave (es. 'martellatura', 'cluster 0', 'SAV_001')..."
+               style="flex: 1; min-width: 300px;" onkeyup="globalSearch(event)">
+        <button class="btn btn-primary" onclick="executeGlobalSearch()">🔍 Cerca</button>
+        <button class="btn btn-secondary" onclick="clearGlobalSearch()">✖ Cancella</button>
+    </div>
+    <div id="global-search-results" style="margin-top: 15px; display: none;">
+        <h4>Risultati ricerca:</h4>
+        <div id="search-results-content"></div>
+    </div>
+</div>
+
 <!-- Statistics Cards -->
 <div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px;">
     <div class="stat-card card" style="text-align: center; padding: 20px;">
@@ -595,6 +656,118 @@ async function exportAllData() {
     } catch (error) {
         alert('Errore durante l\'export: ' + error.message);
     }
+}
+
+// Toggle help section visibility
+function toggleHelp() {
+    const content = document.getElementById('help-content');
+    const icon = document.getElementById('help-toggle-icon');
+
+    if (content.style.display === 'none') {
+        content.style.display = 'block';
+        icon.textContent = '▲';
+    } else {
+        content.style.display = 'none';
+        icon.textContent = '▼';
+    }
+}
+
+// Global search - handle Enter key
+function globalSearch(event) {
+    if (event.key === 'Enter') {
+        executeGlobalSearch();
+    }
+}
+
+// Execute global search across all cached data
+function executeGlobalSearch() {
+    const searchTerm = document.getElementById('global-search').value.toLowerCase().trim();
+    const resultsContainer = document.getElementById('global-search-results');
+    const resultsContent = document.getElementById('search-results-content');
+
+    if (!searchTerm) {
+        resultsContainer.style.display = 'none';
+        return;
+    }
+
+    const results = [];
+
+    // Search in AI cache
+    allAICache.forEach(item => {
+        const content = typeof item.content === 'string' ? item.content : JSON.stringify(item.content);
+        if (content.toLowerCase().includes(searchTerm) ||
+            item.artifact_id.toLowerCase().includes(searchTerm) ||
+            item.cache_type.toLowerCase().includes(searchTerm)) {
+            results.push({
+                type: 'ai_cache',
+                label: `🤖 ${item.artifact_id} - ${item.cache_type}`,
+                date: item.created_date,
+                content: content,
+                highlight: highlightText(content.substring(0, 300), searchTerm)
+            });
+        }
+    });
+
+    // Search in comparisons
+    allComparisons.forEach(item => {
+        if (item.artifact1_id.toLowerCase().includes(searchTerm) ||
+            item.artifact2_id.toLowerCase().includes(searchTerm)) {
+            results.push({
+                type: 'comparison',
+                label: `🔍 ${item.artifact1_id} ↔️ ${item.artifact2_id}`,
+                date: item.comparison_date,
+                content: `Similarity: ${(item.similarity_score * 100).toFixed(1)}%`,
+                highlight: `Similarity: ${(item.similarity_score * 100).toFixed(1)}%`
+            });
+        }
+    });
+
+    // Display results
+    resultsContainer.style.display = 'block';
+
+    if (results.length === 0) {
+        resultsContent.innerHTML = `
+            <p style="color: #666;">Nessun risultato trovato per "<strong>${searchTerm}</strong>"</p>
+            <p style="font-size: 0.9em; color: #999;">Suggerimenti:
+                <ul>
+                    <li>Prova a cercare un ID artefatto (es. SAV_001)</li>
+                    <li>Cerca termini specifici (es. "martellatura", "cluster", "componenti")</li>
+                    <li>Cerca tipi di cache (es. "pca", "clustering", "hammering")</li>
+                </ul>
+            </p>
+        `;
+        return;
+    }
+
+    resultsContent.innerHTML = `
+        <p style="margin-bottom: 15px;">Trovati <strong>${results.length}</strong> risultati per "<strong>${searchTerm}</strong>"</p>
+        ${results.slice(0, 20).map(r => `
+            <div class="cache-item" style="margin-bottom: 10px;">
+                <div class="cache-item-header">
+                    <strong>${r.label}</strong>
+                    <small style="color: #666;">${new Date(r.date).toLocaleDateString('it-IT')}</small>
+                </div>
+                <div style="font-size: 0.9em; color: #4a5568; margin-top: 5px;">
+                    ${r.highlight}${r.content.length > 300 ? '...' : ''}
+                </div>
+            </div>
+        `).join('')}
+        ${results.length > 20 ? `<p style="color: #666; font-style: italic;">...e altri ${results.length - 20} risultati</p>` : ''}
+    `;
+}
+
+// Highlight search term in text
+function highlightText(text, searchTerm) {
+    if (!searchTerm) return text;
+    const regex = new RegExp(`(${searchTerm})`, 'gi');
+    return text.replace(regex, '<mark style="background: #fef08a; padding: 0 2px;">$1</mark>');
+}
+
+// Clear global search
+function clearGlobalSearch() {
+    document.getElementById('global-search').value = '';
+    document.getElementById('global-search-results').style.display = 'none';
+    document.getElementById('search-results-content').innerHTML = '';
 }
 </script>
 {% endblock %}
