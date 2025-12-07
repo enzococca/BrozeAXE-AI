@@ -722,6 +722,144 @@ class ArtifactDatabase:
                 return data
             return None
 
+    def get_all_comparisons(self, artifact_id: str = None, limit: int = 100) -> List[Dict]:
+        """Get all comparisons, optionally filtered by artifact."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            if artifact_id:
+                cursor.execute('''
+                    SELECT * FROM comparisons
+                    WHERE artifact1_id = ? OR artifact2_id = ?
+                    ORDER BY comparison_date DESC
+                    LIMIT ?
+                ''', (artifact_id, artifact_id, limit))
+            else:
+                cursor.execute('''
+                    SELECT * FROM comparisons
+                    ORDER BY comparison_date DESC
+                    LIMIT ?
+                ''', (limit,))
+
+            results = []
+            for row in cursor.fetchall():
+                data = dict(row)
+                try:
+                    data['comparison_data'] = json.loads(data['comparison_data'])
+                except:
+                    pass
+                results.append(data)
+            return results
+
+    def get_all_ai_cache(self, artifact_id: str = None, cache_type: str = None) -> List[Dict]:
+        """Get all AI cache entries for querying and visualization."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            query = 'SELECT * FROM ai_cache WHERE 1=1'
+            params = []
+
+            if artifact_id:
+                query += ' AND artifact_id = ?'
+                params.append(artifact_id)
+            if cache_type:
+                query += ' AND cache_type = ?'
+                params.append(cache_type)
+
+            query += ' ORDER BY created_date DESC'
+            cursor.execute(query, params)
+
+            results = []
+            for row in cursor.fetchall():
+                data = dict(row)
+                try:
+                    data['content'] = json.loads(data['content_json'])
+                    del data['content_json']
+                except:
+                    pass
+                results.append(data)
+            return results
+
+    def get_cache_statistics(self) -> Dict:
+        """Get statistics about all cached data for monitoring."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            stats = {}
+
+            # AI cache stats
+            cursor.execute('SELECT cache_type, COUNT(*) as count FROM ai_cache GROUP BY cache_type')
+            stats['ai_cache'] = {row['cache_type']: row['count'] for row in cursor.fetchall()}
+
+            # Comparison stats
+            cursor.execute('SELECT COUNT(*) as count FROM comparisons')
+            stats['comparisons_count'] = cursor.fetchone()['count']
+
+            # Analysis results stats
+            cursor.execute('SELECT analysis_type, COUNT(*) as count FROM analysis_results GROUP BY analysis_type')
+            stats['analysis_results'] = {row['analysis_type']: row['count'] for row in cursor.fetchall()}
+
+            # Features stats
+            cursor.execute('SELECT COUNT(DISTINCT artifact_id) as count FROM features')
+            stats['artifacts_with_features'] = cursor.fetchone()['count']
+
+            # Stylistic features stats
+            cursor.execute('SELECT COUNT(DISTINCT artifact_id) as count FROM stylistic_features')
+            stats['artifacts_with_stylistic'] = cursor.fetchone()['count']
+
+            return stats
+
+    def save_similarity_search(self, query_id: str, results: List[Dict],
+                               search_params: Dict = None) -> int:
+        """Save similarity search results for reuse."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            result_ids = [r.get('artifact_id') for r in results]
+            cursor.execute('''
+                INSERT INTO analysis_results
+                (analysis_type, artifact_ids, results_json, analysis_date)
+                VALUES (?, ?, ?, ?)
+            ''', (
+                'similarity_search',
+                json.dumps([query_id] + result_ids),
+                json.dumps({
+                    'query_id': query_id,
+                    'params': search_params or {},
+                    'results': results
+                }),
+                datetime.now().isoformat()
+            ))
+            return cursor.lastrowid
+
+    def get_similarity_search(self, query_id: str) -> Optional[Dict]:
+        """Get cached similarity search results for an artifact."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT * FROM analysis_results
+                WHERE analysis_type = 'similarity_search'
+                AND artifact_ids LIKE ?
+                ORDER BY analysis_date DESC
+                LIMIT 1
+            ''', (f'["{query_id}"%',))
+
+            row = cursor.fetchone()
+            if row:
+                data = dict(row)
+                data['results'] = json.loads(data['results_json'])
+                del data['results_json']
+                data['artifact_ids'] = json.loads(data['artifact_ids'])
+                return data
+            return None
+
+    def get_artifact_reports(self, artifact_id: str) -> Dict:
+        """Get all cached reports and analyses for an artifact."""
+        return {
+            'ai_interpretations': self.get_all_ai_cache(artifact_id=artifact_id),
+            'comparisons': self.get_all_comparisons(artifact_id=artifact_id),
+            'features': self.get_features(artifact_id),
+            'similarity_searches': self.get_similarity_search(artifact_id)
+        }
+
     # ========== PROJECT MANAGEMENT OPERATIONS ==========
 
     def create_project(self, project_id: str, name: str, owner_id: int, description: str = None):
