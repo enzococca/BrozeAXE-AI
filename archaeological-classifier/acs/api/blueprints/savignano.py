@@ -1110,11 +1110,41 @@ def generate_comprehensive_report_stream(artifact_id: str):
                 yield f"data: {json.dumps({'type': 'error', 'message': f'Artefatto {artifact_id} non trovato'})}\n\n"
                 return
 
-            # Get mesh path
+            # Get mesh path - may be remote (Dropbox) or local
             mesh_path = artifact.get('mesh_path')
-            if not mesh_path or not Path(mesh_path).exists():
-                yield f"data: {json.dumps({'type': 'error', 'message': f'File mesh non trovato per {artifact_id}'})}\n\n"
+            if not mesh_path:
+                yield f"data: {json.dumps({'type': 'error', 'message': f'Percorso mesh non configurato per {artifact_id}'})}\n\n"
                 return
+
+            # Check if mesh exists locally, otherwise download from storage
+            local_mesh_path = Path(mesh_path)
+            if not local_mesh_path.exists():
+                # Need to download from remote storage
+                yield f"data: {json.dumps({'type': 'log', 'message': 'Download mesh da storage remoto...', 'level': 'info'})}\n\n"
+
+                try:
+                    from acs.core.storage import get_default_storage
+                    from flask import current_app
+
+                    storage = get_default_storage()
+                    cache_folder = Path(current_app.config.get('UPLOAD_FOLDER', '/tmp')) / 'mesh_cache'
+                    cache_folder.mkdir(parents=True, exist_ok=True)
+
+                    local_mesh_path = cache_folder / f'{artifact_id}.obj'
+
+                    if not local_mesh_path.exists():
+                        yield f"data: {json.dumps({'type': 'log', 'message': f'Downloading da Dropbox: {mesh_path}', 'level': 'info'})}\n\n"
+                        storage.download_file(mesh_path, str(local_mesh_path))
+                        yield f"data: {json.dumps({'type': 'log', 'message': '✓ Download completato', 'level': 'success'})}\n\n"
+                    else:
+                        yield f"data: {json.dumps({'type': 'log', 'message': '✓ Usando mesh dalla cache locale', 'level': 'success'})}\n\n"
+
+                except Exception as e:
+                    yield f"data: {json.dumps({'type': 'error', 'message': f'Errore download mesh: {str(e)}'})}\n\n"
+                    return
+
+            # Update mesh_path to local path
+            mesh_path = str(local_mesh_path)
 
             yield f"data: {json.dumps({'type': 'log', 'message': f'Mesh trovato: {Path(mesh_path).name}', 'level': 'success'})}\n\n"
 
