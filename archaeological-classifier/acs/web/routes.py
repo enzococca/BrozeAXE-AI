@@ -577,8 +577,22 @@ def morphometric_page():
 def run_pca():
     """Run PCA analysis."""
     try:
+        from acs.core.database import get_database
+
         n_components = request.json.get('n_components')
         explained_variance = request.json.get('explained_variance', 0.95)
+
+        # Load features from database into morphometric analyzer
+        db = get_database()
+        all_features = db.get_all_features()
+
+        # Clear existing and add from database
+        morphometric_analyzer.features = {}
+        for artifact_id, features in all_features.items():
+            morphometric_analyzer.add_features(artifact_id, features)
+
+        if len(morphometric_analyzer.features) < 2:
+            return jsonify({'error': f'Need at least 2 artifacts with features. Found {len(morphometric_analyzer.features)}.'}), 400
 
         results = morphometric_analyzer.fit_pca(
             n_components=n_components,
@@ -594,8 +608,22 @@ def run_pca():
 def run_clustering():
     """Run clustering analysis."""
     try:
+        from acs.core.database import get_database
+
         method = request.json.get('method', 'hierarchical')
         n_clusters = request.json.get('n_clusters')
+
+        # Load features from database into morphometric analyzer
+        db = get_database()
+        all_features = db.get_all_features()
+
+        # Clear existing and add from database
+        morphometric_analyzer.features = {}
+        for artifact_id, features in all_features.items():
+            morphometric_analyzer.add_features(artifact_id, features)
+
+        if len(morphometric_analyzer.features) < 2:
+            return jsonify({'error': f'Need at least 2 artifacts with features. Found {len(morphometric_analyzer.features)}.'}), 400
 
         if method == 'hierarchical':
             results = morphometric_analyzer.hierarchical_clustering(
@@ -717,7 +745,7 @@ def artifacts_page():
         # Get features from database
         features = {}
         try:
-            features = db.get_artifact_features(artifact['artifact_id'])
+            features = db.get_features(artifact['artifact_id'])
         except:
             pass
 
@@ -1615,10 +1643,10 @@ def ai_classify_artifact_stream():
 
 @web_bp.route('/ai-multi-analyze', methods=['POST'])
 def ai_multi_analyze():
-    """Analyze multiple artifacts together with AI."""
+    """Analyze multiple artifacts together with AI using cached features."""
     try:
         from acs.core.ai_assistant import get_ai_assistant
-        from acs.core.stylistic_analyzer import StylisticAnalyzer
+        from acs.core.database import get_database
 
         data = request.json
         artifact_ids = data.get('artifact_ids', [])
@@ -1627,30 +1655,36 @@ def ai_multi_analyze():
         if not artifact_ids:
             return jsonify({'error': 'No artifacts specified'}), 400
 
-        # Prepare artifacts data with morphometric and stylistic features
+        db = get_database()
+
+        # Prepare artifacts data using CACHED features from database (fast!)
         artifacts = []
-        stylistic_analyzer = StylisticAnalyzer()
 
         for artifact_id in artifact_ids:
-            # Lazy load mesh from storage if not in memory
-            if not ensure_mesh_loaded(artifact_id):
+            # Get artifact info from database
+            artifact_info = db.get_artifact(artifact_id)
+            if not artifact_info:
                 continue
 
-            # Extract morphometric features
-            mesh = mesh_processor.meshes[artifact_id]
-            features = mesh_processor._extract_features(mesh, artifact_id)
+            # Get cached features from database (no mesh loading needed!)
+            features = db.get_features(artifact_id)
 
-            # Extract stylistic features using analyze_style (which does everything)
-            stylistic_features = stylistic_analyzer.analyze_style(mesh, artifact_id, features)
+            # Separate morphometric and stylistic features
+            morphometric = {k: v for k, v in features.items() if not isinstance(v, dict)}
+            stylistic = {k: v for k, v in features.items() if isinstance(v, dict)}
+
+            # Add basic artifact info
+            morphometric['n_vertices'] = artifact_info.get('n_vertices', 0)
+            morphometric['n_faces'] = artifact_info.get('n_faces', 0)
 
             artifacts.append({
                 'id': artifact_id,
-                'features': features,
-                'stylistic_features': stylistic_features
+                'features': morphometric,
+                'stylistic_features': stylistic
             })
 
         if not artifacts:
-            return jsonify({'error': 'No valid artifacts found'}), 404
+            return jsonify({'error': 'No valid artifacts found. Make sure features are computed.'}), 404
 
         # Get existing classes
         classes = [
@@ -2450,6 +2484,85 @@ def bulk_assign_artifacts_to_project(project_id):
             'message': f'{len(assigned)} artifacts assigned to project {project_id}'
         })
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@web_bp.route('/batch-extract-features', methods=['POST'])
+def batch_extract_features():
+    """
+    Batch extract features for all artifacts that don't have features.
+    Downloads meshes from storage and computes morphometric features.
+
+    This is a long-running operation - use for one-time data recovery.
+    """
+    import logging
+    from acs.core.database import get_database
+
+    try:
+        db = get_database()
+
+        # Get all artifacts
+        result = db.get_artifacts_paginated(page=1, per_page=10000)
+        all_artifacts = result.get('artifacts', [])
+
+        processed = []
+        skipped = []
+        errors = []
+
+        for artifact in all_artifacts:
+            artifact_id = artifact['artifact_id']
+
+            try:
+                # Check if features already exist
+                existing_features = db.get_features(artifact_id)
+                if existing_features and len(existing_features) > 2:
+                    # Has meaningful features, skip
+                    skipped.append({'artifact_id': artifact_id, 'reason': 'already has features'})
+                    continue
+
+                # Try to load mesh from storage
+                if not ensure_mesh_loaded(artifact_id):
+                    errors.append({'artifact_id': artifact_id, 'error': 'Could not load mesh from storage'})
+                    continue
+
+                # Extract features
+                mesh = mesh_processor.meshes[artifact_id]
+                features = mesh_processor._extract_features(mesh, artifact_id)
+
+                # Save to database
+                db.add_features(artifact_id, features)
+
+                # Also add to morphometric analyzer
+                morphometric_analyzer.add_features(artifact_id, features)
+
+                processed.append({
+                    'artifact_id': artifact_id,
+                    'features_count': len(features),
+                    'volume': features.get('volume'),
+                    'length': features.get('length'),
+                    'width': features.get('width')
+                })
+
+                logging.info(f"✅ Extracted features for {artifact_id}: vol={features.get('volume'):.2f}, len={features.get('length'):.2f}")
+
+            except Exception as e:
+                logging.error(f"❌ Failed to extract features for {artifact_id}: {e}")
+                errors.append({'artifact_id': artifact_id, 'error': str(e)})
+
+        return jsonify({
+            'status': 'success',
+            'total_artifacts': len(all_artifacts),
+            'processed': len(processed),
+            'skipped': len(skipped),
+            'errors': len(errors),
+            'processed_details': processed,
+            'skipped_details': skipped[:10],  # Limit output
+            'error_details': errors
+        })
+
+    except Exception as e:
+        import traceback
+        logging.error(f"Batch feature extraction failed: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
 
 
