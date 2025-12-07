@@ -3010,13 +3010,23 @@ def validate_classification(artifact_id):
 
 @web_bp.route('/technological-analysis/<artifact_id>', methods=['GET'])
 def technological_analysis(artifact_id):
-    """Perform technological analysis on an artifact."""
+    """Perform technological analysis on an artifact.
+
+    Query params:
+        regenerate: If 'true', force AI regeneration (ignore cache)
+    """
     try:
         from acs.core.technological_analyzer import get_technological_analyzer
         from acs.core.ai_assistant import get_ai_assistant
+        from acs.core.database import get_database
 
+        db = get_database()
+        regenerate = request.args.get('regenerate', 'false').lower() == 'true'
+
+        # Lazy load mesh if not in memory
         if artifact_id not in mesh_processor.meshes:
-            return jsonify({'error': 'Artifact not found'}), 404
+            if not ensure_mesh_loaded(artifact_id):
+                return jsonify({'error': 'Artifact not found'}), 404
 
         mesh = mesh_processor.meshes[artifact_id]
 
@@ -3027,32 +3037,47 @@ def technological_analysis(artifact_id):
         # Generate technical report
         tech_report = tech_analyzer.generate_technical_report(tech_features, artifact_id)
 
-        # Get structured AI interpretation (temp=0.1, JSON output)
+        # Check cache for AI interpretation
         ai_interpretation = None
-        try:
-            ai = get_ai_assistant()
-            if ai:
-                ai_result = ai.interpret_technological_analysis(
-                    artifact_id,
-                    tech_features,
-                    tech_report
-                )
+        cached = False
 
-                if ai_result.get('interpretation'):
-                    ai_interpretation = ai_result
-                else:
-                    # Fallback to raw response if JSON parsing failed
-                    ai_interpretation = ai_result.get('raw_response')
-        except Exception as e:
-            print(f"AI interpretation failed: {e}")
-            ai_interpretation = None
+        if not regenerate:
+            cached_data = db.get_ai_cache(artifact_id, 'tech_analysis')
+            if cached_data:
+                ai_interpretation = cached_data['content']
+                cached = True
+
+        # Generate AI interpretation if not cached
+        if ai_interpretation is None:
+            try:
+                ai = get_ai_assistant()
+                if ai:
+                    ai_result = ai.interpret_technological_analysis(
+                        artifact_id,
+                        tech_features,
+                        tech_report
+                    )
+
+                    if ai_result.get('interpretation'):
+                        ai_interpretation = ai_result
+                    else:
+                        # Fallback to raw response if JSON parsing failed
+                        ai_interpretation = ai_result.get('raw_response')
+
+                    # Save to cache
+                    if ai_interpretation:
+                        db.save_ai_cache(artifact_id, 'tech_analysis', ai_interpretation, ai.model if ai else None)
+            except Exception as e:
+                print(f"AI interpretation failed: {e}")
+                ai_interpretation = None
 
         return jsonify({
             'status': 'success',
             'artifact_id': artifact_id,
             'technological_features': tech_features,
             'technical_report': tech_report,
-            'ai_interpretation': ai_interpretation
+            'ai_interpretation': ai_interpretation,
+            'ai_cached': cached
         })
 
     except Exception as e:
@@ -3589,12 +3614,33 @@ Be specific and cite the measurements."""
 
 @web_bp.route('/savignano-ai-interpretation/<artifact_id>', methods=['GET'])
 def get_savignano_ai_interpretation(artifact_id):
-    """Generate AI archaeological interpretation for a Savignano axe."""
+    """Generate AI archaeological interpretation for a Savignano axe.
+
+    Query params:
+        regenerate: If 'true', force regeneration (ignore cache)
+    """
     try:
         from acs.core.database import get_database
         from acs.core.ai_assistant import AIClassificationAssistant
 
         db = get_database()
+
+        # Check if we should use cache
+        regenerate = request.args.get('regenerate', 'false').lower() == 'true'
+
+        if not regenerate:
+            # Try to get from cache first
+            cached = db.get_ai_cache(artifact_id, 'savignano_interpretation')
+            if cached:
+                return jsonify({
+                    'status': 'success',
+                    'artifact_id': artifact_id,
+                    'interpretation': cached['content'],
+                    'model': cached['model'],
+                    'cached': True,
+                    'cached_date': cached['created_date']
+                })
+
         features = db.get_features(artifact_id)
 
         if not features or 'savignano' not in features:
@@ -3641,11 +3687,15 @@ Be specific and reference the actual measurements. Use proper archaeological ter
 
         interpretation = response.content[0].text
 
+        # Save to cache
+        db.save_ai_cache(artifact_id, 'savignano_interpretation', interpretation, ai.model)
+
         return jsonify({
             'status': 'success',
             'artifact_id': artifact_id,
             'interpretation': interpretation,
-            'model': ai.model
+            'model': ai.model,
+            'cached': False
         })
 
     except Exception as e:
