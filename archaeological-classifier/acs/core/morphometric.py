@@ -437,11 +437,47 @@ class MorphometricAnalyzer:
                         'direction': 'alto' if z_scores[idx] > 0 else 'basso'
                     })
 
+            # Generate cluster interpretation
+            cluster_interpretation = self._interpret_cluster(label, distinguishing_features, len(members), len(artifact_ids))
+
             cluster_stats[label] = {
                 'n_members': len(members),
                 'members': members,
-                'distinguishing_features': distinguishing_features
+                'distinguishing_features': distinguishing_features,
+                'interpretation': cluster_interpretation,
+                'percentage': float(len(members) / len(artifact_ids) * 100)
             }
+
+        # Calculate silhouette score if possible
+        silhouette = None
+        if len(clusters) > 1 and len(clusters) < len(artifact_ids):
+            try:
+                from sklearn.metrics import silhouette_score
+                silhouette = float(silhouette_score(X_scaled, labels))
+            except:
+                pass
+
+        # Generate methodology explanation
+        method_explanations = {
+            'ward': "Il metodo Ward minimizza la varianza intra-cluster. È il più usato perché tende a creare cluster di dimensioni simili e compatti.",
+            'complete': "Il metodo Complete (linkage completo) usa la distanza massima tra punti. Crea cluster più separati ma potenzialmente di dimensioni diverse.",
+            'average': "Il metodo Average usa la distanza media tra tutti i punti. È un compromesso tra Ward e Complete."
+        }
+
+        clustering_explanation = {
+            'method_used': method,
+            'method_explanation': method_explanations.get(method, f"Metodo {method}"),
+            'n_clusters_reason': f"Sono stati richiesti {n_clusters} cluster" if n_clusters else f"Numero cluster determinato automaticamente dalla soglia di distanza {distance_threshold}",
+            'quality_score': silhouette,
+            'quality_interpretation': self._interpret_silhouette(silhouette) if silhouette else None,
+            'features_used': len(feature_names),
+            'methodology': (
+                f"Il clustering gerarchico agglomerativo raggruppa gli artefatti partendo da cluster singoli "
+                f"e unendoli progressivamente in base alla similarità morfometrica. "
+                f"Sono state usate {len(feature_names)} features normalizzate (standardizzate a media 0 e deviazione standard 1) "
+                f"per garantire che tutte le misure contribuiscano equamente."
+            )
+        }
 
         return {
             'n_clusters': len(clusters),
@@ -450,8 +486,36 @@ class MorphometricAnalyzer:
             'labels': {aid: int(label) for aid, label in zip(artifact_ids, labels)},
             'method': method,
             'feature_names': feature_names,
-            'n_artifacts': len(artifact_ids)
+            'n_artifacts': len(artifact_ids),
+            'clustering_explanation': clustering_explanation
         }
+
+    def _interpret_cluster(self, cluster_id: int, distinguishing_features: list, n_members: int, total: int) -> str:
+        """Generate interpretation for a cluster based on its distinguishing features."""
+        if not distinguishing_features:
+            return f"Cluster {cluster_id}: gruppo di {n_members} artefatti con caratteristiche non distintive."
+
+        # Get top 2 distinguishing features
+        top_feats = distinguishing_features[:2]
+        descriptions = []
+
+        for feat in top_feats:
+            direction = "più alto" if feat['direction'] == 'alto' else "più basso"
+            descriptions.append(f"{feat['name']} {direction} della media")
+
+        pct = (n_members / total * 100)
+        return f"Cluster {cluster_id} ({pct:.1f}% degli artefatti): caratterizzato da {', '.join(descriptions)}."
+
+    def _interpret_silhouette(self, score: float) -> str:
+        """Interpret silhouette score."""
+        if score > 0.7:
+            return f"Eccellente ({score:.2f}): i cluster sono molto ben separati e coesi."
+        elif score > 0.5:
+            return f"Buono ({score:.2f}): i cluster sono ragionevolmente ben definiti."
+        elif score > 0.25:
+            return f"Discreto ({score:.2f}): esiste una struttura di clustering ma alcuni artefatti potrebbero essere al confine."
+        else:
+            return f"Debole ({score:.2f}): i cluster si sovrappongono significativamente, considera un numero diverso di cluster."
 
     def dbscan_clustering(
         self,
