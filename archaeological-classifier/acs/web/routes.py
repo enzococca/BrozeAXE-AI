@@ -1205,13 +1205,31 @@ def serve_texture_file(artifact_id, filename):
 
 @web_bp.route('/compare-artifacts', methods=['POST'])
 def compare_artifacts():
-    """Compare two artifacts with morphometric and stylistic analysis."""
+    """Compare two artifacts with morphometric and stylistic analysis.
+
+    Results are cached in the database to avoid recomputing.
+    Pass regenerate=true to force recomputation.
+    """
     try:
         from acs.core.stylistic_analyzer import get_stylistic_analyzer
+        from acs.core.database import get_database
 
         data = request.json
         artifact1 = data.get('artifact1')
         artifact2 = data.get('artifact2')
+        regenerate = data.get('regenerate', False)
+
+        db = get_database()
+
+        # Check for cached comparison (unless regenerate requested)
+        if not regenerate:
+            cached = db.get_comparison(artifact1, artifact2)
+            if cached:
+                return jsonify({
+                    **cached['comparison_data'],
+                    'cached': True,
+                    'cached_date': cached['comparison_date']
+                })
 
         # Lazy load meshes from storage if not in memory
         if not ensure_mesh_loaded(artifact1) or not ensure_mesh_loaded(artifact2):
@@ -1301,7 +1319,8 @@ def compare_artifacts():
         print(f"Final morphometric similarity: {morphometric_similarity}")
         print(f"=== END DEBUG ===\n")
 
-        return jsonify({
+        # Build result
+        result = {
             'status': 'success',
             'morphometric_similarity': float(morphometric_similarity),
             'stylistic_similarities': stylistic_similarities,
@@ -1309,7 +1328,12 @@ def compare_artifacts():
             'feature_differences': feature_differences,
             'style1': style1,
             'style2': style2
-        })
+        }
+
+        # Save to cache
+        db.save_comparison(artifact1, artifact2, float(overall_similarity), result)
+
+        return jsonify({**result, 'cached': False})
     except Exception as e:
         import traceback
         error_details = {
@@ -1430,12 +1454,21 @@ def find_similar_artifacts():
                 'features': {k: v for k, v in features.items() if isinstance(v, (int, float))}
             })
 
+        # Save search results to database for reuse
+        search_params = {
+            'n_results': n_results,
+            'min_similarity': min_similarity,
+            'include_stylistic': include_stylistic
+        }
+        db.save_similarity_search(query_id, results, search_params)
+
         return jsonify({
             'status': 'success',
             'query_id': query_id,
             'n_results': len(results),
             'comparison_type': 'morphometric' + ('+stylistic' if include_stylistic else ''),
-            'results': results
+            'results': results,
+            'cached': False
         })
 
     except Exception as e:
@@ -3752,3 +3785,141 @@ Be specific and reference the actual measurements. Use proper archaeological ter
         logging.error(f"Error generating Savignano AI interpretation: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
+
+
+# ============= CACHE AND REPORTS API =============
+
+@web_bp.route('/cache-statistics', methods=['GET'])
+def get_cache_statistics():
+    """Get statistics about all cached data in the database."""
+    try:
+        from acs.core.database import get_database
+        db = get_database()
+        stats = db.get_cache_statistics()
+        return jsonify({
+            'status': 'success',
+            **stats
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@web_bp.route('/artifact-reports/<artifact_id>', methods=['GET'])
+def get_artifact_all_reports(artifact_id):
+    """Get all cached reports and analyses for a specific artifact.
+
+    Returns all AI interpretations, comparisons, features, and similarity searches.
+    """
+    try:
+        from acs.core.database import get_database
+        db = get_database()
+        reports = db.get_artifact_reports(artifact_id)
+        return jsonify({
+            'status': 'success',
+            'artifact_id': artifact_id,
+            **reports
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@web_bp.route('/all-comparisons', methods=['GET'])
+def get_all_comparisons():
+    """Get all cached comparison results.
+
+    Optional query params:
+    - artifact_id: Filter by artifact
+    - limit: Max results (default 100)
+    """
+    try:
+        from acs.core.database import get_database
+        db = get_database()
+
+        artifact_id = request.args.get('artifact_id')
+        limit = int(request.args.get('limit', 100))
+
+        comparisons = db.get_all_comparisons(artifact_id=artifact_id, limit=limit)
+        return jsonify({
+            'status': 'success',
+            'count': len(comparisons),
+            'comparisons': comparisons
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@web_bp.route('/all-ai-cache', methods=['GET'])
+def get_all_ai_cache():
+    """Get all AI cache entries for querying and visualization.
+
+    Optional query params:
+    - artifact_id: Filter by artifact
+    - cache_type: Filter by type (savignano_interpretation, tech_analysis, etc.)
+    """
+    try:
+        from acs.core.database import get_database
+        db = get_database()
+
+        artifact_id = request.args.get('artifact_id')
+        cache_type = request.args.get('cache_type')
+
+        entries = db.get_all_ai_cache(artifact_id=artifact_id, cache_type=cache_type)
+        return jsonify({
+            'status': 'success',
+            'count': len(entries),
+            'entries': entries
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@web_bp.route('/all-analyses', methods=['GET'])
+def get_all_analyses():
+    """Get all analysis results (PCA, clustering, similarity searches).
+
+    Optional query params:
+    - analysis_type: Filter by type (pca, clustering, similarity_search)
+    - limit: Max results (default 10)
+    """
+    try:
+        from acs.core.database import get_database
+        db = get_database()
+
+        analysis_type = request.args.get('analysis_type')
+        limit = int(request.args.get('limit', 10))
+
+        results = db.get_analysis_results(analysis_type=analysis_type, limit=limit)
+        return jsonify({
+            'status': 'success',
+            'count': len(results),
+            'results': results
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@web_bp.route('/export-all-data', methods=['GET'])
+def export_all_data():
+    """Export all cached data as JSON for backup or analysis.
+
+    Returns a comprehensive dump of all cached interpretations,
+    comparisons, and analysis results.
+    """
+    try:
+        from acs.core.database import get_database
+        db = get_database()
+
+        export_data = {
+            'export_date': __import__('datetime').datetime.now().isoformat(),
+            'statistics': db.get_cache_statistics(),
+            'ai_cache': db.get_all_ai_cache(),
+            'comparisons': db.get_all_comparisons(limit=1000),
+            'analyses': db.get_analysis_results(limit=100)
+        }
+
+        return jsonify({
+            'status': 'success',
+            **export_data
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
