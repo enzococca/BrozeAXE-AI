@@ -3923,3 +3923,9 @@ def export_all_data():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@web_bp.route('/cache-dashboard')
+def cache_dashboard():
+    """Web page for viewing, searching, and aggregating cached data."""
+    return render_template('cache_dashboard.html')
