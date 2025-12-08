@@ -3,21 +3,44 @@ AI Classification Assistant
 ============================
 
 Uses Claude 4.5 Sonnet to assist with archaeological artifact classification.
+Features connection resilience with automatic retry on network errors.
 """
 
 import anthropic
 import os
 import json
-from typing import Dict, List, Optional, Any
+import logging
+from typing import Dict, List, Optional, Any, Callable
+
+from acs.core.resilient_ai import (
+    ResilientAnthropicClient,
+    RetryConfig,
+    get_resilient_client,
+    AnalysisSession
+)
+
+logger = logging.getLogger(__name__)
 
 
 class AIClassificationAssistant:
     """
     AI assistant for archaeological classification using Claude 4.5.
+
+    Features:
+    - Automatic retry on connection errors
+    - Exponential backoff for rate limits
+    - Progress callbacks for long operations
+    - Session resumption for batch operations
     """
 
-    def __init__(self, api_key: str = None):
-        """Initialize AI assistant."""
+    def __init__(self, api_key: str = None, retry_config: RetryConfig = None):
+        """
+        Initialize AI assistant with connection resilience.
+
+        Args:
+            api_key: Anthropic API key (defaults to env var)
+            retry_config: Custom retry configuration
+        """
         # Try environment variable first, then parameter
         if api_key is None:
             api_key = os.getenv('ANTHROPIC_API_KEY')
@@ -26,8 +49,41 @@ class AIClassificationAssistant:
         if not self.api_key:
             raise ValueError("API key not configured. Set ANTHROPIC_API_KEY environment variable on Railway.")
 
-        self.client = anthropic.Anthropic(api_key=self.api_key)
+        # Use resilient client for all API calls
+        self.retry_config = retry_config or RetryConfig(
+            max_retries=5,
+            base_delay=2.0,
+            max_delay=60.0
+        )
+        self.resilient_client = ResilientAnthropicClient(
+            api_key=self.api_key,
+            retry_config=self.retry_config
+        )
+
+        # Also keep raw client for compatibility
+        self.client = self.resilient_client.client
         self.model = "claude-sonnet-4-5-20250929"  # Latest Claude Sonnet 4.5 model
+
+        # Progress callback for UI updates
+        self._progress_callback: Optional[Callable[[str, int, int], None]] = None
+
+    def set_progress_callback(self, callback: Callable[[str, int, int], None]):
+        """
+        Set callback for progress updates.
+
+        Args:
+            callback: Function(message, current_step, total_steps)
+        """
+        self._progress_callback = callback
+        self.resilient_client.set_progress_callback(callback)
+
+    def _notify_progress(self, message: str, current: int = -1, total: int = -1):
+        """Send progress notification if callback is set."""
+        if self._progress_callback:
+            try:
+                self._progress_callback(message, current, total)
+            except Exception as e:
+                logger.warning(f"Progress callback error: {e}")
 
     def analyze_artifact(self, artifact_id: str, features: Dict[str, Any],
                         existing_classes: List[Dict] = None,
@@ -50,7 +106,10 @@ class AIClassificationAssistant:
         )
 
         try:
-            response = self.client.messages.create(
+            self._notify_progress(f"Analisi artefatto {artifact_id}...")
+
+            # Use resilient client with automatic retry
+            response = self.resilient_client.create_message(
                 model=self.model,
                 max_tokens=2000,
                 temperature=0.3,  # Lower temperature for more focused responses
@@ -63,6 +122,8 @@ class AIClassificationAssistant:
             # Parse response
             analysis_text = response.content[0].text
 
+            self._notify_progress(f"Analisi {artifact_id} completata")
+
             return {
                 'artifact_id': artifact_id,
                 'analysis': analysis_text,
@@ -74,6 +135,7 @@ class AIClassificationAssistant:
             }
 
         except Exception as e:
+            logger.error(f"AI analysis failed for {artifact_id}: {e}")
             return {
                 'artifact_id': artifact_id,
                 'error': str(e),
@@ -101,8 +163,10 @@ class AIClassificationAssistant:
         )
 
         try:
-            # Use streaming API
-            with self.client.messages.stream(
+            self._notify_progress(f"Streaming analisi {artifact_id}...")
+
+            # Use resilient streaming with automatic retry
+            for text in self.resilient_client.stream_message(
                 model=self.model,
                 max_tokens=2000,
                 temperature=0.3,
@@ -110,12 +174,13 @@ class AIClassificationAssistant:
                     "role": "user",
                     "content": prompt
                 }]
-            ) as stream:
-                for text in stream.text_stream:
-                    yield text
+            ):
+                yield text
 
         except Exception as e:
-            yield f"\n\n❌ Error: {str(e)}"
+            logger.error(f"Streaming failed for {artifact_id}: {e}")
+            yield f"\n\n⚠️ Connessione persa. Errore: {str(e)}\n"
+            yield "Riprova l'analisi per continuare."
 
     def _build_classification_prompt(self, artifact_id: str, features: Dict,
                                      existing_classes: List[Dict] = None,
@@ -294,7 +359,10 @@ Provide a detailed but concise analysis (max 400 words).
 """
 
         try:
-            response = self.client.messages.create(
+            self._notify_progress(f"Comparazione {artifact1_id} vs {artifact2_id}...")
+
+            # Use resilient client
+            response = self.resilient_client.create_message(
                 model=self.model,
                 max_tokens=1500,
                 temperature=0.4,
@@ -311,6 +379,7 @@ Provide a detailed but concise analysis (max 400 words).
             }
 
         except Exception as e:
+            logger.error(f"Comparison failed: {e}")
             return {
                 'error': str(e),
                 'comparison_text': None
@@ -377,7 +446,10 @@ Format as JSON with these sections as keys.
 """
 
         try:
-            response = self.client.messages.create(
+            self._notify_progress("Generazione contenuto report...")
+
+            # Use resilient client
+            response = self.resilient_client.create_message(
                 model=self.model,
                 max_tokens=2000,
                 temperature=0.5,
@@ -407,6 +479,7 @@ Format as JSON with these sections as keys.
                 }
 
         except Exception as e:
+            logger.error(f"Report generation failed: {e}")
             return {
                 'error': str(e),
                 'full_text': None
@@ -464,7 +537,10 @@ Format as structured JSON.
 """
 
         try:
-            response = self.client.messages.create(
+            self._notify_progress("Suggerimento definizione classe...")
+
+            # Use resilient client
+            response = self.resilient_client.create_message(
                 model=self.model,
                 max_tokens=1500,
                 temperature=0.4,
@@ -488,6 +564,7 @@ Format as structured JSON.
                 }
 
         except Exception as e:
+            logger.error(f"Class definition suggestion failed: {e}")
             return {
                 'error': str(e),
                 'suggestion_text': None
@@ -652,7 +729,10 @@ Provide a comprehensive, actionable analysis that I can use to optimize the clas
 """
 
         try:
-            response = self.client.messages.create(
+            self._notify_progress(f"Analisi multi-artefatto ({len(artifacts)} elementi)...")
+
+            # Use resilient client
+            response = self.resilient_client.create_message(
                 model=self.model,
                 max_tokens=4000,  # Longer response for multi-artifact analysis
                 temperature=0.3,
@@ -695,6 +775,7 @@ Provide a comprehensive, actionable analysis that I can use to optimize the clas
                 }
 
         except Exception as e:
+            logger.error(f"Multi-artifact analysis failed: {e}")
             return {
                 'error': str(e),
                 'analysis': None,
@@ -785,7 +866,10 @@ Suggest optimal analysis parameters for this specific artifact:
 """
 
         try:
-            response = self.client.messages.create(
+            self._notify_progress(f"Suggerimento parametri per {artifact_id}...")
+
+            # Use resilient client
+            response = self.resilient_client.create_message(
                 model=self.model,
                 max_tokens=2000,
                 temperature=0.3,
@@ -817,6 +901,7 @@ Suggest optimal analysis parameters for this specific artifact:
                 }
 
         except Exception as e:
+            logger.error(f"Parameter suggestion failed: {e}")
             return {
                 'error': str(e),
                 'parameters': None
@@ -887,7 +972,10 @@ Analyze this technological data for artifact {artifact_id} and provide a STRUCTU
 """
 
         try:
-            response = self.client.messages.create(
+            self._notify_progress(f"Interpretazione tecnologica per {artifact_id}...")
+
+            # Use resilient client
+            response = self.resilient_client.create_message(
                 model=self.model,
                 max_tokens=1500,
                 temperature=0.1,  # Very low for factual responses
@@ -931,6 +1019,7 @@ Analyze this technological data for artifact {artifact_id} and provide a STRUCTU
                 }
 
         except Exception as e:
+            logger.error(f"Technological interpretation failed for {artifact_id}: {e}")
             return {
                 'artifact_id': artifact_id,
                 'error': str(e),
@@ -995,7 +1084,10 @@ Base ONLY on the numerical data provided. Use EXACT statistics from the report.
 """
 
         try:
-            response = self.client.messages.create(
+            self._notify_progress("Interpretazione batch tecnologica...")
+
+            # Use resilient client
+            response = self.resilient_client.create_message(
                 model=self.model,
                 max_tokens=2000,
                 temperature=0.1,
@@ -1027,6 +1119,7 @@ Base ONLY on the numerical data provided. Use EXACT statistics from the report.
                 }
 
         except Exception as e:
+            logger.error(f"Batch technological interpretation failed: {e}")
             return {
                 'error': str(e),
                 'interpretation': None

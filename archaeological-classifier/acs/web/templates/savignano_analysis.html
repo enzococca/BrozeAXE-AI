@@ -1068,8 +1068,26 @@ async function configureAnalysis() {
     }
 }
 
+// Connection retry configuration
+const RETRY_CONFIG = {
+    maxRetries: 5,
+    baseDelay: 2000,
+    maxDelay: 60000,
+    exponentialBase: 2
+};
+
+let analysisRetryCount = 0;
+let isAnalysisRunning = false;
+
 async function runAnalysis() {
     if (!currentAnalysisId) return;
+    if (isAnalysisRunning) {
+        console.log('Analysis already running');
+        return;
+    }
+
+    isAnalysisRunning = true;
+    analysisRetryCount = 0;
 
     const logDiv = document.getElementById('analysis-log');
     const progressBar = document.getElementById('progress-bar-fill');
@@ -1079,71 +1097,202 @@ async function runAnalysis() {
             'info': '#667eea',
             'success': '#48bb78',
             'warning': '#ed8936',
-            'error': '#f56565'
+            'error': '#f56565',
+            'retry': '#9f7aea'
         };
         const entry = document.createElement('div');
-        entry.style.color = colors[type];
+        entry.style.color = colors[type] || colors.info;
         entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
         logDiv.appendChild(entry);
         logDiv.scrollTop = logDiv.scrollHeight;
     }
 
-    addLog('Starting comprehensive analysis...', 'info');
-    progressBar.style.width = '10%';
-    progressBar.textContent = '10%';
+    function calculateDelay(attempt) {
+        const delay = Math.min(
+            RETRY_CONFIG.baseDelay * Math.pow(RETRY_CONFIG.exponentialBase, attempt),
+            RETRY_CONFIG.maxDelay
+        );
+        return delay * (0.5 + Math.random()); // Add jitter
+    }
 
-    try {
-        // Start analysis
-        addLog('Step 1/4: Extracting morphometric features from 3D meshes...', 'info');
-        progressBar.style.width = '30%';
-        progressBar.textContent = '30%';
+    async function attemptAnalysis() {
+        addLog('Starting comprehensive analysis...', 'info');
+        progressBar.style.width = '10%';
+        progressBar.textContent = '10%';
 
-        const response = await AuthHelper.fetch('/api/savignano/run-analysis', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({analysis_id: currentAnalysisId})
-        });
+        try {
+            // Start analysis
+            addLog('Step 1/4: Extracting morphometric features from 3D meshes...', 'info');
+            progressBar.style.width = '30%';
+            progressBar.textContent = '30%';
 
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Analysis failed');
+            const response = await AuthHelper.fetch('/api/savignano/run-analysis', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({analysis_id: currentAnalysisId})
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Analysis failed');
+            }
+
+            addLog('Step 2/4: Identifying mold matrices via hierarchical clustering...', 'info');
+            progressBar.style.width = '60%';
+            progressBar.textContent = '60%';
+
+            // Poll for completion (simple version - in production use websockets)
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            addLog('Step 3/4: Estimating fusions per matrix...', 'info');
+            progressBar.style.width = '80%';
+            progressBar.textContent = '80%';
+
+            await new Promise(resolve => setTimeout(resolve, 1500));
+
+            addLog('Step 4/4: Generating archaeological Q&A with AI...', 'info');
+            progressBar.style.width = '95%';
+            progressBar.textContent = '95%';
+
+            // Get results
+            const result = await response.json();
+
+            progressBar.style.width = '100%';
+            progressBar.textContent = '100%';
+            addLog('✓ Analysis completed successfully!', 'success');
+
+            // Show results
+            document.getElementById('step-3-status').textContent = 'Completed';
+            document.getElementById('step-3-status').className = 'badge badge-success';
+            document.getElementById('step-3').classList.remove('active');
+            document.getElementById('step-3').classList.add('completed');
+
+            isAnalysisRunning = false;
+            displayResults(result);
+            return true;
+
+        } catch (error) {
+            // Check if it's a connection error that should be retried
+            const isConnectionError = (
+                error.name === 'TypeError' ||
+                error.message.includes('NetworkError') ||
+                error.message.includes('Failed to fetch') ||
+                error.message.includes('Connection') ||
+                error.message.includes('timeout') ||
+                error.message.includes('network')
+            );
+
+            if (isConnectionError && analysisRetryCount < RETRY_CONFIG.maxRetries) {
+                analysisRetryCount++;
+                const delay = calculateDelay(analysisRetryCount);
+                const delaySeconds = Math.round(delay / 1000);
+
+                addLog(`⚠️ Connessione persa. Tentativo ${analysisRetryCount}/${RETRY_CONFIG.maxRetries} tra ${delaySeconds}s...`, 'retry');
+
+                // Show reconnection banner
+                showReconnectionBanner(analysisRetryCount, RETRY_CONFIG.maxRetries, delaySeconds);
+
+                await new Promise(resolve => setTimeout(resolve, delay));
+
+                addLog(`🔄 Riconnessione in corso...`, 'retry');
+                hideReconnectionBanner();
+
+                return attemptAnalysis(); // Recursive retry
+            }
+
+            // Non-retryable error or max retries exceeded
+            addLog(`✗ Error: ${error.message}`, 'error');
+
+            if (analysisRetryCount >= RETRY_CONFIG.maxRetries) {
+                addLog('Numero massimo di tentativi raggiunto. Usa il pulsante "Riprova" per continuare.', 'warning');
+                showRetryButton();
+            }
+
+            isAnalysisRunning = false;
+            return false;
         }
+    }
 
-        addLog('Step 2/4: Identifying mold matrices via hierarchical clustering...', 'info');
-        progressBar.style.width = '60%';
-        progressBar.textContent = '60%';
+    await attemptAnalysis();
+}
 
-        // Poll for completion (simple version - in production use websockets)
-        await new Promise(resolve => setTimeout(resolve, 2000));
+function showReconnectionBanner(attempt, maxAttempts, delaySeconds) {
+    let banner = document.getElementById('reconnection-banner');
+    if (!banner) {
+        banner = document.createElement('div');
+        banner.id = 'reconnection-banner';
+        banner.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(90deg, #9f7aea, #667eea);
+            color: white;
+            padding: 15px;
+            text-align: center;
+            z-index: 10000;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        `;
+        document.body.prepend(banner);
+    }
+    banner.innerHTML = `
+        <span style="font-size: 18px;">⏳</span>
+        <strong>Connessione persa - Riconnessione automatica</strong>
+        <span style="margin-left: 10px;">Tentativo ${attempt}/${maxAttempts} tra <span id="countdown">${delaySeconds}</span>s</span>
+        <button onclick="cancelRetry()" style="margin-left: 20px; padding: 5px 15px; background: white; color: #667eea; border: none; border-radius: 4px; cursor: pointer;">
+            Annulla
+        </button>
+    `;
+    banner.style.display = 'block';
 
-        addLog('Step 3/4: Estimating fusions per matrix...', 'info');
-        progressBar.style.width = '80%';
-        progressBar.textContent = '80%';
+    // Countdown timer
+    let remaining = delaySeconds;
+    const countdownEl = document.getElementById('countdown');
+    const countdownInterval = setInterval(() => {
+        remaining--;
+        if (countdownEl) countdownEl.textContent = remaining;
+        if (remaining <= 0) clearInterval(countdownInterval);
+    }, 1000);
+    banner.dataset.countdownInterval = countdownInterval;
+}
 
-        await new Promise(resolve => setTimeout(resolve, 1500));
+function hideReconnectionBanner() {
+    const banner = document.getElementById('reconnection-banner');
+    if (banner) {
+        if (banner.dataset.countdownInterval) {
+            clearInterval(parseInt(banner.dataset.countdownInterval));
+        }
+        banner.style.display = 'none';
+    }
+}
 
-        addLog('Step 4/4: Generating archaeological Q&A with AI...', 'info');
-        progressBar.style.width = '95%';
-        progressBar.textContent = '95%';
+function cancelRetry() {
+    hideReconnectionBanner();
+    isAnalysisRunning = false;
+    analysisRetryCount = RETRY_CONFIG.maxRetries; // Stop retries
+    const logDiv = document.getElementById('analysis-log');
+    if (logDiv) {
+        const entry = document.createElement('div');
+        entry.style.color = '#ed8936';
+        entry.textContent = `[${new Date().toLocaleTimeString()}] Riconnessione annullata dall'utente`;
+        logDiv.appendChild(entry);
+    }
+    showRetryButton();
+}
 
-        // Get results
-        const result = await response.json();
-
-        progressBar.style.width = '100%';
-        progressBar.textContent = '100%';
-        addLog('✓ Analysis completed successfully!', 'success');
-
-        // Show results
-        document.getElementById('step-3-status').textContent = 'Completed';
-        document.getElementById('step-3-status').className = 'badge badge-success';
-        document.getElementById('step-3').classList.remove('active');
-        document.getElementById('step-3').classList.add('completed');
-
-        displayResults(result);
-
-    } catch (error) {
-        addLog('✗ Error: ' + error.message, 'error');
-        alert('Analysis failed: ' + error.message);
+function showRetryButton() {
+    const logDiv = document.getElementById('analysis-log');
+    if (logDiv) {
+        const retryBtn = document.createElement('button');
+        retryBtn.className = 'btn btn-primary';
+        retryBtn.style.marginTop = '15px';
+        retryBtn.innerHTML = '🔄 Riprova Analisi';
+        retryBtn.onclick = function() {
+            this.remove();
+            analysisRetryCount = 0;
+            runAnalysis();
+        };
+        logDiv.appendChild(retryBtn);
     }
 }
 

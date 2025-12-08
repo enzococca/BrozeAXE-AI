@@ -4,6 +4,7 @@ Savignano Archaeological Questions Analyzer
 
 Sistema per rispondere alle 6 domande archeologiche chiave sulle asce di Savignano
 usando analisi quantitativa + interpretazione AI (Claude Sonnet 4.5).
+Features connection resilience with automatic retry on network errors.
 
 Domande archeologiche:
 1. Le diverse dimensioni fanno supporre l'uso di diverse matrici. L'obiettivo è
@@ -33,13 +34,18 @@ Data: Novembre 2025
 
 import json
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Callable
 from pathlib import Path
 import pandas as pd
 import numpy as np
 
 try:
     from anthropic import Anthropic
+    from acs.core.resilient_ai import (
+        ResilientAnthropicClient,
+        RetryConfig,
+        get_resilient_client
+    )
     ANTHROPIC_AVAILABLE = True
 except ImportError:
     ANTHROPIC_AVAILABLE = False
@@ -69,29 +75,59 @@ class SavignanoArchaeologicalQA:
                  matrices_info: Dict,
                  features_df: pd.DataFrame,
                  tech_analysis_df: Optional[pd.DataFrame] = None,
-                 anthropic_api_key: Optional[str] = None):
+                 anthropic_api_key: Optional[str] = None,
+                 progress_callback: Optional[Callable[[str, int, int], None]] = None):
         """
-        Inizializza analyzer.
+        Inizializza analyzer con supporto per connessione resiliente.
 
         Args:
             matrices_info: Dict da MatrixAnalyzer.identify_matrices()
             features_df: DataFrame con features morfometriche
             tech_analysis_df: DataFrame con analisi tecnologica (opzionale)
             anthropic_api_key: API key Anthropic (opzionale, usa env var se None)
+            progress_callback: Callback per aggiornamenti progresso (opzionale)
         """
         self.matrices_info = matrices_info
         self.features_df = features_df
         self.tech_analysis_df = tech_analysis_df
+        self._progress_callback = progress_callback
 
-        # Inizializza Claude client
+        # Inizializza Claude client con supporto resiliente
         if ANTHROPIC_AVAILABLE:
-            self.claude_client = Anthropic(api_key=anthropic_api_key)
+            try:
+                # Use resilient client for automatic retry on connection errors
+                self.resilient_client = ResilientAnthropicClient(
+                    api_key=anthropic_api_key,
+                    retry_config=RetryConfig(
+                        max_retries=5,
+                        base_delay=2.0,
+                        max_delay=60.0
+                    )
+                )
+                if self._progress_callback:
+                    self.resilient_client.set_progress_callback(self._progress_callback)
+                # Keep backward compatibility
+                self.claude_client = self.resilient_client.client
+            except Exception as e:
+                logger.warning(f"Could not initialize resilient client: {e}")
+                # Fallback to standard client
+                self.claude_client = Anthropic(api_key=anthropic_api_key)
+                self.resilient_client = None
         else:
             self.claude_client = None
+            self.resilient_client = None
             logger.warning("Claude API non disponibile. "
                          "Analisi AI limitata a statistiche descrittive.")
 
         logger.info("SavignanoArchaeologicalQA inizializzato")
+
+    def _notify_progress(self, message: str, current: int = -1, total: int = -1):
+        """Send progress notification if callback is set."""
+        if self._progress_callback:
+            try:
+                self._progress_callback(message, current, total)
+            except Exception as e:
+                logger.warning(f"Progress callback error: {e}")
 
     def answer_all_questions(self) -> Dict:
         """
