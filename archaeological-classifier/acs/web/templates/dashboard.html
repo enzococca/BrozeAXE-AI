@@ -232,7 +232,7 @@
 <script>
     // Check authentication
     const token = localStorage.getItem('token');
-    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    let user = JSON.parse(localStorage.getItem('user') || '{}');
 
     if (!token || !user.username) {
         window.location.href = '/web/login';
@@ -242,6 +242,30 @@
     document.getElementById('userName').textContent = user.full_name || user.username;
     document.getElementById('userEmail').textContent = user.email || user.username;
     document.getElementById('userRole').textContent = user.role;
+
+    // Fetch fresh user data to check default password status
+    async function checkDefaultPassword() {
+        try {
+            const response = await fetch('/api/auth/me', {
+                headers: {'Authorization': `Bearer ${token}`}
+            });
+            if (response.ok) {
+                const data = await response.json();
+                if (data.status === 'success' && data.user) {
+                    // Update localStorage with fresh user data
+                    localStorage.setItem('user', JSON.stringify(data.user));
+                    // Check if has default password
+                    if (data.user.has_default_password) {
+                        const alert = document.getElementById('alert');
+                        alert.className = 'alert alert-warning show';
+                        alert.innerHTML = '⚠️ <strong>Security Warning:</strong> You are using the default admin password. Please change it immediately in User Management.';
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error checking password status:', error);
+        }
+    }
 
     // Load statistics
     async function loadStats() {
@@ -363,12 +387,6 @@
             actionsGrid.appendChild(actionCard);
         });
 
-    // Show warning if default password
-    if (user.username === 'admin' && !localStorage.getItem('password_changed')) {
-        const alert = document.getElementById('alert');
-        alert.className = 'alert alert-warning show';
-        alert.innerHTML = '⚠️ <strong>Security Warning:</strong> You are using the default admin password. Please change it immediately in User Management.';
-    }
 
     // Logout function
     function logout() {
@@ -385,7 +403,8 @@
         }
     }
 
-    // Load stats on page load
+    // Load stats and check password on page load
     loadStats();
+    checkDefaultPassword();
 </script>
 {% endblock %}

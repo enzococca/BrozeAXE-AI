@@ -209,13 +209,33 @@ def get_current_user():
         "user": {
             "user_id": 1,
             "username": "user123",
-            "role": "archaeologist"
+            "role": "archaeologist",
+            "has_default_password": false
         }
     }
     """
+    user_data = dict(g.current_user)
+
+    # Check if admin user still has default password
+    if user_data.get('username') == 'admin':
+        try:
+            db = get_database()
+            user = db.get_user_by_username('admin')
+            if user and user.get('password_hash'):
+                # Check if password matches default 'admin123'
+                has_default = PasswordHasher.verify_password('admin123', user['password_hash'])
+                user_data['has_default_password'] = has_default
+            else:
+                user_data['has_default_password'] = False
+        except Exception as e:
+            logger.warning(f"Could not check default password: {e}")
+            user_data['has_default_password'] = False
+    else:
+        user_data['has_default_password'] = False
+
     return jsonify({
         'status': 'success',
-        'user': g.current_user
+        'user': user_data
     }), 200
 
 
