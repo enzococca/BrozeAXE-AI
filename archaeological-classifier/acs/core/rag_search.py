@@ -174,9 +174,9 @@ class RAGSearchEngine:
             return []
 
     def generate_answer(self, query: str, results: List[Dict[str, Any]],
-                       anthropic_client=None) -> Optional[str]:
+                       anthropic_client=None) -> Optional[Dict[str, Any]]:
         """
-        Generate a natural language answer based on search results.
+        Generate a structured, discursive answer based on search results.
 
         Args:
             query: Original query
@@ -184,7 +184,7 @@ class RAGSearchEngine:
             anthropic_client: Optional Anthropic client for AI generation
 
         Returns:
-            Generated answer or None
+            Dict with answer, structured sections, and optional visualization suggestions
         """
         if not results:
             return None
@@ -195,46 +195,138 @@ class RAGSearchEngine:
             if result['type'] == 'ai_cache':
                 content = result.get('content', '')
                 if isinstance(content, dict):
-                    content = json.dumps(content, ensure_ascii=False, indent=2)[:500]
+                    content = json.dumps(content, ensure_ascii=False, indent=2)[:1500]
                 elif isinstance(content, str):
-                    content = content[:500]
+                    content = content[:1500]
                 context_parts.append(
-                    f"[{i}] {result['artifact_id']} ({result['cache_type']}): {content}"
+                    f"[Documento {i}] Artefatto: {result['artifact_id']}\n"
+                    f"Tipo analisi: {result['cache_type']}\n"
+                    f"Contenuto: {content}"
                 )
             elif result['type'] == 'comparison':
                 context_parts.append(
-                    f"[{i}] Comparazione {result['artifact1_id']} ↔ {result['artifact2_id']}: "
-                    f"Similarità {result['similarity_score']*100:.1f}%"
+                    f"[Documento {i}] Comparazione: {result['artifact1_id']} ↔ {result['artifact2_id']}\n"
+                    f"Similarità: {result['similarity_score']*100:.1f}%"
                 )
 
-        context = '\n\n'.join(context_parts)
+        context = '\n\n---\n\n'.join(context_parts)
 
-        # If no Anthropic client, return formatted context
+        # If no Anthropic client, return basic formatted response
         if not anthropic_client:
-            return f"Risultati trovati per '{query}':\n\n{context}"
+            return {
+                'answer': f"Risultati trovati per '{query}':\n\n{context}",
+                'sections': [],
+                'needs_visualization': False,
+                'visualization_type': None
+            }
 
-        # Generate AI answer
+        # Generate structured AI answer with temperature 0.1 for factual responses
         try:
-            prompt = f"""Basandoti sui seguenti dati archeologici cached, rispondi alla domanda dell'utente in modo conciso e informativo.
+            prompt = f"""Sei un esperto archeologo specializzato in analisi di artefatti dell'Età del Bronzo.
+Basandoti sui dati archeologici forniti, rispondi alla domanda dell'utente in modo STRUTTURATO e DISCORSIVO.
 
-DOMANDA: {query}
+DOMANDA DELL'UTENTE: {query}
 
-DATI DISPONIBILI:
+DATI DISPONIBILI DAL DATABASE:
 {context}
 
-Rispondi in italiano, citando gli artefatti specifici quando rilevante. Se i dati non sono sufficienti per rispondere, indicalo."""
+ISTRUZIONI PER LA RISPOSTA:
+1. Fornisci una risposta STRUTTURATA con sezioni chiare
+2. Sii DISCORSIVO e ESPLICATIVO - non limitarti a elencare dati, ma spiegali
+3. Cita sempre gli artefatti specifici (es. SAV_001, SAV_002) quando rilevante
+4. Usa un linguaggio tecnico ma accessibile
+5. Se i dati non sono sufficienti, indicalo chiaramente
+6. Aggiungi interpretazioni archeologiche quando possibile
+
+FORMATO RISPOSTA (JSON):
+{{
+    "sintesi": "Breve sintesi della risposta (2-3 frasi)",
+    "risposta_dettagliata": "Risposta completa e discorsiva con spiegazioni approfondite",
+    "punti_chiave": ["punto 1", "punto 2", ...],
+    "artefatti_citati": ["SAV_001", "SAV_002", ...],
+    "suggerimento_visualizzazione": {{
+        "necessaria": true/false,
+        "tipo": "grafico_comparativo|tabella|dendrogramma|pca|istogramma|nessuno",
+        "descrizione": "Descrizione di cosa mostrerebbe la visualizzazione"
+    }},
+    "nota_metodologica": "Eventuale nota sulla metodologia o limiti dei dati"
+}}
+
+Rispondi SOLO con il JSON valido, senza altro testo."""
 
             response = anthropic_client.messages.create(
                 model="claude-sonnet-4-20250514",
-                max_tokens=1000,
+                max_tokens=2000,
+                temperature=0.1,  # Low temperature for factual, consistent responses
                 messages=[{"role": "user", "content": prompt}]
             )
 
-            return response.content[0].text
+            response_text = response.content[0].text.strip()
+
+            # Try to parse JSON response
+            try:
+                # Clean potential markdown code blocks
+                if response_text.startswith('```'):
+                    response_text = response_text.split('```')[1]
+                    if response_text.startswith('json'):
+                        response_text = response_text[4:]
+                    response_text = response_text.strip()
+
+                parsed = json.loads(response_text)
+
+                # Build formatted answer
+                formatted_answer = f"## Sintesi\n{parsed.get('sintesi', '')}\n\n"
+                formatted_answer += f"## Analisi Dettagliata\n{parsed.get('risposta_dettagliata', '')}\n\n"
+
+                punti = parsed.get('punti_chiave', [])
+                if punti:
+                    formatted_answer += "## Punti Chiave\n"
+                    for punto in punti:
+                        formatted_answer += f"• {punto}\n"
+                    formatted_answer += "\n"
+
+                artefatti = parsed.get('artefatti_citati', [])
+                if artefatti:
+                    formatted_answer += f"## Artefatti Analizzati\n{', '.join(artefatti)}\n\n"
+
+                nota = parsed.get('nota_metodologica', '')
+                if nota:
+                    formatted_answer += f"## Nota Metodologica\n_{nota}_\n"
+
+                viz = parsed.get('suggerimento_visualizzazione', {})
+
+                return {
+                    'answer': formatted_answer,
+                    'sections': {
+                        'sintesi': parsed.get('sintesi', ''),
+                        'dettaglio': parsed.get('risposta_dettagliata', ''),
+                        'punti_chiave': punti,
+                        'artefatti': artefatti,
+                        'nota': nota
+                    },
+                    'needs_visualization': viz.get('necessaria', False),
+                    'visualization_type': viz.get('tipo', 'nessuno'),
+                    'visualization_description': viz.get('descrizione', '')
+                }
+
+            except json.JSONDecodeError:
+                # If JSON parsing fails, return raw response
+                return {
+                    'answer': response_text,
+                    'sections': {},
+                    'needs_visualization': False,
+                    'visualization_type': None
+                }
 
         except Exception as e:
             logger.error(f"RAG: AI answer generation failed: {e}")
-            return f"Risultati trovati per '{query}':\n\n{context}"
+            return {
+                'answer': f"Risultati trovati per '{query}':\n\n{context}",
+                'sections': {},
+                'needs_visualization': False,
+                'visualization_type': None,
+                'error': str(e)
+            }
 
     def get_stats(self) -> Dict[str, Any]:
         """Get search engine statistics."""

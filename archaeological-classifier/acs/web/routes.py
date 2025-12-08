@@ -3523,6 +3523,133 @@ def classify_management_page():
     return render_template('classify_management.html')
 
 
+def _generate_rag_visualization(viz_type: str, results: list, artifact_ids: list) -> dict:
+    """
+    Generate visualization data for RAG search results.
+
+    Args:
+        viz_type: Type of visualization (grafico_comparativo, tabella, istogramma, etc.)
+        results: Search results
+        artifact_ids: List of artifact IDs to visualize
+
+    Returns:
+        Dict with visualization data (type, data, labels)
+    """
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    import io
+    import base64
+    from acs.core.database import get_database
+
+    try:
+        db = get_database()
+
+        if viz_type == 'tabella':
+            # Generate table data
+            table_data = []
+            for result in results[:10]:
+                if result.get('type') == 'ai_cache':
+                    content = result.get('content', {})
+                    row = {
+                        'artifact_id': result.get('artifact_id', ''),
+                        'tipo': result.get('cache_type', ''),
+                        'score': result.get('score', 0)
+                    }
+                    if isinstance(content, dict):
+                        # Extract key metrics
+                        for key in ['length', 'width', 'weight', 'lunghezza', 'larghezza', 'peso']:
+                            if key in content:
+                                row[key] = content[key]
+                    table_data.append(row)
+
+            return {
+                'type': 'table',
+                'data': table_data,
+                'description': 'Tabella riepilogativa dei risultati'
+            }
+
+        elif viz_type in ['grafico_comparativo', 'istogramma']:
+            # Generate bar chart comparing artifacts
+            if not artifact_ids:
+                artifact_ids = [r.get('artifact_id') for r in results[:5] if r.get('artifact_id')]
+
+            if not artifact_ids:
+                return None
+
+            # Get morphometric data for artifacts
+            data = []
+            labels = []
+            for aid in artifact_ids[:10]:
+                features = db.get_morphometric_features(aid)
+                if features:
+                    data.append({
+                        'id': aid,
+                        'length': features.get('length', 0) or features.get('lunghezza', 0) or 0,
+                        'width': features.get('width', 0) or features.get('larghezza', 0) or 0
+                    })
+                    labels.append(aid)
+
+            if not data:
+                return None
+
+            # Create chart
+            fig, ax = plt.subplots(figsize=(10, 6))
+            x = range(len(data))
+            width = 0.35
+
+            lengths = [d['length'] for d in data]
+            widths = [d['width'] for d in data]
+
+            bars1 = ax.bar([i - width/2 for i in x], lengths, width, label='Lunghezza (mm)', color='#667eea')
+            bars2 = ax.bar([i + width/2 for i in x], widths, width, label='Larghezza (mm)', color='#48bb78')
+
+            ax.set_ylabel('mm')
+            ax.set_xlabel('Artefatti')
+            ax.set_title('Confronto Dimensioni Artefatti')
+            ax.set_xticks(x)
+            ax.set_xticklabels(labels, rotation=45, ha='right')
+            ax.legend()
+            ax.grid(axis='y', alpha=0.3)
+
+            plt.tight_layout()
+
+            # Convert to base64
+            buffer = io.BytesIO()
+            plt.savefig(buffer, format='png', dpi=100, bbox_inches='tight')
+            buffer.seek(0)
+            img_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            plt.close(fig)
+
+            return {
+                'type': 'chart',
+                'format': 'image/png',
+                'data': f'data:image/png;base64,{img_base64}',
+                'description': 'Grafico comparativo delle dimensioni'
+            }
+
+        elif viz_type == 'pca':
+            # For PCA, we would need more complex data - return placeholder
+            return {
+                'type': 'info',
+                'data': 'Visualizzazione PCA disponibile nella pagina Savignano Analysis',
+                'description': 'Per visualizzare il PCA completo, usa la pagina di Analisi Savignano'
+            }
+
+        elif viz_type == 'dendrogramma':
+            return {
+                'type': 'info',
+                'data': 'Dendrogramma disponibile nella pagina Savignano Analysis',
+                'description': 'Per visualizzare il dendrogramma completo, usa la pagina di Analisi Savignano'
+            }
+
+        return None
+
+    except Exception as e:
+        logging.error(f"Visualization generation error: {e}")
+        return None
+
+
 @web_bp.route('/rag-search', methods=['POST'])
 def rag_search():
     """
@@ -3575,11 +3702,33 @@ def rag_search():
             try:
                 import anthropic
                 client = anthropic.Anthropic()
-                answer = rag.generate_answer(query, results, client)
-                response['answer'] = answer
+                answer_data = rag.generate_answer(query, results, client)
+
+                if answer_data:
+                    response['answer'] = answer_data.get('answer', '')
+                    response['sections'] = answer_data.get('sections', {})
+                    response['needs_visualization'] = answer_data.get('needs_visualization', False)
+                    response['visualization_type'] = answer_data.get('visualization_type')
+                    response['visualization_description'] = answer_data.get('visualization_description', '')
+
+                    # Generate visualization if needed
+                    if answer_data.get('needs_visualization') and answer_data.get('visualization_type') != 'nessuno':
+                        try:
+                            viz_data = _generate_rag_visualization(
+                                answer_data.get('visualization_type'),
+                                results,
+                                answer_data.get('sections', {}).get('artefatti', [])
+                            )
+                            if viz_data:
+                                response['visualization'] = viz_data
+                        except Exception as viz_error:
+                            logging.warning(f"RAG visualization generation failed: {viz_error}")
+
             except Exception as e:
                 logging.warning(f"RAG answer generation failed: {e}")
-                response['answer'] = rag.generate_answer(query, results, None)
+                fallback = rag.generate_answer(query, results, None)
+                if fallback:
+                    response['answer'] = fallback.get('answer', '')
 
         return jsonify(response)
 
