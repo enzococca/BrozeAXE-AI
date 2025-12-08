@@ -513,24 +513,224 @@ function downloadClusterList() {
 function plotPCA(results) {
     const vizContainer = document.getElementById('viz-container');
 
-    // Create scree plot
+    // Create container for multiple visualizations
+    vizContainer.innerHTML = `
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+            <div id="pca-scatter-plot" style="border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px;"></div>
+            <div id="scree-plot" style="border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px;"></div>
+        </div>
+        <div id="loadings-plot" style="border: 1px solid #e0e0e0; border-radius: 8px; padding: 15px; margin-bottom: 20px;"></div>
+        <div style="background: #f0f4ff; padding: 15px; border-radius: 8px; border-left: 4px solid #667eea;">
+            <h4 style="margin: 0 0 10px 0; color: #667eea;">📖 Come leggere i grafici PCA</h4>
+            <ul style="margin: 0; font-size: 13px; color: #333; padding-left: 20px;">
+                <li><strong>Scatter Plot (PC1 vs PC2):</strong> Ogni punto è un artefatto. Punti vicini = artefatti morfometricamente simili. PC1 spiega la maggior varianza.</li>
+                <li><strong>Scree Plot:</strong> Mostra quanta varianza spiega ogni componente principale. Le prime PC catturano le differenze più importanti.</li>
+                <li><strong>Feature Loadings:</strong> Mostra quali features contribuiscono di più a ciascuna PC. Loading alto = feature importante per quella PC.</li>
+            </ul>
+        </div>
+    `;
+
+    // 1. PCA Scatter Plot (PC1 vs PC2)
+    if (results.components && results.artifact_ids) {
+        const pc1 = results.components.map(c => c[0]);
+        const pc2 = results.components.map(c => c.length > 1 ? c[1] : 0);
+
+        // Calculate density contours
+        const scatterTrace = {
+            x: pc1,
+            y: pc2,
+            mode: 'markers+text',
+            type: 'scatter',
+            text: results.artifact_ids,
+            textposition: 'top center',
+            textfont: {size: 9, color: '#666'},
+            marker: {
+                size: 12,
+                color: pc1.map((v, i) => Math.sqrt(v*v + pc2[i]*pc2[i])), // Color by distance from origin
+                colorscale: 'Viridis',
+                showscale: true,
+                colorbar: {
+                    title: 'Distanza dall\'origine',
+                    titleside: 'right'
+                },
+                line: {width: 1, color: 'white'}
+            },
+            name: 'Artefatti'
+        };
+
+        // Add density contour
+        const contourTrace = {
+            x: pc1,
+            y: pc2,
+            type: 'histogram2dcontour',
+            colorscale: 'Blues',
+            showscale: false,
+            contours: {
+                coloring: 'fill',
+                showlabels: false
+            },
+            opacity: 0.3,
+            hoverinfo: 'skip'
+        };
+
+        // Add marginal histograms
+        const histX = {
+            x: pc1,
+            type: 'histogram',
+            marker: {color: '#667eea', opacity: 0.7},
+            yaxis: 'y2',
+            name: 'Distribuzione PC1'
+        };
+
+        const histY = {
+            y: pc2,
+            type: 'histogram',
+            marker: {color: '#667eea', opacity: 0.7},
+            xaxis: 'x2',
+            name: 'Distribuzione PC2'
+        };
+
+        const scatterLayout = {
+            title: {
+                text: 'Distribuzione PCA (PC1 vs PC2)',
+                font: {size: 14}
+            },
+            xaxis: {
+                title: `PC1 (${(results.explained_variance_ratio[0] * 100).toFixed(1)}% varianza)`,
+                domain: [0, 0.85],
+                zeroline: true,
+                zerolinecolor: '#ccc',
+                gridcolor: '#eee'
+            },
+            yaxis: {
+                title: `PC2 (${results.explained_variance_ratio[1] ? (results.explained_variance_ratio[1] * 100).toFixed(1) : 0}% varianza)`,
+                domain: [0, 0.85],
+                zeroline: true,
+                zerolinecolor: '#ccc',
+                gridcolor: '#eee'
+            },
+            xaxis2: {
+                domain: [0.87, 1],
+                showgrid: false,
+                zeroline: false,
+                showticklabels: false
+            },
+            yaxis2: {
+                domain: [0.87, 1],
+                showgrid: false,
+                zeroline: false,
+                showticklabels: false
+            },
+            height: 450,
+            showlegend: false,
+            margin: {t: 40, r: 20, b: 60, l: 60},
+            plot_bgcolor: '#fafafa',
+            paper_bgcolor: 'white'
+        };
+
+        Plotly.newPlot('pca-scatter-plot', [contourTrace, scatterTrace, histX, histY], scatterLayout);
+    }
+
+    // 2. Scree Plot (explained variance)
     const screePlot = {
         x: results.explained_variance_ratio.map((_, i) => `PC${i + 1}`),
         y: results.explained_variance_ratio.map(v => v * 100),
         type: 'bar',
-        name: 'Variance Explained',
-        marker: {color: '#4361ee'}
+        name: 'Varianza per PC',
+        marker: {
+            color: results.explained_variance_ratio.map((_, i) =>
+                i < results.n_components ? '#667eea' : '#ccc'
+            )
+        },
+        text: results.explained_variance_ratio.map(v => `${(v * 100).toFixed(1)}%`),
+        textposition: 'auto'
     };
 
-    const layout = {
-        title: 'PCA Scree Plot',
-        xaxis: {title: 'Principal Component'},
-        yaxis: {title: 'Variance Explained (%)'},
-        height: 400
+    const cumulativeLine = {
+        x: results.full_cumulative_variance.map((_, i) => `PC${i + 1}`),
+        y: results.full_cumulative_variance.map(v => v * 100),
+        type: 'scatter',
+        mode: 'lines+markers',
+        name: 'Cumulativa',
+        line: {color: '#10b981', width: 2},
+        marker: {size: 6}
     };
 
-    vizContainer.innerHTML = '<div id="scree-plot"></div>';
-    Plotly.newPlot('scree-plot', [screePlot], layout);
+    const thresholdLine = {
+        x: results.explained_variance_ratio.map((_, i) => `PC${i + 1}`),
+        y: results.explained_variance_ratio.map(() => 95),
+        type: 'scatter',
+        mode: 'lines',
+        name: 'Soglia 95%',
+        line: {color: '#ef4444', dash: 'dash', width: 1}
+    };
+
+    const screeLayout = {
+        title: {
+            text: 'Scree Plot - Varianza Spiegata',
+            font: {size: 14}
+        },
+        xaxis: {title: 'Componente Principale'},
+        yaxis: {title: 'Varianza (%)', range: [0, 100]},
+        height: 450,
+        showlegend: true,
+        legend: {x: 0.7, y: 0.95, bgcolor: 'rgba(255,255,255,0.8)'},
+        margin: {t: 40, r: 20, b: 60, l: 60},
+        barmode: 'group'
+    };
+
+    Plotly.newPlot('scree-plot', [screePlot, cumulativeLine, thresholdLine], screeLayout);
+
+    // 3. Feature Loadings Plot (top features per PC)
+    if (results.component_features && results.component_features.length > 0) {
+        const loadingsDiv = document.getElementById('loadings-plot');
+        let html = '<h4 style="margin: 0 0 15px 0; color: #667eea;">📊 Feature Loadings per Componente Principale</h4>';
+        html += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px;">';
+
+        results.component_features.slice(0, 4).forEach((pc, idx) => {
+            const pcId = `loading-chart-${idx}`;
+            html += `
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 8px;">
+                    <h5 style="margin: 0 0 10px 0; color: #333;">
+                        PC${pc.pc} (${pc.variance_percent.toFixed(1)}% varianza)
+                    </h5>
+                    <p style="font-size: 12px; color: #666; margin: 0 0 10px 0;">${pc.interpretation || ''}</p>
+                    <div id="${pcId}" style="height: 150px;"></div>
+                </div>
+            `;
+        });
+
+        html += '</div>';
+        loadingsDiv.innerHTML = html;
+
+        // Create loading charts
+        results.component_features.slice(0, 4).forEach((pc, idx) => {
+            const pcId = `loading-chart-${idx}`;
+            const features = pc.top_features || [];
+
+            const loadingTrace = {
+                y: features.map(f => f.name).reverse(),
+                x: features.map(f => f.loading).reverse(),
+                type: 'bar',
+                orientation: 'h',
+                marker: {
+                    color: features.map(f => f.loading > 0 ? '#10b981' : '#ef4444').reverse()
+                },
+                text: features.map(f => f.loading.toFixed(3)).reverse(),
+                textposition: 'auto'
+            };
+
+            const loadingLayout = {
+                margin: {t: 5, r: 10, b: 25, l: 100},
+                xaxis: {title: 'Loading', range: [-1, 1]},
+                yaxis: {automargin: true},
+                height: 150,
+                showlegend: false
+            };
+
+            Plotly.newPlot(pcId, [loadingTrace], loadingLayout, {displayModeBar: false});
+        });
+    }
 }
 
 function plotClusters(results) {
