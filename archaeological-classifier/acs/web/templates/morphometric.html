@@ -534,30 +534,174 @@ function plotPCA(results) {
 }
 
 function plotClusters(results) {
-    // Placeholder - would need actual PCA coordinates for proper 2D plot
     const vizContainer = document.getElementById('viz-container');
+    const colors = ['#667eea', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#84cc16'];
 
+    // Create container for multiple plots
+    vizContainer.innerHTML = `
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+            <div id="scatter-plot-pca" style="border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px;"></div>
+            <div id="cluster-sizes-plot" style="border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px;"></div>
+        </div>
+        <div id="box-plots-container" style="border: 1px solid #e0e0e0; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+            <h4 style="margin: 0 0 15px 0; color: #667eea;">📊 Distribuzione Features per Cluster (Limiti e Range)</h4>
+            <div id="box-plots" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;"></div>
+        </div>
+        <div style="background: #f0f4ff; padding: 15px; border-radius: 8px; border-left: 4px solid #667eea;">
+            <h4 style="margin: 0 0 10px 0; color: #667eea;">📖 Come leggere i grafici</h4>
+            <ul style="margin: 0; font-size: 13px; color: #333; padding-left: 20px;">
+                <li><strong>Scatter Plot (PCA):</strong> Ogni punto è un artefatto. Punti vicini = artefatti simili. I colori indicano i cluster.</li>
+                <li><strong>Box Plot:</strong> Mostra la distribuzione di ogni feature per cluster. La "scatola" contiene il 50% centrale dei dati. I "baffi" mostrano i limiti.</li>
+                <li><strong>Limiti cluster:</strong> I rettangoli tratteggiati nel scatter plot indicano i confini approssimativi di ogni cluster.</li>
+            </ul>
+        </div>
+    `;
+
+    // 1. Scatter plot with PCA coordinates
+    if (results.visualization_data && results.visualization_data.scatter_pca) {
+        const vizData = results.visualization_data;
+        const scatterTraces = [];
+
+        // Group by cluster
+        const clusterGroups = {};
+        vizData.scatter_pca.forEach(point => {
+            if (!clusterGroups[point.cluster]) {
+                clusterGroups[point.cluster] = { x: [], y: [], ids: [] };
+            }
+            clusterGroups[point.cluster].x.push(point.x);
+            clusterGroups[point.cluster].y.push(point.y);
+            clusterGroups[point.cluster].ids.push(point.id);
+        });
+
+        // Create trace for each cluster
+        Object.entries(clusterGroups).sort((a,b) => parseInt(a[0]) - parseInt(b[0])).forEach(([cluster, data], idx) => {
+            scatterTraces.push({
+                x: data.x,
+                y: data.y,
+                mode: 'markers',
+                type: 'scatter',
+                name: `Cluster ${cluster}`,
+                text: data.ids,
+                hovertemplate: '%{text}<br>PC1: %{x:.2f}<br>PC2: %{y:.2f}<extra>Cluster ' + cluster + '</extra>',
+                marker: {
+                    size: 10,
+                    color: colors[parseInt(cluster) % colors.length],
+                    line: { width: 1, color: 'white' }
+                }
+            });
+        });
+
+        // Add cluster boundaries as rectangles
+        if (vizData.cluster_bounds) {
+            Object.entries(vizData.cluster_bounds).forEach(([clusterName, bounds], idx) => {
+                const clusterNum = clusterName.replace('Cluster ', '');
+                scatterTraces.push({
+                    x: [bounds.x_min, bounds.x_max, bounds.x_max, bounds.x_min, bounds.x_min],
+                    y: [bounds.y_min, bounds.y_min, bounds.y_max, bounds.y_max, bounds.y_min],
+                    mode: 'lines',
+                    type: 'scatter',
+                    name: `Limiti ${clusterName}`,
+                    line: {
+                        color: colors[parseInt(clusterNum) % colors.length],
+                        dash: 'dash',
+                        width: 2
+                    },
+                    fill: 'toself',
+                    fillcolor: colors[parseInt(clusterNum) % colors.length] + '15',
+                    showlegend: false
+                });
+            });
+        }
+
+        const pcaVariance = vizData.pca_explained_variance || [0.5, 0.3];
+        Plotly.newPlot('scatter-plot-pca', scatterTraces, {
+            title: 'Distribuzione Cluster (PCA)',
+            xaxis: { title: `PC1 (${(pcaVariance[0] * 100).toFixed(1)}% varianza)`, zeroline: false },
+            yaxis: { title: `PC2 (${(pcaVariance[1] * 100).toFixed(1)}% varianza)`, zeroline: false },
+            height: 400,
+            showlegend: true,
+            legend: { x: 1, xanchor: 'right', y: 1 }
+        });
+    }
+
+    // 2. Cluster sizes bar plot
     const clusterSizes = Object.entries(results.clusters).map(([id, members]) => ({
         cluster: id,
         size: members.length
-    }));
+    })).sort((a, b) => parseInt(a.cluster) - parseInt(b.cluster));
 
-    const barPlot = {
+    Plotly.newPlot('cluster-sizes-plot', [{
         x: clusterSizes.map(c => `Cluster ${c.cluster}`),
         y: clusterSizes.map(c => c.size),
         type: 'bar',
-        marker: {color: '#4361ee'}
-    };
-
-    const layout = {
-        title: 'Cluster Sizes',
-        xaxis: {title: 'Cluster'},
-        yaxis: {title: 'Number of Artifacts'},
+        marker: {
+            color: clusterSizes.map(c => colors[parseInt(c.cluster) % colors.length])
+        },
+        text: clusterSizes.map(c => c.size),
+        textposition: 'auto'
+    }], {
+        title: 'Dimensione Cluster',
+        xaxis: { title: 'Cluster' },
+        yaxis: { title: 'Numero Artefatti' },
         height: 400
-    };
+    });
 
-    vizContainer.innerHTML = '<div id="cluster-plot"></div>';
-    Plotly.newPlot('cluster-plot', [barPlot], layout);
+    // 3. Box plots for feature distributions per cluster
+    if (results.visualization_data && results.visualization_data.box_plots) {
+        const boxPlotContainer = document.getElementById('box-plots');
+        const boxPlotData = results.visualization_data.box_plots;
+        const topFeatures = results.visualization_data.top_features || [];
+
+        let boxHtml = '';
+        Object.entries(boxPlotData).forEach(([featureName, clusterData], idx) => {
+            const plotId = `box-plot-${idx}`;
+            const isTopFeature = topFeatures.includes(featureName);
+
+            boxHtml += `<div id="${plotId}" style="min-height: 300px; ${isTopFeature ? 'border: 2px solid #667eea; border-radius: 8px;' : ''}"></div>`;
+        });
+        boxPlotContainer.innerHTML = boxHtml;
+
+        // Create each box plot
+        Object.entries(boxPlotData).forEach(([featureName, clusterData], idx) => {
+            const plotId = `box-plot-${idx}`;
+            const traces = [];
+
+            Object.entries(clusterData).sort((a,b) => parseInt(a[0].replace('Cluster ', '')) - parseInt(b[0].replace('Cluster ', ''))).forEach(([clusterName, stats], cIdx) => {
+                traces.push({
+                    y: stats.values,
+                    type: 'box',
+                    name: clusterName,
+                    boxpoints: 'all',
+                    jitter: 0.3,
+                    pointpos: -1.8,
+                    marker: {
+                        color: colors[cIdx % colors.length],
+                        size: 4
+                    },
+                    line: { color: colors[cIdx % colors.length] }
+                });
+            });
+
+            Plotly.newPlot(plotId, traces, {
+                title: {
+                    text: featureName + (topFeatures.includes(featureName) ? ' ⭐' : ''),
+                    font: { size: 14 }
+                },
+                yaxis: { title: 'Valore (standardizzato)', zeroline: true },
+                showlegend: idx === 0,
+                height: 300,
+                margin: { t: 50, b: 50 }
+            });
+        });
+
+        // Add legend explanation
+        boxPlotContainer.innerHTML += `
+            <div style="grid-column: 1 / -1; background: #fff7ed; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 12px;">
+                <strong>⭐ Features più distintive:</strong> ${topFeatures.join(', ')}<br>
+                <span style="color: #666;">Queste features mostrano la maggiore differenza tra i cluster e sono più utili per distinguere i gruppi.</span>
+            </div>
+        `;
+    }
 }
 </script>
 {% endblock %}

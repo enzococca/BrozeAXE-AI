@@ -487,7 +487,108 @@ class MorphometricAnalyzer:
             'method': method,
             'feature_names': feature_names,
             'n_artifacts': len(artifact_ids),
-            'clustering_explanation': clustering_explanation
+            'clustering_explanation': clustering_explanation,
+            # Add data for visualizations
+            'visualization_data': self._prepare_cluster_visualization_data(
+                artifact_ids, X_scaled, labels, feature_names, clusters, overall_mean, overall_std
+            )
+        }
+
+    def _prepare_cluster_visualization_data(
+        self,
+        artifact_ids: list,
+        X_scaled: np.ndarray,
+        labels: np.ndarray,
+        feature_names: list,
+        clusters: dict,
+        overall_mean: np.ndarray,
+        overall_std: np.ndarray
+    ) -> dict:
+        """
+        Prepare data for cluster visualization (scatter plots, box plots, etc.)
+
+        Returns:
+            Dict with visualization data including coordinates, bounds, and feature distributions
+        """
+        # PCA for 2D visualization
+        from sklearn.decomposition import PCA
+        pca = PCA(n_components=2)
+        coords_2d = pca.fit_transform(X_scaled)
+
+        # Artifact coordinates for scatter plot
+        scatter_data = []
+        for i, (aid, label) in enumerate(zip(artifact_ids, labels)):
+            scatter_data.append({
+                'id': aid,
+                'x': float(coords_2d[i, 0]),
+                'y': float(coords_2d[i, 1]),
+                'cluster': int(label)
+            })
+
+        # Find the 2 most distinguishing features globally
+        feature_importance = np.zeros(len(feature_names))
+        for label in clusters.keys():
+            mask = labels == label
+            if np.sum(mask) > 0:
+                cluster_mean = np.mean(X_scaled[mask], axis=0)
+                z_scores = np.abs(cluster_mean - np.mean(X_scaled, axis=0))
+                feature_importance += z_scores
+
+        top_feature_indices = np.argsort(feature_importance)[::-1][:2]
+        top_features = [feature_names[i] for i in top_feature_indices]
+
+        # Scatter data on the 2 most distinguishing features
+        feature_scatter_data = []
+        for i, (aid, label) in enumerate(zip(artifact_ids, labels)):
+            feature_scatter_data.append({
+                'id': aid,
+                'x': float(X_scaled[i, top_feature_indices[0]]),
+                'y': float(X_scaled[i, top_feature_indices[1]]),
+                'cluster': int(label)
+            })
+
+        # Box plot data for each cluster and top features
+        box_plot_data = {}
+        for feat_idx in top_feature_indices[:4]:  # Top 4 features
+            feat_name = feature_names[feat_idx] if feat_idx < len(feature_names) else f'feature_{feat_idx}'
+            box_plot_data[feat_name] = {}
+
+            for label in sorted(clusters.keys()):
+                mask = labels == int(label)
+                if np.sum(mask) > 0:
+                    values = X_scaled[mask, feat_idx]
+                    box_plot_data[feat_name][f'Cluster {label}'] = {
+                        'min': float(np.min(values)),
+                        'q1': float(np.percentile(values, 25)),
+                        'median': float(np.median(values)),
+                        'q3': float(np.percentile(values, 75)),
+                        'max': float(np.max(values)),
+                        'mean': float(np.mean(values)),
+                        'values': [float(v) for v in values]  # Raw values for violin/distribution
+                    }
+
+        # Cluster boundaries (convex hull approximation using min/max on top 2 features)
+        cluster_bounds = {}
+        for label in sorted(clusters.keys()):
+            mask = labels == int(label)
+            if np.sum(mask) > 1:
+                cluster_coords = coords_2d[mask]
+                cluster_bounds[f'Cluster {label}'] = {
+                    'x_min': float(np.min(cluster_coords[:, 0])),
+                    'x_max': float(np.max(cluster_coords[:, 0])),
+                    'y_min': float(np.min(cluster_coords[:, 1])),
+                    'y_max': float(np.max(cluster_coords[:, 1])),
+                    'center_x': float(np.mean(cluster_coords[:, 0])),
+                    'center_y': float(np.mean(cluster_coords[:, 1]))
+                }
+
+        return {
+            'scatter_pca': scatter_data,
+            'scatter_features': feature_scatter_data,
+            'top_features': top_features,
+            'box_plots': box_plot_data,
+            'cluster_bounds': cluster_bounds,
+            'pca_explained_variance': [float(v) for v in pca.explained_variance_ratio_]
         }
 
     def _interpret_cluster(self, cluster_id: int, distinguishing_features: list, n_members: int, total: int) -> str:
