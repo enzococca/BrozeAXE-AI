@@ -3480,6 +3480,43 @@ def artifacts_list():
         return jsonify({'error': str(e)}), 500
 
 
+@web_bp.route('/savignano-artifacts-list', methods=['GET'])
+def savignano_artifacts_list():
+    """Get list of all artifacts with Savignano features from database."""
+    try:
+        db = get_database()
+        all_features = db.get_all_features()
+
+        artifacts = []
+        for artifact_id, features in all_features.items():
+            # Check if has savignano features
+            has_savignano = 'savignano' in features and isinstance(features.get('savignano'), dict)
+            savignano_data = features.get('savignano', {}) if has_savignano else {}
+
+            artifacts.append({
+                'id': artifact_id,
+                'has_savignano_features': has_savignano,
+                'has_mesh': artifact_id in mesh_processor.meshes,
+                'length': savignano_data.get('length', 0),
+                'width': savignano_data.get('width', 0),
+                'weight': savignano_data.get('peso', 0),
+                'feature_count': len(savignano_data) if has_savignano else 0
+            })
+
+        # Sort by artifact_id
+        artifacts.sort(key=lambda x: x['id'])
+
+        return jsonify({
+            'status': 'success',
+            'total': len(artifacts),
+            'with_savignano': sum(1 for a in artifacts if a['has_savignano_features']),
+            'artifacts': artifacts
+        })
+    except Exception as e:
+        logging.error(f"Error getting savignano artifacts list: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
 @web_bp.route('/classify-management')
 def classify_management_page():
     """Classification management page."""
