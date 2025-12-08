@@ -158,18 +158,31 @@ class MatrixAnalyzer:
         # 4. Analizza caratteristiche matrici
         self._analyze_matrix_characteristics()
 
-        # 5. Calcola metriche qualità
-        silhouette = silhouette_score(X, self.cluster_labels)
-        davies_bouldin = davies_bouldin_score(X, self.cluster_labels)
+        # 5. Calcola metriche qualità (se possibile)
+        # Silhouette richiede: 2 <= n_labels <= n_samples - 1
+        n_unique_labels = len(np.unique(self.cluster_labels))
+        n_samples = len(X)
 
-        logger.info(f"Identificate {self.n_matrices} matrici. "
-                   f"Silhouette={silhouette:.3f}, Davies-Bouldin={davies_bouldin:.3f}")
+        silhouette = None
+        davies_bouldin = None
+
+        if n_unique_labels >= 2 and n_unique_labels <= n_samples - 1:
+            try:
+                silhouette = silhouette_score(X, self.cluster_labels)
+                davies_bouldin = davies_bouldin_score(X, self.cluster_labels)
+                logger.info(f"Identificate {self.n_matrices} matrici. "
+                           f"Silhouette={silhouette:.3f}, Davies-Bouldin={davies_bouldin:.3f}")
+            except Exception as e:
+                logger.warning(f"Impossibile calcolare metriche qualità: {e}")
+        else:
+            logger.info(f"Identificate {self.n_matrices} matrici. "
+                       f"Metriche qualità non calcolabili (n_labels={n_unique_labels}, n_samples={n_samples})")
 
         return {
             'n_matrices': self.n_matrices,
             'method_used': method,
-            'silhouette_score': float(silhouette),
-            'davies_bouldin_score': float(davies_bouldin),
+            'silhouette_score': float(silhouette) if silhouette is not None else None,
+            'davies_bouldin_score': float(davies_bouldin) if davies_bouldin is not None else None,
             'matrices_info': self.matrices
         }
 
@@ -329,9 +342,20 @@ class MatrixAnalyzer:
         Returns:
             Numero ottimale cluster
         """
+        n_samples = len(X)
+
+        # Silhouette score richiede: 2 <= n_labels <= n_samples - 1
+        # Quindi il massimo k testabile è n_samples - 1
+        effective_max_k = min(max_k, n_samples - 1)
+
+        # Se non possiamo testare nemmeno k=2, restituisci 1 cluster
+        if effective_max_k < 2:
+            logger.warning(f"Troppi pochi campioni ({n_samples}) per clustering ottimale. Usando 1 cluster.")
+            return 1
+
         silhouette_scores = []
 
-        for k in range(2, max_k + 1):
+        for k in range(2, effective_max_k + 1):
             labels = fcluster(self.linkage_matrix, k, criterion='maxclust') - 1
             score = silhouette_score(X, labels)
             silhouette_scores.append(score)
@@ -339,7 +363,7 @@ class MatrixAnalyzer:
         # Trova k con massimo silhouette
         optimal_k = np.argmax(silhouette_scores) + 2
 
-        logger.info(f"Silhouette scores testati: {silhouette_scores}")
+        logger.info(f"Silhouette scores testati (k=2 to {effective_max_k}): {silhouette_scores}")
 
         return optimal_k
 
@@ -354,9 +378,19 @@ class MatrixAnalyzer:
         Returns:
             Numero ottimale cluster
         """
+        n_samples = len(X)
+
+        # Silhouette score richiede: 2 <= n_labels <= n_samples - 1
+        effective_max_k = min(max_k, n_samples - 1)
+
+        # Se non possiamo testare nemmeno k=2, restituisci 1 cluster
+        if effective_max_k < 2:
+            logger.warning(f"Troppi pochi campioni ({n_samples}) per clustering ottimale. Usando 1 cluster.")
+            return 1
+
         silhouette_scores = []
 
-        for k in range(2, max_k + 1):
+        for k in range(2, effective_max_k + 1):
             kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
             labels = kmeans.fit_predict(X)
             score = silhouette_score(X, labels)
@@ -364,7 +398,7 @@ class MatrixAnalyzer:
 
         optimal_k = np.argmax(silhouette_scores) + 2
 
-        logger.info(f"Silhouette scores testati: {silhouette_scores}")
+        logger.info(f"Silhouette scores testati (k=2 to {effective_max_k}): {silhouette_scores}")
 
         return optimal_k
 
