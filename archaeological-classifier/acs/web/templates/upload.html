@@ -77,7 +77,7 @@
                             ⚖️ Weights (Optional but Recommended)
                         </label>
 
-                        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                        <div style="display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap;">
                             <label style="display: flex; align-items: center;">
                                 <input type="radio" name="weight-mode" value="none" checked onchange="updateWeightMode()" style="margin-right: 5px;">
                                 No weights
@@ -92,7 +92,14 @@
                             </label>
                         </div>
 
-                        <!-- Manual weight input (shown in file list when enabled) -->
+                        <!-- Manual weight input hint -->
+                        <div id="manual-weight-hint" style="display: none; padding: 10px; background: #e8f5e9; border-radius: 6px; border-left: 3px solid #4caf50; margin-bottom: 10px;">
+                            <p style="margin: 0; font-size: 14px; color: #2e7d32;">
+                                ⚖️ <strong>Manual weight input enabled:</strong> Add your 3D files above, then enter the weight (in grams) for each file in the file list.
+                            </p>
+                        </div>
+
+                        <!-- Weight file input (shown when "From file" is selected) -->
                         <div id="weight-file-input" style="display: none;">
                             <label style="display: block; margin-bottom: 5px; font-size: 14px;">
                                 Upload weights file (Excel, CSV, JSON, or DOCX):
@@ -481,6 +488,7 @@ function toggleSavignanoOptions() {
 function updateWeightMode() {
     const mode = document.querySelector('input[name="weight-mode"]:checked').value;
     document.getElementById('weight-file-input').style.display = mode === 'file' ? 'block' : 'none';
+    document.getElementById('manual-weight-hint').style.display = mode === 'manual' ? 'block' : 'none';
     updateFileList();  // Refresh file list to show/hide weight inputs
 }
 

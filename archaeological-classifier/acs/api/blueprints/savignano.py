@@ -274,6 +274,127 @@ def upload_batch():
         return jsonify({'error': str(e)}), 500
 
 
+@savignano_bp.route('/start-from-project', methods=['POST'])
+@role_required('admin', 'archaeologist')
+def start_from_project():
+    """
+    Create analysis session from artifacts already in the project database.
+
+    Expected JSON:
+        {
+            "artifact_ids": ["SAV_001", "SAV_002", ...],
+            "weights": {"SAV_001": 387.5, ...}  // Optional manual weights
+        }
+
+    Returns:
+        JSON with:
+        - analysis_id: ID univoco analisi
+        - n_artifacts: Numero artefatti selezionati
+        - artifacts: Lista artefatti
+    """
+    try:
+        data = request.get_json() or {}
+        artifact_ids = data.get('artifact_ids', [])
+        manual_weights = data.get('weights', {})
+
+        if not artifact_ids or len(artifact_ids) == 0:
+            return jsonify({'error': 'No artifact_ids provided'}), 400
+
+        # Get database
+        db = get_database()
+
+        # Verify artifacts exist and have features
+        valid_artifacts = []
+        artifacts_with_mesh = []
+        temp_dir = Path(tempfile.mkdtemp(prefix='savignano_project_'))
+        meshes_dir = temp_dir / 'meshes'
+        meshes_dir.mkdir(exist_ok=True)
+
+        for artifact_id in artifact_ids:
+            artifact = db.get_artifact(artifact_id)
+            if not artifact:
+                logger.warning(f"Artifact {artifact_id} not found in database")
+                continue
+
+            # Check if has Savignano features
+            features = db.get_features(artifact_id)
+            if not features or 'savignano' not in features:
+                logger.warning(f"Artifact {artifact_id} has no Savignano features")
+                # Still include it, but log warning
+                pass
+
+            valid_artifacts.append(artifact_id)
+
+            # If artifact has mesh, copy to temp directory for analysis
+            mesh_path = artifact.get('mesh_path')
+            if mesh_path and Path(mesh_path).exists():
+                dest_mesh = meshes_dir / Path(mesh_path).name
+                shutil.copy2(mesh_path, dest_mesh)
+                artifacts_with_mesh.append(artifact_id)
+            else:
+                # Try to download from remote storage
+                try:
+                    from acs.core.storage import get_default_storage
+                    storage = get_default_storage()
+                    if mesh_path:
+                        dest_mesh = meshes_dir / f"{artifact_id}.obj"
+                        storage.download_file(mesh_path, str(dest_mesh))
+                        artifacts_with_mesh.append(artifact_id)
+                except Exception as e:
+                    logger.warning(f"Could not download mesh for {artifact_id}: {e}")
+
+        if len(valid_artifacts) == 0:
+            shutil.rmtree(temp_dir)
+            return jsonify({'error': 'No valid artifacts found'}), 400
+
+        # Create analysis ID
+        analysis_id = f"savignano_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+
+        # Build weights data from manual input or existing database
+        weights_data = {}
+        for artifact_id in valid_artifacts:
+            if artifact_id in manual_weights and manual_weights[artifact_id] > 0:
+                weights_data[artifact_id] = manual_weights[artifact_id]
+            else:
+                # Try to get from database features
+                features = db.get_features(artifact_id)
+                if features and 'savignano' in features:
+                    peso = features['savignano'].get('peso') or features['savignano'].get('weight')
+                    if peso and peso > 0:
+                        weights_data[artifact_id] = peso
+
+        # Initialize analysis
+        ANALYSES[analysis_id] = {
+            'status': 'uploaded',
+            'progress': 10,
+            'created_at': datetime.now().isoformat(),
+            'n_axes': len(valid_artifacts),
+            'files': valid_artifacts,
+            'paths': {
+                'temp_dir': str(temp_dir),
+                'meshes_dir': str(meshes_dir)
+            },
+            'weights_data': weights_data,
+            'config': {},
+            'source': 'project'  # Mark as from project
+        }
+
+        logger.info(f"Created analysis {analysis_id} from project with {len(valid_artifacts)} artifacts ({len(artifacts_with_mesh)} with meshes)")
+
+        return jsonify({
+            'status': 'success',
+            'analysis_id': analysis_id,
+            'n_artifacts': len(valid_artifacts),
+            'artifacts': valid_artifacts,
+            'artifacts_with_mesh': len(artifacts_with_mesh),
+            'weights_loaded': len(weights_data)
+        })
+
+    except Exception as e:
+        logger.error(f"Error in start_from_project: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
 @savignano_bp.route('/configure', methods=['POST'])
 @role_required('admin', 'archaeologist')
 def configure_analysis():

@@ -507,6 +507,7 @@ function toggleArtifact(id, checked) {
         selectedArtifacts.delete(id);
     }
     updateSelectedCount();
+    onArtifactSelectionChange();
 }
 
 function toggleSelectAll(checked) {
@@ -546,14 +547,14 @@ document.querySelectorAll('input[name="weights-option"]').forEach(radio => {
         // Show/hide Excel help text
         document.getElementById('excel-help').style.display = (value === 'excel') ? 'block' : 'none';
 
-        // Generate manual fields if manual selected and files already chosen
+        // Generate manual fields if manual selected
         if (value === 'manual') {
             generateManualWeightFields();
         }
     });
 });
 
-// Generate manual weight input fields when files are selected
+// Generate manual weight input fields when files are selected (upload mode)
 document.getElementById('mesh-files').addEventListener('change', function() {
     const weightsOption = document.querySelector('input[name="weights-option"]:checked').value;
     if (weightsOption === 'manual') {
@@ -562,54 +563,111 @@ document.getElementById('mesh-files').addEventListener('change', function() {
 });
 
 function generateManualWeightFields() {
-    const meshFilesInput = document.getElementById('mesh-files');
-    const files = meshFilesInput.files;
     const container = document.getElementById('manual-weights-container');
 
-    if (files.length === 0) {
-        container.innerHTML = '<p style="color: #718096; font-size: 14px; margin: 0;">Select mesh files first</p>';
-        return;
-    }
+    // Check which mode we're in
+    if (sourceMode === 'project') {
+        // Project mode: use selected artifacts
+        if (selectedArtifacts.size === 0) {
+            container.innerHTML = '<p style="color: #718096; font-size: 14px; margin: 0;">Seleziona prima gli artefatti dal progetto</p>';
+            return;
+        }
 
-    let html = '<p style="color: #4a5568; font-weight: 600; margin-bottom: 12px;">Enter weight (grams) for each axe:</p>';
-    html += '<div style="max-height: 300px; overflow-y: auto;">';
+        let html = '<p style="color: #4a5568; font-weight: 600; margin-bottom: 12px;">Inserisci peso (grammi) per ogni ascia:</p>';
+        html += '<div style="max-height: 300px; overflow-y: auto;">';
 
-    for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        const filename = file.name;
-        const artifactId = filename.replace(/\.(obj|stl|ply)$/i, '');
+        let i = 0;
+        for (const artifactId of selectedArtifacts) {
+            // Find artifact info for display
+            const artifact = projectArtifacts.find(a => a.id === artifactId);
+            const currentWeight = artifact?.weight || manualWeights[artifactId] || '';
 
-        html += `
-            <div style="margin-bottom: 12px; padding: 10px; background: #f7fafc; border-radius: 4px; display: flex; align-items: center; gap: 10px;">
-                <span style="flex: 1; color: #4a5568; font-size: 14px;">📄 ${filename}</span>
-                <input type="number"
-                       id="weight-${i}"
-                       data-artifact="${artifactId}"
-                       class="form-control"
-                       placeholder="Weight (g)"
-                       step="0.1"
-                       min="0"
-                       style="width: 150px;"
-                       value="${manualWeights[artifactId] || ''}">
-            </div>
-        `;
-    }
+            html += `
+                <div style="margin-bottom: 12px; padding: 10px; background: #f7fafc; border-radius: 4px; display: flex; align-items: center; gap: 10px;">
+                    <span style="flex: 1; color: #4a5568; font-size: 14px;">🏺 ${artifactId}</span>
+                    <input type="number"
+                           id="weight-${i}"
+                           data-artifact="${artifactId}"
+                           class="form-control manual-weight-input"
+                           placeholder="Peso (g)"
+                           step="0.1"
+                           min="0"
+                           style="width: 150px;"
+                           value="${currentWeight}">
+                </div>
+            `;
+            i++;
+        }
 
-    html += '</div>';
-    html += '<small class="form-text" style="display: block; margin-top: 10px;">Leave empty for unknown weights (peso = 0)</small>';
+        html += '</div>';
+        html += '<small class="form-text" style="display: block; margin-top: 10px;">Lascia vuoto per peso sconosciuto (peso = 0)</small>';
 
-    container.innerHTML = html;
+        container.innerHTML = html;
 
-    // Add event listeners to save values
-    for (let i = 0; i < files.length; i++) {
-        const input = document.getElementById(`weight-${i}`);
-        if (input) {
+        // Add event listeners
+        document.querySelectorAll('.manual-weight-input').forEach(input => {
             input.addEventListener('change', function() {
                 const artifactId = this.dataset.artifact;
                 const weight = parseFloat(this.value) || 0;
                 manualWeights[artifactId] = weight;
             });
+        });
+
+    } else {
+        // Upload mode: use selected files
+        const meshFilesInput = document.getElementById('mesh-files');
+        const files = meshFilesInput.files;
+
+        if (files.length === 0) {
+            container.innerHTML = '<p style="color: #718096; font-size: 14px; margin: 0;">Seleziona prima i file mesh</p>';
+            return;
         }
+
+        let html = '<p style="color: #4a5568; font-weight: 600; margin-bottom: 12px;">Inserisci peso (grammi) per ogni ascia:</p>';
+        html += '<div style="max-height: 300px; overflow-y: auto;">';
+
+        for (let i = 0; i < files.length; i++) {
+            const file = files[i];
+            const filename = file.name;
+            const artifactId = filename.replace(/\.(obj|stl|ply)$/i, '');
+
+            html += `
+                <div style="margin-bottom: 12px; padding: 10px; background: #f7fafc; border-radius: 4px; display: flex; align-items: center; gap: 10px;">
+                    <span style="flex: 1; color: #4a5568; font-size: 14px;">📄 ${filename}</span>
+                    <input type="number"
+                           id="weight-${i}"
+                           data-artifact="${artifactId}"
+                           class="form-control manual-weight-input"
+                           placeholder="Peso (g)"
+                           step="0.1"
+                           min="0"
+                           style="width: 150px;"
+                           value="${manualWeights[artifactId] || ''}">
+                </div>
+            `;
+        }
+
+        html += '</div>';
+        html += '<small class="form-text" style="display: block; margin-top: 10px;">Lascia vuoto per peso sconosciuto (peso = 0)</small>';
+
+        container.innerHTML = html;
+
+        // Add event listeners
+        document.querySelectorAll('.manual-weight-input').forEach(input => {
+            input.addEventListener('change', function() {
+                const artifactId = this.dataset.artifact;
+                const weight = parseFloat(this.value) || 0;
+                manualWeights[artifactId] = weight;
+            });
+        });
+    }
+}
+
+// Regenerate weight fields when artifacts are selected/deselected
+function onArtifactSelectionChange() {
+    const weightsOption = document.querySelector('input[name="weights-option"]:checked').value;
+    if (weightsOption === 'manual') {
+        generateManualWeightFields();
     }
 }
 
@@ -629,17 +687,55 @@ async function startAnalysis() {
         startBtn.disabled = true;
         progressSpan.textContent = `Preparazione ${selectedArtifacts.size} artefatti...`;
 
-        // Store artifact IDs for analysis
-        uploadedFiles = Array.from(selectedArtifacts);
+        try {
+            // Collect manual weights if provided
+            const weightsOption = document.querySelector('input[name="weights-option"]:checked').value;
+            let weightsData = {};
+            if (weightsOption === 'manual') {
+                document.querySelectorAll('.manual-weight-input').forEach(input => {
+                    const artifactId = input.dataset.artifact;
+                    const weight = parseFloat(input.value) || 0;
+                    if (weight > 0) {
+                        weightsData[artifactId] = weight;
+                    }
+                });
+            }
 
-        // Move directly to step 2 since artifacts are already loaded
-        document.getElementById('step-1').classList.add('completed');
-        document.getElementById('step-1-status').textContent = 'Completed';
-        document.getElementById('step-1-status').className = 'badge badge-success';
-        document.getElementById('step-2').style.display = 'block';
+            // Create analysis session from project artifacts
+            const response = await fetch('/api/savignano/start-from-project', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    artifact_ids: Array.from(selectedArtifacts),
+                    weights: weightsData
+                })
+            });
 
-        startBtn.disabled = false;
-        progressSpan.textContent = `✓ ${selectedArtifacts.size} artefatti pronti`;
+            const result = await response.json();
+
+            if (response.ok && result.analysis_id) {
+                currentAnalysisId = result.analysis_id;
+                uploadedFiles = Array.from(selectedArtifacts);
+
+                progressSpan.textContent = `✓ ${selectedArtifacts.size} artefatti pronti`;
+
+                // Move to step 2
+                document.getElementById('step-1').classList.add('completed');
+                document.getElementById('step-1-status').textContent = 'Completed';
+                document.getElementById('step-1-status').className = 'badge badge-success';
+                document.getElementById('step-2').style.display = 'block';
+                document.getElementById('step-2').classList.add('active');
+                document.getElementById('step-2-status').textContent = 'Active';
+                document.getElementById('step-2-status').className = 'badge badge-warning';
+            } else {
+                throw new Error(result.error || 'Failed to create analysis session');
+            }
+        } catch (error) {
+            alert('Errore: ' + error.message);
+            progressSpan.textContent = '';
+        } finally {
+            startBtn.disabled = false;
+        }
         return;
     }
 
@@ -744,15 +840,15 @@ async function startAnalysis() {
 
 async function configureAnalysis() {
     if (!currentAnalysisId) {
-        alert('No analysis session found. Please upload meshes first.');
+        alert('Sessione di analisi non trovata. Seleziona prima gli artefatti e avvia l\'analisi.');
         return;
     }
 
     const config = {
         clustering_method: document.getElementById('clustering-method').value,
         max_clusters: parseInt(document.getElementById('max-clusters').value),
-        use_ai: document.getElementById('use-ai').checked,
-        anthropic_api_key: document.getElementById('anthropic-api-key').value || undefined
+        use_ai: document.getElementById('use-ai').checked
+        // API key is configured server-side
     };
 
     try {
