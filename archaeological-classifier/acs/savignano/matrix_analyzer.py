@@ -117,6 +117,33 @@ class MatrixAnalyzer:
                 'matrices_info': self.matrices
             }
 
+        # 2b. Edge case: solo 2 asce - silhouette score richiede almeno 3 campioni
+        if len(X) == 2:
+            logger.warning("Solo 2 asce presenti - silhouette score non calcolabile. Assegnate a cluster separati basati su distanza.")
+            # Calcola distanza euclidea tra i 2 campioni
+            from scipy.spatial.distance import euclidean
+            dist = euclidean(X[0], X[1])
+            # Se distanza bassa, stesso cluster; altrimenti cluster diversi
+            threshold_dist = np.std(X) * 2  # Soglia basata su varianza
+            if dist < threshold_dist:
+                self.cluster_labels = np.array([0, 0])  # Stesso cluster
+                self.n_matrices = 1
+                logger.info(f"2 asce molto simili (dist={dist:.3f} < {threshold_dist:.3f}) - assegnate alla stessa matrice")
+            else:
+                self.cluster_labels = np.array([0, 1])  # Cluster diversi
+                self.n_matrices = 2
+                logger.info(f"2 asce diverse (dist={dist:.3f} >= {threshold_dist:.3f}) - assegnate a matrici diverse")
+
+            self._analyze_matrix_characteristics()
+
+            return {
+                'n_matrices': self.n_matrices,
+                'method_used': 'two_samples_heuristic',
+                'silhouette_score': None,
+                'davies_bouldin_score': None,
+                'matrices_info': self.matrices
+            }
+
         # 3. Esegui clustering
         if method == 'hierarchical':
             result = self._hierarchical_clustering(X, n_clusters, max_clusters, threshold)
