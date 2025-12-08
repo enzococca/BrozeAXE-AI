@@ -103,19 +103,48 @@
 
 <!-- Workflow Steps -->
 <div id="workflow-section">
-    <!-- STEP 1: Upload Meshes -->
+    <!-- STEP 1: Select or Upload Meshes -->
     <div class="step-card" id="step-1">
         <div style="display: flex; align-items: center; margin-bottom: 20px;">
             <span class="step-number">1</span>
-            <h3 style="margin: 0; flex: 1;">Upload 3D Meshes</h3>
+            <h3 style="margin: 0; flex: 1;">Select Artifacts or Upload New</h3>
             <span id="step-1-status" class="badge badge-secondary">Pending</span>
         </div>
         <p style="color: #718096; margin-bottom: 20px;">
-            Upload the 3D scanned meshes of the Savignano axes (.obj, .stl, .ply format).
-            You can upload all 96 axes at once.
+            Select artifacts already loaded in the project or upload new 3D meshes.
         </p>
 
-        <div style="background: #f7fafc; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+        <!-- Source Selection Tabs -->
+        <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+            <button class="btn" id="tab-project" onclick="showSourceTab('project')" style="flex: 1; background: #667eea; color: white;">
+                📦 From Project
+            </button>
+            <button class="btn btn-outline" id="tab-upload" onclick="showSourceTab('upload')" style="flex: 1;">
+                📤 Upload New
+            </button>
+        </div>
+
+        <!-- Project Artifacts Selection -->
+        <div id="source-project" style="background: #f7fafc; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <label class="form-label" style="font-weight: bold; margin: 0;">Select Artifacts from Project</label>
+                <div>
+                    <button class="btn btn-sm btn-secondary" onclick="selectAllArtifacts()">Select All</button>
+                    <button class="btn btn-sm btn-outline" onclick="deselectAllArtifacts()">Deselect All</button>
+                    <button class="btn btn-sm btn-outline" onclick="loadProjectArtifacts()">🔄 Refresh</button>
+                </div>
+            </div>
+            <div id="project-artifacts-list" style="max-height: 400px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 6px; background: white;">
+                <p style="padding: 20px; color: #718096; text-align: center;">Loading artifacts...</p>
+            </div>
+            <div style="margin-top: 10px; display: flex; justify-content: space-between; align-items: center;">
+                <small class="form-text"><span id="selected-count">0</span> artifacts selected</small>
+                <small class="form-text" style="color: #667eea;"><span id="total-artifacts-count">0</span> total artifacts in project</small>
+            </div>
+        </div>
+
+        <!-- Upload New Meshes (Hidden by default) -->
+        <div id="source-upload" style="display: none; background: #f7fafc; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
             <label class="form-label" style="font-weight: bold;">3D Mesh Files</label>
             <input type="file" id="mesh-files" multiple accept=".obj,.stl,.ply" class="form-control" style="margin-bottom: 15px;">
             <small class="form-text">Select multiple files (Ctrl/Cmd + Click). Supported: .obj, .stl, .ply</small>
@@ -390,6 +419,125 @@
 let currentAnalysisId = null;
 let uploadedFiles = [];
 let manualWeights = {};
+let selectedArtifacts = new Set();
+let projectArtifacts = [];
+let sourceMode = 'project'; // 'project' or 'upload'
+
+// Load artifacts from project on page load
+document.addEventListener('DOMContentLoaded', loadProjectArtifacts);
+
+function showSourceTab(tab) {
+    sourceMode = tab;
+    // Update tab buttons
+    document.getElementById('tab-project').className = tab === 'project' ? 'btn' : 'btn btn-outline';
+    document.getElementById('tab-project').style.background = tab === 'project' ? '#667eea' : '';
+    document.getElementById('tab-project').style.color = tab === 'project' ? 'white' : '';
+    document.getElementById('tab-upload').className = tab === 'upload' ? 'btn' : 'btn btn-outline';
+    document.getElementById('tab-upload').style.background = tab === 'upload' ? '#667eea' : '';
+    document.getElementById('tab-upload').style.color = tab === 'upload' ? 'white' : '';
+    // Show/hide sections
+    document.getElementById('source-project').style.display = tab === 'project' ? 'block' : 'none';
+    document.getElementById('source-upload').style.display = tab === 'upload' ? 'block' : 'none';
+}
+
+async function loadProjectArtifacts() {
+    const listEl = document.getElementById('project-artifacts-list');
+    listEl.innerHTML = '<p style="padding: 20px; color: #718096; text-align: center;">Loading artifacts...</p>';
+
+    try {
+        const response = await fetch('/web/savignano-artifacts-list');
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            projectArtifacts = data.artifacts;
+            document.getElementById('total-artifacts-count').textContent = data.total;
+
+            if (projectArtifacts.length === 0) {
+                listEl.innerHTML = `
+                    <div style="padding: 30px; text-align: center; color: #718096;">
+                        <p style="font-size: 16px; margin-bottom: 10px;">📭 No artifacts found in project</p>
+                        <p style="font-size: 14px;">Use the "Upload New" tab to upload 3D meshes</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '<table style="width: 100%; border-collapse: collapse;">';
+            html += `<thead style="background: #f7fafc; position: sticky; top: 0;">
+                <tr>
+                    <th style="padding: 10px; text-align: left; border-bottom: 1px solid #e2e8f0;">
+                        <input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll(this.checked)">
+                    </th>
+                    <th style="padding: 10px; text-align: left; border-bottom: 1px solid #e2e8f0;">ID</th>
+                    <th style="padding: 10px; text-align: center; border-bottom: 1px solid #e2e8f0;">Savignano</th>
+                    <th style="padding: 10px; text-align: right; border-bottom: 1px solid #e2e8f0;">Length</th>
+                    <th style="padding: 10px; text-align: right; border-bottom: 1px solid #e2e8f0;">Width</th>
+                    <th style="padding: 10px; text-align: right; border-bottom: 1px solid #e2e8f0;">Weight</th>
+                </tr>
+            </thead><tbody>`;
+
+            for (const artifact of projectArtifacts) {
+                const hasFeatures = artifact.has_savignano_features;
+                html += `
+                    <tr style="border-bottom: 1px solid #e2e8f0; ${hasFeatures ? '' : 'opacity: 0.6;'}">
+                        <td style="padding: 10px;">
+                            <input type="checkbox" class="artifact-checkbox" data-id="${artifact.id}"
+                                   onchange="toggleArtifact('${artifact.id}', this.checked)"
+                                   ${selectedArtifacts.has(artifact.id) ? 'checked' : ''}>
+                        </td>
+                        <td style="padding: 10px; font-weight: 500;">${artifact.id}</td>
+                        <td style="padding: 10px; text-align: center;">
+                            ${hasFeatures ?
+                                '<span style="color: #48bb78;">✓ ' + artifact.feature_count + ' features</span>' :
+                                '<span style="color: #a0aec0;">–</span>'}
+                        </td>
+                        <td style="padding: 10px; text-align: right;">${artifact.length ? artifact.length.toFixed(1) + ' mm' : '–'}</td>
+                        <td style="padding: 10px; text-align: right;">${artifact.width ? artifact.width.toFixed(1) + ' mm' : '–'}</td>
+                        <td style="padding: 10px; text-align: right;">${artifact.weight ? artifact.weight.toFixed(1) + ' g' : '–'}</td>
+                    </tr>
+                `;
+            }
+
+            html += '</tbody></table>';
+            listEl.innerHTML = html;
+            updateSelectedCount();
+        } else {
+            throw new Error(data.error || 'Unknown error');
+        }
+    } catch (error) {
+        listEl.innerHTML = `<p style="padding: 20px; color: #e53e3e; text-align: center;">Error: ${error.message}</p>`;
+    }
+}
+
+function toggleArtifact(id, checked) {
+    if (checked) {
+        selectedArtifacts.add(id);
+    } else {
+        selectedArtifacts.delete(id);
+    }
+    updateSelectedCount();
+}
+
+function toggleSelectAll(checked) {
+    document.querySelectorAll('.artifact-checkbox').forEach(cb => {
+        cb.checked = checked;
+        toggleArtifact(cb.dataset.id, checked);
+    });
+}
+
+function selectAllArtifacts() {
+    document.getElementById('select-all-checkbox').checked = true;
+    toggleSelectAll(true);
+}
+
+function deselectAllArtifacts() {
+    document.getElementById('select-all-checkbox').checked = false;
+    toggleSelectAll(false);
+}
+
+function updateSelectedCount() {
+    document.getElementById('selected-count').textContent = selectedArtifacts.size;
+}
 
 // Toggle weights input based on radio selection
 document.querySelectorAll('input[name="weights-option"]').forEach(radio => {
@@ -480,6 +628,35 @@ document.getElementById('use-ai').addEventListener('change', function() {
 });
 
 async function uploadMeshes() {
+    const uploadBtn = document.getElementById('upload-btn');
+    const progressSpan = document.getElementById('upload-progress');
+
+    // Check source mode
+    if (sourceMode === 'project') {
+        // Use selected artifacts from project
+        if (selectedArtifacts.size === 0) {
+            alert('Please select at least one artifact from the project');
+            return;
+        }
+
+        uploadBtn.disabled = true;
+        progressSpan.textContent = `Using ${selectedArtifacts.size} artifacts from project...`;
+
+        // Move directly to step 2 since artifacts are already loaded
+        document.getElementById('step-1').classList.add('completed');
+        document.getElementById('step-1-status').textContent = 'Completed';
+        document.getElementById('step-1-status').className = 'badge badge-success';
+        document.getElementById('step-2').style.display = 'block';
+
+        uploadBtn.disabled = false;
+        progressSpan.textContent = `✓ ${selectedArtifacts.size} artifacts ready`;
+
+        // Store artifact IDs for analysis
+        uploadedFiles = Array.from(selectedArtifacts);
+        return;
+    }
+
+    // Upload mode - original logic
     const meshFilesInput = document.getElementById('mesh-files');
     const files = meshFilesInput.files;
 
@@ -487,9 +664,6 @@ async function uploadMeshes() {
         alert('Please select at least one mesh file');
         return;
     }
-
-    const uploadBtn = document.getElementById('upload-btn');
-    const progressSpan = document.getElementById('upload-progress');
 
     uploadBtn.disabled = true;
     progressSpan.textContent = `Uploading ${files.length} files...`;
