@@ -491,10 +491,10 @@ def run_analysis():
             return jsonify({
                 'status': 'success',
                 'analysis_id': analysis_id,
-                'results_summary': {
+                'results_summary': convert_to_json_serializable({
                     'n_matrices': results.get('n_matrices', 0),
                     'total_fusions': results.get('total_fusions', 0)
-                }
+                })
             })
 
         except Exception as e:
@@ -768,21 +768,21 @@ def _execute_savignano_workflow(analysis_id):
             cluster_label = int(matrix_analyzer.cluster_labels[artifact_idx]) if hasattr(matrix_analyzer, 'cluster_labels') else 0
 
             # Salva clustering analysis
-            db.save_ai_cache(artifact_id, 'clustering_analysis', {
+            db.save_ai_cache(artifact_id, 'clustering_analysis', convert_to_json_serializable({
                 'cluster_id': cluster_label,
                 'n_total_clusters': matrices_result['n_matrices'],
                 'method': config.get('clustering_method', 'hierarchical'),
                 'silhouette_score': matrices_result.get('silhouette_score'),
                 'analysis_id': analysis_id
-            }, model='savignano_matrix_analyzer')
+            }), model='savignano_matrix_analyzer')
 
             # Salva PCA analysis se disponibile
             if hasattr(matrix_analyzer, 'pca_components'):
-                db.save_ai_cache(artifact_id, 'pca_analysis', {
+                db.save_ai_cache(artifact_id, 'pca_analysis', convert_to_json_serializable({
                     'components': matrix_analyzer.pca_components.tolist() if hasattr(matrix_analyzer.pca_components, 'tolist') else None,
                     'explained_variance': matrix_analyzer.explained_variance if hasattr(matrix_analyzer, 'explained_variance') else None,
                     'analysis_id': analysis_id
-                }, model='savignano_pca')
+                }), model='savignano_pca')
 
         # Salva summary globale dell'analisi
         db.save_ai_cache(analysis_id, 'savignano_analysis_summary', {
@@ -799,12 +799,12 @@ def _execute_savignano_workflow(analysis_id):
 
     logger.info(f"Workflow completed for analysis {analysis_id}")
 
-    return {
+    return convert_to_json_serializable({
         'n_matrices': matrices_result['n_matrices'],
         'total_fusions': fusions_result['total_fusions'],
         'silhouette_score': matrices_result['silhouette_score'],
         'summary': summary
-    }
+    })
 
 
 def _save_artifacts_to_database(analysis_id: str, analysis: dict, results: dict):
@@ -824,7 +824,7 @@ def _save_artifacts_to_database(analysis_id: str, analysis: dict, results: dict)
     meshes_dir = Path(analysis['paths']['meshes_dir'])
 
     # Load features DataFrame
-    features_csv = output_dir / 'features' / 'savignano_features.csv'
+    features_csv = output_dir / 'features' / 'savignano_morphometric_features.csv'
     if not features_csv.exists():
         logger.warning(f"Features file not found: {features_csv}")
         return
