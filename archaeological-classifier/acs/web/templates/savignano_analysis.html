@@ -209,8 +209,8 @@
             </small>
         </div>
 
-        <button class="btn btn-primary btn-lg" onclick="uploadMeshes()" id="upload-btn">
-            📤 Upload & Start Analysis
+        <button class="btn btn-primary btn-lg" onclick="startAnalysis()" id="start-btn">
+            🚀 Start Analysis
         </button>
         <span id="upload-progress" style="margin-left: 15px; color: #718096;"></span>
     </div>
@@ -253,16 +253,7 @@
             </label>
             <small class="form-text">
                 AI provides comprehensive archaeological interpretation of results.
-                Requires Anthropic API key (optional).
-            </small>
-        </div>
-
-        <div class="form-group" id="api-key-section">
-            <label class="form-label">Anthropic API Key (Optional)</label>
-            <input type="password" id="anthropic-api-key" class="form-control" placeholder="sk-ant-...">
-            <small class="form-text">
-                Leave empty to use ANTHROPIC_API_KEY environment variable.
-                <a href="https://console.anthropic.com/" target="_blank">Get API key →</a>
+                Uses server-configured API key.
             </small>
         </div>
 
@@ -622,25 +613,24 @@ function generateManualWeightFields() {
     }
 }
 
-// Toggle AI API key field
-document.getElementById('use-ai').addEventListener('change', function() {
-    document.getElementById('api-key-section').style.display = this.checked ? 'block' : 'none';
-});
-
-async function uploadMeshes() {
-    const uploadBtn = document.getElementById('upload-btn');
+// Start analysis - handles both project and upload modes
+async function startAnalysis() {
+    const startBtn = document.getElementById('start-btn');
     const progressSpan = document.getElementById('upload-progress');
 
     // Check source mode
     if (sourceMode === 'project') {
         // Use selected artifacts from project
         if (selectedArtifacts.size === 0) {
-            alert('Please select at least one artifact from the project');
+            alert('Seleziona almeno un artefatto dal progetto');
             return;
         }
 
-        uploadBtn.disabled = true;
-        progressSpan.textContent = `Using ${selectedArtifacts.size} artifacts from project...`;
+        startBtn.disabled = true;
+        progressSpan.textContent = `Preparazione ${selectedArtifacts.size} artefatti...`;
+
+        // Store artifact IDs for analysis
+        uploadedFiles = Array.from(selectedArtifacts);
 
         // Move directly to step 2 since artifacts are already loaded
         document.getElementById('step-1').classList.add('completed');
@@ -648,11 +638,8 @@ async function uploadMeshes() {
         document.getElementById('step-1-status').className = 'badge badge-success';
         document.getElementById('step-2').style.display = 'block';
 
-        uploadBtn.disabled = false;
-        progressSpan.textContent = `✓ ${selectedArtifacts.size} artifacts ready`;
-
-        // Store artifact IDs for analysis
-        uploadedFiles = Array.from(selectedArtifacts);
+        startBtn.disabled = false;
+        progressSpan.textContent = `✓ ${selectedArtifacts.size} artefatti pronti`;
         return;
     }
 
@@ -661,12 +648,12 @@ async function uploadMeshes() {
     const files = meshFilesInput.files;
 
     if (files.length === 0) {
-        alert('Please select at least one mesh file');
+        alert('Seleziona almeno un file mesh');
         return;
     }
 
-    uploadBtn.disabled = true;
-    progressSpan.textContent = `Uploading ${files.length} files...`;
+    startBtn.disabled = true;
+    progressSpan.textContent = `Caricamento ${files.length} file...`;
 
     // Prepare FormData
     const formData = new FormData();
@@ -693,7 +680,7 @@ async function uploadMeshes() {
             formData.append('weights_file', excelFile);
         } else {
             alert('Please select an Excel/CSV file');
-            uploadBtn.disabled = false;
+            startBtn.disabled = false;
             progressSpan.textContent = '';
             return;
         }
@@ -704,7 +691,7 @@ async function uploadMeshes() {
             formData.append('weights_docx', docxFile);
         } else {
             alert('Please select a DOCX file');
-            uploadBtn.disabled = false;
+            startBtn.disabled = false;
             progressSpan.textContent = '';
             return;
         }
@@ -715,7 +702,7 @@ async function uploadMeshes() {
             formData.append('weights_file', jsonFile);
         } else {
             alert('Please select a JSON file');
-            uploadBtn.disabled = false;
+            startBtn.disabled = false;
             progressSpan.textContent = '';
             return;
         }
@@ -745,12 +732,12 @@ async function uploadMeshes() {
             document.getElementById('step-2-status').className = 'badge badge-warning';
         } else {
             alert('Upload failed: ' + result.error);
-            uploadBtn.disabled = false;
+            startBtn.disabled = false;
             progressSpan.textContent = '';
         }
     } catch (error) {
         alert('Upload error: ' + error.message);
-        uploadBtn.disabled = false;
+        startBtn.disabled = false;
         progressSpan.textContent = '';
     }
 }

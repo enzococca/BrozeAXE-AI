@@ -3523,6 +3523,99 @@ def classify_management_page():
     return render_template('classify_management.html')
 
 
+@web_bp.route('/rag-search', methods=['POST'])
+def rag_search():
+    """
+    RAG (Retrieval-Augmented Generation) semantic search over cached data.
+
+    Request JSON:
+    {
+        "query": "search query",
+        "top_k": 10,
+        "generate_answer": true
+    }
+    """
+    try:
+        from acs.core.rag_search import get_rag_engine
+        from acs.core.database import get_database
+
+        data = request.get_json() or {}
+        query = data.get('query', '').strip()
+
+        if not query:
+            return jsonify({'status': 'error', 'error': 'Query is required'}), 400
+
+        top_k = data.get('top_k', 10)
+        generate_answer = data.get('generate_answer', False)
+
+        # Get RAG engine and check if indexed
+        rag = get_rag_engine()
+        db = get_database()
+
+        # Re-index if needed (check if documents changed)
+        if not rag.is_indexed:
+            # Load all cache data
+            ai_cache = db.get_all_ai_cache()
+            comparisons = db.get_all_comparisons()
+            rag.index_documents(ai_cache, comparisons)
+
+        # Search
+        results = rag.search(query, top_k=top_k)
+
+        response = {
+            'status': 'success',
+            'query': query,
+            'results': results,
+            'count': len(results),
+            'stats': rag.get_stats()
+        }
+
+        # Generate AI answer if requested
+        if generate_answer and results:
+            try:
+                import anthropic
+                client = anthropic.Anthropic()
+                answer = rag.generate_answer(query, results, client)
+                response['answer'] = answer
+            except Exception as e:
+                logging.warning(f"RAG answer generation failed: {e}")
+                response['answer'] = rag.generate_answer(query, results, None)
+
+        return jsonify(response)
+
+    except Exception as e:
+        logging.error(f"RAG search error: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@web_bp.route('/rag-reindex', methods=['POST'])
+def rag_reindex():
+    """Force re-indexing of RAG search engine."""
+    try:
+        from acs.core.rag_search import get_rag_engine
+        from acs.core.database import get_database
+
+        rag = get_rag_engine()
+        db = get_database()
+
+        # Load all cache data
+        ai_cache = db.get_all_ai_cache()
+        comparisons = db.get_all_comparisons()
+
+        # Re-index
+        rag.index_documents(ai_cache, comparisons)
+
+        return jsonify({
+            'status': 'success',
+            'message': 'RAG index rebuilt',
+            'stats': rag.get_stats()
+        })
+
+    except Exception as e:
+        logging.error(f"RAG reindex error: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
 @web_bp.route("/savignano-analysis")
 def savignano_analysis_page():
     """Savignano Archaeological Analysis page."""
