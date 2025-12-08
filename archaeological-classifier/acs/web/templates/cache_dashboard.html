@@ -51,20 +51,32 @@
     </div>
 </div>
 
-<!-- Search/Query Bar -->
+<!-- Search/Query Bar - RAG Semantic Search -->
 <div class="card" style="margin-bottom: 20px;">
-    <h3>🔎 Ricerca Globale</h3>
+    <h3>🔎 Ricerca Semantica (RAG)</h3>
     <p style="font-size: 0.9em; color: #666; margin-bottom: 10px;">
-        Cerca in tutti i dati cached (interpretazioni AI, comparazioni, analisi)
+        Cerca usando intelligenza artificiale in tutti i dati cached - comprende il significato, non solo parole chiave
     </p>
-    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-        <input type="text" id="global-search" class="form-control" placeholder="Cerca parola chiave (es. 'martellatura', 'cluster 0', 'SAV_001')..."
+    <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+        <input type="text" id="global-search" class="form-control"
+               placeholder="Domanda naturale (es. 'Quali artefatti mostrano martellatura intensa?', 'SAV_001 analisi')..."
                style="flex: 1; min-width: 300px;" onkeyup="globalSearch(event)">
-        <button class="btn btn-primary" onclick="executeGlobalSearch()">🔍 Cerca</button>
+        <button class="btn btn-primary" onclick="executeGlobalSearch()" id="rag-search-btn">🔍 Cerca</button>
         <button class="btn btn-secondary" onclick="clearGlobalSearch()">✖ Cancella</button>
     </div>
+    <div style="margin-top: 10px; display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+        <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+            <input type="checkbox" id="rag-generate-answer" style="width: auto;">
+            <span style="font-size: 0.9em;">🤖 Genera risposta AI</span>
+        </label>
+        <span id="rag-stats" style="font-size: 0.8em; color: #888;"></span>
+    </div>
     <div id="global-search-results" style="margin-top: 15px; display: none;">
-        <h4>Risultati ricerca:</h4>
+        <div id="rag-answer-section" style="display: none; margin-bottom: 15px; padding: 15px; background: linear-gradient(135deg, #667eea22 0%, #764ba222 100%); border-radius: 8px; border-left: 4px solid #667eea;">
+            <h4 style="margin: 0 0 10px 0; color: #667eea;">🤖 Risposta AI</h4>
+            <div id="rag-answer-content" style="white-space: pre-wrap;"></div>
+        </div>
+        <h4>📄 Documenti rilevanti (<span id="results-count">0</span>):</h4>
         <div id="search-results-content"></div>
     </div>
 </div>
@@ -934,80 +946,142 @@ function globalSearch(event) {
 }
 
 // Execute global search across all cached data
-function executeGlobalSearch() {
-    const searchTerm = document.getElementById('global-search').value.toLowerCase().trim();
+async function executeGlobalSearch() {
+    const searchTerm = document.getElementById('global-search').value.trim();
     const resultsContainer = document.getElementById('global-search-results');
     const resultsContent = document.getElementById('search-results-content');
+    const ragAnswerSection = document.getElementById('rag-answer-section');
+    const ragAnswerContent = document.getElementById('rag-answer-content');
+    const resultsCount = document.getElementById('results-count');
+    const searchBtn = document.getElementById('rag-search-btn');
+    const generateAnswer = document.getElementById('rag-generate-answer').checked;
 
     if (!searchTerm) {
         resultsContainer.style.display = 'none';
         return;
     }
 
-    const results = [];
-
-    // Search in AI cache
-    allAICache.forEach(item => {
-        const content = typeof item.content === 'string' ? item.content : JSON.stringify(item.content);
-        if (content.toLowerCase().includes(searchTerm) ||
-            item.artifact_id.toLowerCase().includes(searchTerm) ||
-            item.cache_type.toLowerCase().includes(searchTerm)) {
-            results.push({
-                type: 'ai_cache',
-                label: `🤖 ${item.artifact_id} - ${item.cache_type}`,
-                date: item.created_date,
-                content: content,
-                highlight: highlightText(content.substring(0, 300), searchTerm)
-            });
-        }
-    });
-
-    // Search in comparisons
-    allComparisons.forEach(item => {
-        if (item.artifact1_id.toLowerCase().includes(searchTerm) ||
-            item.artifact2_id.toLowerCase().includes(searchTerm)) {
-            results.push({
-                type: 'comparison',
-                label: `🔍 ${item.artifact1_id} ↔️ ${item.artifact2_id}`,
-                date: item.comparison_date,
-                content: `Similarity: ${(item.similarity_score * 100).toFixed(1)}%`,
-                highlight: `Similarity: ${(item.similarity_score * 100).toFixed(1)}%`
-            });
-        }
-    });
-
-    // Display results
+    // Show loading state
+    searchBtn.disabled = true;
+    searchBtn.textContent = '⏳ Cercando...';
     resultsContainer.style.display = 'block';
+    resultsContent.innerHTML = '<p class="loading">Ricerca semantica in corso...</p>';
+    ragAnswerSection.style.display = 'none';
 
-    if (results.length === 0) {
+    try {
+        const response = await fetch('/web/rag-search', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                query: searchTerm,
+                top_k: 15,
+                generate_answer: generateAnswer
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.status !== 'success') {
+            throw new Error(data.error || 'Ricerca fallita');
+        }
+
+        // Update RAG stats
+        if (data.stats) {
+            document.getElementById('rag-stats').textContent =
+                `📚 ${data.stats.document_count} documenti indicizzati | Vocabolario: ${data.stats.vocabulary_size} termini`;
+        }
+
+        // Show AI answer if generated
+        if (data.answer) {
+            ragAnswerSection.style.display = 'block';
+            ragAnswerContent.textContent = data.answer;
+        } else {
+            ragAnswerSection.style.display = 'none';
+        }
+
+        // Display results
+        const results = data.results || [];
+        resultsCount.textContent = results.length;
+
+        if (results.length === 0) {
+            resultsContent.innerHTML = `
+                <p style="color: #666;">Nessun risultato semanticamente rilevante per "<strong>${searchTerm}</strong>"</p>
+                <p style="font-size: 0.9em; color: #999;">Suggerimenti per la ricerca RAG:
+                    <ul>
+                        <li>Usa domande naturali (es. "Quali artefatti hanno martellatura?")</li>
+                        <li>Cerca concetti archeologici (es. "analisi fusione", "cluster simili")</li>
+                        <li>Combina termini (es. "SAV_001 interpretazione tecnologica")</li>
+                    </ul>
+                </p>
+            `;
+            return;
+        }
+
+        resultsContent.innerHTML = results.map(r => {
+            const icon = r.type === 'ai_cache' ? '🤖' : '🔍';
+            const label = r.type === 'ai_cache'
+                ? `${r.artifact_id} - ${formatCacheType(r.cache_type)}`
+                : `${r.artifact1_id} ↔️ ${r.artifact2_id}`;
+            const date = r.date ? new Date(r.date).toLocaleDateString('it-IT') : '';
+
+            // Format content preview
+            let preview = '';
+            if (r.type === 'ai_cache') {
+                const content = typeof r.content === 'string' ? r.content : JSON.stringify(r.content);
+                preview = content.substring(0, 400) + (content.length > 400 ? '...' : '');
+            } else {
+                preview = `Similarità: ${(r.similarity_score * 100).toFixed(1)}%`;
+            }
+
+            return `
+                <div class="cache-item" style="margin-bottom: 15px; border-left: 3px solid ${getScoreColor(r.score)};">
+                    <div class="cache-item-header" style="display: flex; justify-content: space-between; align-items: center;">
+                        <strong>${icon} ${label}</strong>
+                        <div style="display: flex; gap: 10px; align-items: center;">
+                            <span style="background: ${getScoreColor(r.score)}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.8em;">
+                                ${r.score_pct} rilevanza
+                            </span>
+                            <small style="color: #666;">${date}</small>
+                        </div>
+                    </div>
+                    <div style="font-size: 0.9em; color: #4a5568; margin-top: 8px; white-space: pre-wrap;">
+                        ${preview}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+    } catch (error) {
+        console.error('RAG search error:', error);
         resultsContent.innerHTML = `
-            <p style="color: #666;">Nessun risultato trovato per "<strong>${searchTerm}</strong>"</p>
-            <p style="font-size: 0.9em; color: #999;">Suggerimenti:
-                <ul>
-                    <li>Prova a cercare un ID artefatto (es. SAV_001)</li>
-                    <li>Cerca termini specifici (es. "martellatura", "cluster", "componenti")</li>
-                    <li>Cerca tipi di cache (es. "pca", "clustering", "hammering")</li>
-                </ul>
-            </p>
+            <p style="color: #e53e3e;">Errore nella ricerca: ${error.message}</p>
+            <p style="font-size: 0.9em;">Verifica che ci siano dati nella cache e riprova.</p>
         `;
-        return;
+    } finally {
+        searchBtn.disabled = false;
+        searchBtn.textContent = '🔍 Cerca';
     }
+}
 
-    resultsContent.innerHTML = `
-        <p style="margin-bottom: 15px;">Trovati <strong>${results.length}</strong> risultati per "<strong>${searchTerm}</strong>"</p>
-        ${results.slice(0, 20).map(r => `
-            <div class="cache-item" style="margin-bottom: 10px;">
-                <div class="cache-item-header">
-                    <strong>${r.label}</strong>
-                    <small style="color: #666;">${new Date(r.date).toLocaleDateString('it-IT')}</small>
-                </div>
-                <div style="font-size: 0.9em; color: #4a5568; margin-top: 5px;">
-                    ${r.highlight}${r.content.length > 300 ? '...' : ''}
-                </div>
-            </div>
-        `).join('')}
-        ${results.length > 20 ? `<p style="color: #666; font-style: italic;">...e altri ${results.length - 20} risultati</p>` : ''}
-    `;
+// Get color based on relevance score
+function getScoreColor(score) {
+    if (score >= 0.7) return '#48bb78';  // High - green
+    if (score >= 0.4) return '#ed8936';  // Medium - orange
+    return '#a0aec0';  // Low - gray
+}
+
+// Format cache type for display
+function formatCacheType(type) {
+    const labels = {
+        'savignano_interpretation': 'Interpretazione Savignano',
+        'tech_analysis': 'Analisi Tecnologica',
+        'hammering_analysis': 'Analisi Martellatura',
+        'casting_analysis': 'Analisi Fusione',
+        'comprehensive_report': 'Report Comprensivo',
+        'pca_analysis': 'Analisi PCA',
+        'clustering_analysis': 'Clustering'
+    };
+    return labels[type] || type;
 }
 
 // Highlight search term in text
@@ -1022,6 +1096,9 @@ function clearGlobalSearch() {
     document.getElementById('global-search').value = '';
     document.getElementById('global-search-results').style.display = 'none';
     document.getElementById('search-results-content').innerHTML = '';
+    document.getElementById('rag-answer-section').style.display = 'none';
+    document.getElementById('rag-answer-content').textContent = '';
+    document.getElementById('results-count').textContent = '0';
 }
 
 // Generate summary report
