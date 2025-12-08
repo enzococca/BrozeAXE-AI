@@ -436,7 +436,7 @@ async function loadProjectArtifacts() {
     listEl.innerHTML = '<p style="padding: 20px; color: #718096; text-align: center;">Loading artifacts...</p>';
 
     try {
-        const response = await fetch('/web/savignano-artifacts-list');
+        const response = await AuthHelper.fetch('/web/savignano-artifacts-list');
         const data = await response.json();
 
         if (data.status === 'success') {
@@ -702,7 +702,7 @@ async function startAnalysis() {
             }
 
             // Create analysis session from project artifacts
-            const response = await fetch('/api/savignano/start-from-project', {
+            const response = await AuthHelper.fetch('/api/savignano/start-from-project', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
@@ -806,7 +806,7 @@ async function startAnalysis() {
     // weightsOption === 'none' → no weights sent (peso = 0 for all)
 
     try {
-        const response = await fetch('/api/savignano/upload-batch', {
+        const response = await AuthHelper.fetch('/api/savignano/upload-batch', {
             method: 'POST',
             body: formData
         });
@@ -852,7 +852,7 @@ async function configureAnalysis() {
     };
 
     try {
-        const response = await fetch('/api/savignano/configure', {
+        const response = await AuthHelper.fetch('/api/savignano/configure', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -911,7 +911,7 @@ async function runAnalysis() {
         progressBar.style.width = '30%';
         progressBar.textContent = '30%';
 
-        const response = await fetch('/api/savignano/run-analysis', {
+        const response = await AuthHelper.fetch('/api/savignano/run-analysis', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({analysis_id: currentAnalysisId})
@@ -973,7 +973,7 @@ async function displayResults(result) {
 
     // Load full results for Q&A
     try {
-        const fullResults = await fetch(`/api/savignano/results/${currentAnalysisId}`);
+        const fullResults = await AuthHelper.fetch(`/api/savignano/results/${currentAnalysisId}`);
         const fullData = await fullResults.json();
 
         // Display Q&A summary (simplified)
