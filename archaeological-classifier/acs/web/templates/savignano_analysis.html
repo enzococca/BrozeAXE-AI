@@ -987,13 +987,45 @@ async function displayResults(result) {
     }
 }
 
-function downloadFile(fileType) {
+async function downloadFile(fileType) {
     if (!currentAnalysisId) {
         alert('No analysis results available');
         return;
     }
 
-    window.location.href = `/api/savignano/download/${currentAnalysisId}/${fileType}`;
+    try {
+        const response = await AuthHelper.fetch(`/api/savignano/download/${currentAnalysisId}/${fileType}`);
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'Download failed');
+        }
+
+        // Get filename from Content-Disposition header or generate one
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = `${currentAnalysisId}_${fileType}`;
+        if (contentDisposition) {
+            const match = contentDisposition.match(/filename="?(.+)"?/);
+            if (match) {
+                filename = match[1];
+            }
+        }
+
+        // Create blob and download
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+
+    } catch (error) {
+        console.error('Download error:', error);
+        alert('Download failed: ' + error.message);
+    }
 }
 
 function startNewAnalysis() {

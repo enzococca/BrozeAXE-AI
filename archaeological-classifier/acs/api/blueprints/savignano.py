@@ -750,6 +750,53 @@ def _execute_savignano_workflow(analysis_id):
     with open(summary_json, 'w') as f:
         json.dump(convert_to_json_serializable(summary), f, indent=2)
 
+    # STEP 6: Salva risultati nella cache database per riutilizzo
+    logger.info("Saving analysis results to database cache...")
+    try:
+        db = get_database()
+
+        # Salva per ogni artefatto analizzato
+        for _, row in features_df.iterrows():
+            artifact_id = row['artifact_id']
+
+            # Salva features estratte
+            savignano_features = row.to_dict()
+            db.add_features(artifact_id, {'savignano': convert_to_json_serializable(savignano_features)})
+
+            # Trova cluster assignment per questo artefatto
+            artifact_idx = features_df[features_df['artifact_id'] == artifact_id].index[0]
+            cluster_label = int(matrix_analyzer.cluster_labels[artifact_idx]) if hasattr(matrix_analyzer, 'cluster_labels') else 0
+
+            # Salva clustering analysis
+            db.save_ai_cache(artifact_id, 'clustering_analysis', {
+                'cluster_id': cluster_label,
+                'n_total_clusters': matrices_result['n_matrices'],
+                'method': config.get('clustering_method', 'hierarchical'),
+                'silhouette_score': matrices_result.get('silhouette_score'),
+                'analysis_id': analysis_id
+            }, model='savignano_matrix_analyzer')
+
+            # Salva PCA analysis se disponibile
+            if hasattr(matrix_analyzer, 'pca_components'):
+                db.save_ai_cache(artifact_id, 'pca_analysis', {
+                    'components': matrix_analyzer.pca_components.tolist() if hasattr(matrix_analyzer.pca_components, 'tolist') else None,
+                    'explained_variance': matrix_analyzer.explained_variance if hasattr(matrix_analyzer, 'explained_variance') else None,
+                    'analysis_id': analysis_id
+                }, model='savignano_pca')
+
+        # Salva summary globale dell'analisi
+        db.save_ai_cache(analysis_id, 'savignano_analysis_summary', {
+            'summary': convert_to_json_serializable(summary),
+            'matrices_info': convert_to_json_serializable(matrix_analyzer.matrices) if hasattr(matrix_analyzer, 'matrices') else {},
+            'fusions': convert_to_json_serializable(fusions_result),
+            'qa_results': convert_to_json_serializable(qa_results) if qa_results else {}
+        }, model='savignano_workflow')
+
+        logger.info(f"Successfully saved analysis results to database cache for {len(features_df)} artifacts")
+
+    except Exception as cache_error:
+        logger.warning(f"Could not save results to database cache: {cache_error}")
+
     logger.info(f"Workflow completed for analysis {analysis_id}")
 
     return {
