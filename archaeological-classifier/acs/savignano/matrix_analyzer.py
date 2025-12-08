@@ -28,6 +28,8 @@ from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score, davies_bouldin_score
 from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 from scipy.spatial.distance import pdist, squareform
+import matplotlib
+matplotlib.use('Agg')  # Non-interactive backend for server-side rendering
 import matplotlib.pyplot as plt
 import seaborn as sns
 import json
@@ -667,10 +669,10 @@ class MatrixAnalyzer:
         plt.tight_layout()
 
         if output_path:
-            plt.savefig(output_path, dpi=300)
+            plt.savefig(output_path, dpi=300, bbox_inches='tight')
             logger.info(f"Dendrogram salvato: {output_path}")
 
-        plt.show()
+        plt.close()  # Close figure to free memory (no plt.show() in server environment)
 
     def plot_pca_clusters(self, output_path: Optional[str] = None):
         """
@@ -716,10 +718,10 @@ class MatrixAnalyzer:
         plt.tight_layout()
 
         if output_path:
-            plt.savefig(output_path, dpi=300)
+            plt.savefig(output_path, dpi=300, bbox_inches='tight')
             logger.info(f"PCA plot salvato: {output_path}")
 
-        plt.show()
+        plt.close()  # Close figure to free memory (no plt.show() in server environment)
 
     def export_results(self, output_dir: str):
         """

@@ -79,6 +79,109 @@
     font-size: 14px;
     margin-top: 5px;
 }
+/* Results Viewer Modal Styles */
+.results-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.7);
+    z-index: 1000;
+    overflow-y: auto;
+    padding: 20px;
+}
+.results-modal-content {
+    background: white;
+    max-width: 1200px;
+    margin: 0 auto;
+    border-radius: 12px;
+    padding: 30px;
+    position: relative;
+}
+.results-close {
+    position: absolute;
+    top: 15px;
+    right: 20px;
+    font-size: 28px;
+    cursor: pointer;
+    color: #718096;
+}
+.results-close:hover {
+    color: #e53e3e;
+}
+.results-section {
+    margin-bottom: 30px;
+    padding: 20px;
+    background: #f7fafc;
+    border-radius: 8px;
+}
+.results-section h3 {
+    color: #667eea;
+    margin: 0 0 15px 0;
+    border-bottom: 2px solid #667eea;
+    padding-bottom: 10px;
+}
+.matrix-card {
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    border-left: 4px solid #667eea;
+}
+.matrix-card h4 {
+    margin: 0 0 10px 0;
+    color: #2d3748;
+}
+.matrix-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+}
+.stat-item {
+    text-align: center;
+    padding: 10px;
+    background: #f7fafc;
+    border-radius: 6px;
+}
+.stat-value {
+    font-size: 24px;
+    font-weight: bold;
+    color: #667eea;
+}
+.stat-label {
+    font-size: 12px;
+    color: #718096;
+}
+.qa-item {
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+}
+.qa-question {
+    font-weight: bold;
+    color: #2d3748;
+    margin-bottom: 10px;
+}
+.qa-answer {
+    color: #4a5568;
+    line-height: 1.6;
+}
+.viz-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: 20px;
+}
+.viz-item {
+    text-align: center;
+}
+.viz-item img {
+    max-width: 100%;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
 </style>
 
 <div class="savignano-hero">
@@ -381,9 +484,93 @@
             </div>
         </div>
 
-        <button class="btn btn-secondary" onclick="startNewAnalysis()">
-            🔄 Start New Analysis
-        </button>
+        <!-- Action Buttons -->
+        <div style="display: flex; gap: 15px; flex-wrap: wrap; margin-top: 20px;">
+            <button class="btn btn-primary btn-lg" onclick="showFormattedResults()">
+                📊 View Detailed Report
+            </button>
+            <button class="btn btn-lg" style="background: #e53e3e; color: white;" onclick="exportPDF()">
+                📄 Export PDF
+            </button>
+            <button class="btn btn-secondary" onclick="startNewAnalysis()">
+                🔄 Start New Analysis
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Results Viewer Modal -->
+<div id="results-modal" class="results-modal" onclick="closeResultsModal(event)">
+    <div class="results-modal-content" onclick="event.stopPropagation()">
+        <span class="results-close" onclick="closeResultsModal()">&times;</span>
+        <h2 style="margin: 0 0 25px 0; color: #2d3748;">📊 Savignano Analysis - Detailed Report</h2>
+
+        <!-- Summary Section -->
+        <div class="results-section">
+            <h3>🎯 Analysis Summary</h3>
+            <div id="modal-summary" class="matrix-stats">
+                <div class="stat-item">
+                    <div class="stat-value" id="modal-axes">-</div>
+                    <div class="stat-label">Axes Analyzed</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="modal-matrices">-</div>
+                    <div class="stat-label">Matrices Identified</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="modal-fusions">-</div>
+                    <div class="stat-label">Total Fusions</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="modal-silhouette">-</div>
+                    <div class="stat-label">Quality Score</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Matrices Details -->
+        <div class="results-section">
+            <h3>🔬 Matrices Details</h3>
+            <div id="modal-matrices-details">
+                <p style="color: #718096;">Loading matrices data...</p>
+            </div>
+        </div>
+
+        <!-- Visualizations -->
+        <div class="results-section">
+            <h3>📈 Visualizations</h3>
+            <div class="viz-container" id="modal-visualizations">
+                <div class="viz-item">
+                    <h4>Dendrogram</h4>
+                    <img id="viz-dendrogram" src="" alt="Dendrogram" style="display: none;">
+                    <p id="viz-dendrogram-placeholder" style="color: #718096; padding: 40px;">Loading visualization...</p>
+                </div>
+                <div class="viz-item">
+                    <h4>PCA Clusters</h4>
+                    <img id="viz-pca" src="" alt="PCA Clusters" style="display: none;">
+                    <p id="viz-pca-placeholder" style="color: #718096; padding: 40px;">Loading visualization...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Archaeological Q&A -->
+        <div class="results-section">
+            <h3>❓ Archaeological Questions & Answers</h3>
+            <div id="modal-qa-details">
+                <p style="color: #718096;">Loading Q&A data...</p>
+            </div>
+        </div>
+
+        <!-- Download Section -->
+        <div class="results-section">
+            <h3>📥 Export Options</h3>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button class="btn btn-primary" onclick="exportPDF()">📄 Export PDF</button>
+                <button class="btn btn-outline" onclick="downloadFile('report_md')">📝 Markdown Report</button>
+                <button class="btn btn-outline" onclick="downloadFile('features_csv')">📊 Features CSV</button>
+                <button class="btn btn-outline" onclick="downloadFile('matrices_json')">🔬 Matrices JSON</button>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -1033,6 +1220,225 @@ function startNewAnalysis() {
         location.reload();
     }
 }
+
+// Cached results data
+let cachedResults = null;
+
+async function showFormattedResults() {
+    if (!currentAnalysisId) {
+        alert('No analysis results available');
+        return;
+    }
+
+    const modal = document.getElementById('results-modal');
+    modal.style.display = 'block';
+    document.body.style.overflow = 'hidden';
+
+    try {
+        // Fetch full results if not cached
+        if (!cachedResults) {
+            const response = await AuthHelper.fetch(`/api/savignano/results/${currentAnalysisId}`);
+            cachedResults = await response.json();
+        }
+
+        const results = cachedResults.results || cachedResults;
+        const summary = results.results_summary || results.summary || {};
+
+        // Populate summary
+        document.getElementById('modal-axes').textContent = summary.n_axes_analyzed || uploadedFiles.length;
+        document.getElementById('modal-matrices').textContent = summary.n_matrices || '-';
+        document.getElementById('modal-fusions').textContent = summary.total_fusions || '-';
+        document.getElementById('modal-silhouette').textContent = typeof summary.silhouette_score === 'number'
+            ? summary.silhouette_score.toFixed(3) : '-';
+
+        // Populate matrices details
+        const matricesContainer = document.getElementById('modal-matrices-details');
+        const matrices = results.matrices_summary || results.matrices || [];
+
+        if (Array.isArray(matrices) && matrices.length > 0) {
+            let html = '';
+            matrices.forEach((matrix, index) => {
+                const matrixId = matrix.matrix_id !== undefined ? matrix.matrix_id : index;
+                html += `
+                    <div class="matrix-card">
+                        <h4>🔶 Matrix ${matrixId}</h4>
+                        <div class="matrix-stats">
+                            <div class="stat-item">
+                                <div class="stat-value">${matrix.n_axes || matrix.axes_count || '-'}</div>
+                                <div class="stat-label">Axes</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value">${matrix.estimated_fusions || matrix.fusions || '-'}</div>
+                                <div class="stat-label">Est. Fusions</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value">${matrix.mean_length?.toFixed(1) || '-'}</div>
+                                <div class="stat-label">Mean Length (mm)</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value">${matrix.mean_width?.toFixed(1) || '-'}</div>
+                                <div class="stat-label">Mean Width (mm)</div>
+                            </div>
+                        </div>
+                        ${matrix.axes_ids ? `<p style="margin-top: 10px; color: #718096; font-size: 12px;">Axes: ${Array.isArray(matrix.axes_ids) ? matrix.axes_ids.join(', ') : matrix.axes_ids}</p>` : ''}
+                    </div>
+                `;
+            });
+            matricesContainer.innerHTML = html;
+        } else if (typeof matrices === 'object' && !Array.isArray(matrices)) {
+            // Handle object format
+            let html = '';
+            Object.keys(matrices).forEach(key => {
+                const matrix = matrices[key];
+                html += `
+                    <div class="matrix-card">
+                        <h4>🔶 Matrix ${key}</h4>
+                        <div class="matrix-stats">
+                            <div class="stat-item">
+                                <div class="stat-value">${matrix.n_axes || matrix.axes_count || '-'}</div>
+                                <div class="stat-label">Axes</div>
+                            </div>
+                            <div class="stat-item">
+                                <div class="stat-value">${matrix.estimated_fusions || matrix.fusions || '-'}</div>
+                                <div class="stat-label">Est. Fusions</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            matricesContainer.innerHTML = html || '<p style="color: #718096;">No detailed matrix data available</p>';
+        } else {
+            matricesContainer.innerHTML = '<p style="color: #718096;">No detailed matrix data available</p>';
+        }
+
+        // Load visualizations
+        loadVisualization('dendrogram_png', 'viz-dendrogram', 'viz-dendrogram-placeholder');
+        loadVisualization('pca_png', 'viz-pca', 'viz-pca-placeholder');
+
+        // Populate Q&A
+        const qaContainer = document.getElementById('modal-qa-details');
+        const qa = results.archaeological_qa || results.qa_answers || [];
+
+        if (Array.isArray(qa) && qa.length > 0) {
+            let html = '';
+            qa.forEach((item, index) => {
+                html += `
+                    <div class="qa-item">
+                        <div class="qa-question">Q${index + 1}: ${item.question || item.q || 'Question'}</div>
+                        <div class="qa-answer">${formatAnswer(item.answer || item.a || 'No answer available')}</div>
+                    </div>
+                `;
+            });
+            qaContainer.innerHTML = html;
+        } else {
+            qaContainer.innerHTML = '<p style="color: #718096;">Q&A data not available. Download the Markdown report for full analysis.</p>';
+        }
+
+    } catch (error) {
+        console.error('Error loading results:', error);
+        document.getElementById('modal-matrices-details').innerHTML =
+            '<p style="color: #e53e3e;">Error loading results: ' + error.message + '</p>';
+    }
+}
+
+function formatAnswer(answer) {
+    if (!answer) return '';
+    // Convert markdown-like formatting to HTML
+    return answer
+        .replace(/\n\n/g, '</p><p>')
+        .replace(/\n/g, '<br>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>');
+}
+
+async function loadVisualization(fileType, imgId, placeholderId) {
+    const img = document.getElementById(imgId);
+    const placeholder = document.getElementById(placeholderId);
+
+    try {
+        const response = await AuthHelper.fetch(`/api/savignano/download/${currentAnalysisId}/${fileType}`);
+
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            img.src = url;
+            img.style.display = 'block';
+            placeholder.style.display = 'none';
+        } else {
+            placeholder.textContent = 'Visualization not available';
+        }
+    } catch (error) {
+        placeholder.textContent = 'Failed to load visualization';
+    }
+}
+
+function closeResultsModal(event) {
+    if (event && event.target !== document.getElementById('results-modal')) {
+        return;
+    }
+    document.getElementById('results-modal').style.display = 'none';
+    document.body.style.overflow = 'auto';
+}
+
+async function exportPDF() {
+    if (!currentAnalysisId) {
+        alert('No analysis results available');
+        return;
+    }
+
+    const btn = event?.target;
+    const originalText = btn?.textContent;
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳ Generating PDF...';
+    }
+
+    try {
+        const response = await AuthHelper.fetch(`/api/savignano/export-pdf/${currentAnalysisId}`, {
+            method: 'POST'
+        });
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'PDF generation failed');
+        }
+
+        // Get filename from header
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = `savignano_analysis_${currentAnalysisId}.pdf`;
+        if (contentDisposition) {
+            const match = contentDisposition.match(/filename="?(.+)"?/);
+            if (match) filename = match[1];
+        }
+
+        // Download PDF
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+
+    } catch (error) {
+        console.error('PDF export error:', error);
+        alert('PDF export failed: ' + error.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    }
+}
+
+// Keyboard shortcut to close modal
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeResultsModal();
+    }
+});
 </script>
 
 {% endblock %}
