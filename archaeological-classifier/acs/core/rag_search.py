@@ -4,6 +4,7 @@ RAG (Retrieval-Augmented Generation) Search System
 
 Provides semantic search over cached AI interpretations and analysis results.
 Uses TF-IDF for vector search with optional Anthropic re-ranking.
+Features connection resilience with automatic retry on network errors.
 """
 
 import logging
@@ -13,6 +14,12 @@ from datetime import datetime
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+
+from acs.core.resilient_ai import (
+    ResilientAnthropicClient,
+    RetryConfig,
+    get_resilient_client
+)
 
 logger = logging.getLogger(__name__)
 
@@ -177,11 +184,12 @@ class RAGSearchEngine:
                        anthropic_client=None) -> Optional[Dict[str, Any]]:
         """
         Generate a structured, discursive answer based on search results.
+        Uses resilient client with automatic retry on connection errors.
 
         Args:
             query: Original query
             results: Search results
-            anthropic_client: Optional Anthropic client for AI generation
+            anthropic_client: Optional Anthropic client for AI generation (can be raw or resilient)
 
         Returns:
             Dict with answer, structured sections, and optional visualization suggestions
@@ -254,12 +262,32 @@ FORMATO RISPOSTA (JSON):
 
 Rispondi SOLO con il JSON valido, senza altro testo."""
 
-            response = anthropic_client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=2000,
-                temperature=0.1,  # Low temperature for factual, consistent responses
-                messages=[{"role": "user", "content": prompt}]
-            )
+            # Use resilient client if available, otherwise use raw client
+            if isinstance(anthropic_client, ResilientAnthropicClient):
+                response = anthropic_client.create_message(
+                    model="claude-sonnet-4-20250514",
+                    max_tokens=2000,
+                    temperature=0.1,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+            else:
+                # Try to use resilient wrapper for raw client
+                try:
+                    resilient = get_resilient_client()
+                    response = resilient.create_message(
+                        model="claude-sonnet-4-20250514",
+                        max_tokens=2000,
+                        temperature=0.1,
+                        messages=[{"role": "user", "content": prompt}]
+                    )
+                except Exception:
+                    # Fallback to raw client if resilient fails
+                    response = anthropic_client.messages.create(
+                        model="claude-sonnet-4-20250514",
+                        max_tokens=2000,
+                        temperature=0.1,
+                        messages=[{"role": "user", "content": prompt}]
+                    )
 
             response_text = response.content[0].text.strip()
 

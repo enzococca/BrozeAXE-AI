@@ -1396,7 +1396,9 @@ def restore_database_from_storage(db_path: str = None) -> dict:
             return {'status': 'disabled', 'message': 'DB_RESTORE_ENABLED is false'}
 
         # Check if local DB already has ACTUAL DATA (not just schema)
+        # Check BOTH artifacts AND users to prevent overwriting newly created users
         local_artifact_count = 0
+        local_user_count = 0
         if os.path.exists(db_path):
             try:
                 import sqlite3
@@ -1404,16 +1406,28 @@ def restore_database_from_storage(db_path: str = None) -> dict:
                 cursor = conn.cursor()
                 cursor.execute('SELECT COUNT(*) FROM artifacts')
                 local_artifact_count = cursor.fetchone()[0]
+                # Also check for users (excluding default admin)
+                try:
+                    cursor.execute("SELECT COUNT(*) FROM users WHERE username != 'admin'")
+                    local_user_count = cursor.fetchone()[0]
+                except Exception:
+                    # users table might not exist in old DBs
+                    local_user_count = 0
                 conn.close()
-                logger.info(f"Local database has {local_artifact_count} artifacts")
+                logger.info(f"Local database has {local_artifact_count} artifacts and {local_user_count} non-admin users")
             except Exception as e:
-                logger.warning(f"Could not count local artifacts: {e}")
+                logger.warning(f"Could not count local data: {e}")
                 local_artifact_count = 0
+                local_user_count = 0
 
-        # Only skip restore if local DB has actual artifacts
+        # Skip restore if local DB has actual artifacts OR non-default users
         if local_artifact_count > 0:
             logger.info(f"Local database has {local_artifact_count} artifacts, skipping restore")
             return {'status': 'skipped', 'reason': 'local_db_has_data', 'artifact_count': local_artifact_count}
+
+        if local_user_count > 0:
+            logger.info(f"Local database has {local_user_count} non-admin users, skipping restore to preserve user accounts")
+            return {'status': 'skipped', 'reason': 'local_db_has_users', 'user_count': local_user_count}
 
         # Get storage backend
         storage = get_default_storage()
@@ -1517,31 +1531,41 @@ def auto_sync_database() -> dict:
             skip_reason = restore_result.get('reason', '')
 
             # Backup to cloud if:
-            # 1. Local DB exists with data
+            # 1. Local DB exists with data (artifacts OR users)
             # 2. No backups found in cloud (create first backup)
             # 3. Folder doesn't exist yet
-            should_backup = skip_reason in ('local_db_has_data', 'no_backups', 'no_db_backups', 'no_backups_found')
+            # 4. Local DB has users (to preserve user accounts)
+            should_backup = skip_reason in ('local_db_has_data', 'local_db_has_users', 'no_backups', 'no_db_backups', 'no_backups_found')
 
             if should_backup:
                 if not os.path.exists(db_path):
                     logger.info(f"ℹ️ No local database yet at {db_path}, nothing to backup")
                 else:
-                    # Check if local DB has actual artifacts before backing up
+                    # Check if local DB has actual data (artifacts OR users) before backing up
                     local_artifact_count = 0
+                    local_user_count = 0
                     try:
                         import sqlite3
                         conn = sqlite3.connect(db_path)
                         cursor = conn.cursor()
                         cursor.execute('SELECT COUNT(*) FROM artifacts')
                         local_artifact_count = cursor.fetchone()[0]
+                        # Also count non-admin users
+                        try:
+                            cursor.execute("SELECT COUNT(*) FROM users WHERE username != 'admin'")
+                            local_user_count = cursor.fetchone()[0]
+                        except:
+                            pass
                         conn.close()
                     except:
                         pass
 
-                    if local_artifact_count == 0:
-                        logger.info(f"ℹ️ Local database has 0 artifacts, skipping backup to avoid overwriting good data")
+                    has_meaningful_data = local_artifact_count > 0 or local_user_count > 0
+
+                    if not has_meaningful_data:
+                        logger.info(f"ℹ️ Local database has 0 artifacts and 0 non-admin users, skipping backup to avoid overwriting good data")
                     else:
-                        logger.info(f"🔄 Auto-sync: Backing up local database ({local_artifact_count} artifacts) to cloud...")
+                        logger.info(f"🔄 Auto-sync: Backing up local database ({local_artifact_count} artifacts, {local_user_count} users) to cloud...")
                         backup_result = backup_database_to_storage(db_path)
                         results['backup'] = backup_result
 
