@@ -82,22 +82,31 @@
 </div>
 
 <!-- Statistics Cards -->
-<div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px;">
-    <div class="stat-card card" style="text-align: center; padding: 20px;">
-        <h3 style="color: #667eea; font-size: 2em;" id="stat-ai-cache">-</h3>
+<div class="stats-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 30px;">
+    <div class="stat-card card" style="text-align: center; padding: 15px;">
+        <h3 style="color: #667eea; font-size: 1.8em;" id="stat-ai-cache">-</h3>
         <p>Interpretazioni AI</p>
     </div>
-    <div class="stat-card card" style="text-align: center; padding: 20px;">
-        <h3 style="color: #48bb78; font-size: 2em;" id="stat-comparisons">-</h3>
+    <div class="stat-card card" style="text-align: center; padding: 15px;">
+        <h3 style="color: #48bb78; font-size: 1.8em;" id="stat-comparisons">-</h3>
         <p>Comparazioni</p>
     </div>
-    <div class="stat-card card" style="text-align: center; padding: 20px;">
-        <h3 style="color: #ed8936; font-size: 2em;" id="stat-features">-</h3>
+    <div class="stat-card card" style="text-align: center; padding: 15px;">
+        <h3 style="color: #ed8936; font-size: 1.8em;" id="stat-features">-</h3>
         <p>Artefatti con Features</p>
+        <small style="color: #888;" id="stat-features-detail"></small>
     </div>
-    <div class="stat-card card" style="text-align: center; padding: 20px;">
-        <h3 style="color: #9f7aea; font-size: 2em;" id="stat-analyses">-</h3>
+    <div class="stat-card card" style="text-align: center; padding: 15px;">
+        <h3 style="color: #38b2ac; font-size: 1.8em;" id="stat-savignano">-</h3>
+        <p>Con Features Savignano</p>
+    </div>
+    <div class="stat-card card" style="text-align: center; padding: 15px;">
+        <h3 style="color: #9f7aea; font-size: 1.8em;" id="stat-analyses">-</h3>
         <p>Analisi (PCA/Clustering)</p>
+    </div>
+    <div class="stat-card card" style="text-align: center; padding: 15px;">
+        <h3 style="color: #718096; font-size: 1.8em;" id="stat-total">-</h3>
+        <p>Totale Artefatti</p>
     </div>
 </div>
 
@@ -429,6 +438,19 @@ async function refreshStats() {
         document.getElementById('stat-ai-cache').textContent = aiTotal;
         document.getElementById('stat-comparisons').textContent = data.comparisons_count || 0;
         document.getElementById('stat-features').textContent = data.artifacts_with_features || 0;
+
+        // Show breakdown of features
+        const morphometric = data.artifacts_with_morphometric || 0;
+        const stylistic = data.artifacts_with_stylistic || 0;
+        if (morphometric || stylistic) {
+            document.getElementById('stat-features-detail').textContent = `(${morphometric} morph. / ${stylistic} styl.)`;
+        }
+
+        // Savignano-specific count
+        document.getElementById('stat-savignano').textContent = data.artifacts_with_savignano || 0;
+
+        // Total artifacts
+        document.getElementById('stat-total').textContent = data.total_artifacts || 0;
 
         // Count analyses
         let analysesTotal = 0;
@@ -969,7 +991,7 @@ async function executeGlobalSearch() {
     ragAnswerSection.style.display = 'none';
 
     try {
-        const response = await fetch('/web/rag-search', {
+        const response = await AuthHelper.fetch('/web/rag-search', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -991,10 +1013,83 @@ async function executeGlobalSearch() {
                 `📚 ${data.stats.document_count} documenti indicizzati | Vocabolario: ${data.stats.vocabulary_size} termini`;
         }
 
-        // Show AI answer if generated
+        // Show AI answer if generated - with structured formatting
         if (data.answer) {
             ragAnswerSection.style.display = 'block';
-            ragAnswerContent.textContent = data.answer;
+
+            // Render markdown-like formatting
+            let formattedAnswer = data.answer
+                .replace(/## ([^\n]+)/g, '<h3 style="color: #667eea; margin: 15px 0 8px 0;">$1</h3>')
+                .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                .replace(/_([^_]+)_/g, '<em style="color: #718096;">$1</em>')
+                .replace(/• ([^\n]+)/g, '<li style="margin-left: 20px;">$1</li>')
+                .replace(/\n\n/g, '</p><p>')
+                .replace(/\n/g, '<br>');
+
+            ragAnswerContent.innerHTML = `<div style="line-height: 1.6;">${formattedAnswer}</div>`;
+
+            // Show visualization if available
+            if (data.visualization) {
+                const viz = data.visualization;
+                let vizHtml = '';
+
+                if (viz.type === 'chart' && viz.data) {
+                    vizHtml = `
+                        <div style="margin-top: 20px; text-align: center;">
+                            <h4 style="color: #667eea; margin-bottom: 10px;">📊 ${viz.description || 'Visualizzazione'}</h4>
+                            <img src="${viz.data}" alt="Visualization" style="max-width: 100%; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                        </div>
+                    `;
+                } else if (viz.type === 'table' && viz.data) {
+                    let tableHtml = '<table style="width: 100%; border-collapse: collapse; margin-top: 15px;">';
+                    tableHtml += '<thead><tr style="background: #f7fafc;">';
+                    const headers = Object.keys(viz.data[0] || {});
+                    headers.forEach(h => {
+                        tableHtml += `<th style="padding: 10px; border: 1px solid #e2e8f0; text-align: left;">${h}</th>`;
+                    });
+                    tableHtml += '</tr></thead><tbody>';
+                    viz.data.forEach(row => {
+                        tableHtml += '<tr>';
+                        headers.forEach(h => {
+                            let val = row[h];
+                            if (typeof val === 'number') val = val.toFixed ? val.toFixed(2) : val;
+                            tableHtml += `<td style="padding: 8px; border: 1px solid #e2e8f0;">${val || '-'}</td>`;
+                        });
+                        tableHtml += '</tr>';
+                    });
+                    tableHtml += '</tbody></table>';
+                    vizHtml = `
+                        <div style="margin-top: 20px;">
+                            <h4 style="color: #667eea; margin-bottom: 10px;">📋 ${viz.description || 'Tabella'}</h4>
+                            ${tableHtml}
+                        </div>
+                    `;
+                } else if (viz.type === 'info') {
+                    vizHtml = `
+                        <div style="margin-top: 15px; padding: 10px; background: #fffaf0; border-radius: 8px; border-left: 4px solid #ed8936;">
+                            <strong>ℹ️ ${viz.description || ''}</strong>
+                            <p style="margin: 5px 0 0 0; color: #718096;">${viz.data}</p>
+                        </div>
+                    `;
+                }
+
+                if (vizHtml) {
+                    ragAnswerContent.innerHTML += vizHtml;
+                }
+            }
+
+            // Show visualization suggestion if AI recommended one but we couldn't generate it
+            if (data.needs_visualization && !data.visualization && data.visualization_description) {
+                ragAnswerContent.innerHTML += `
+                    <div style="margin-top: 15px; padding: 10px; background: #f0fff4; border-radius: 8px; border-left: 4px solid #48bb78;">
+                        <strong>💡 Suggerimento visualizzazione:</strong>
+                        <p style="margin: 5px 0 0 0; color: #718096;">${data.visualization_description}</p>
+                        <p style="margin: 5px 0 0 0; font-size: 0.9em; color: #48bb78;">
+                            Tipo consigliato: <em>${data.visualization_type}</em>
+                        </p>
+                    </div>
+                `;
+            }
         } else {
             ragAnswerSection.style.display = 'none';
         }

@@ -603,6 +603,273 @@ def download_file(analysis_id, file_type):
         return jsonify({'error': str(e)}), 500
 
 
+@savignano_bp.route('/export-pdf/<analysis_id>', methods=['POST'])
+@login_required
+def export_pdf(analysis_id):
+    """
+    Generate and export PDF report for Savignano analysis.
+
+    Params:
+        analysis_id: ID analisi
+
+    Returns:
+        PDF file download
+    """
+    try:
+        if analysis_id not in ANALYSES:
+            return jsonify({'error': 'Analysis not found'}), 404
+
+        analysis = ANALYSES[analysis_id]
+
+        if analysis['status'] != 'completed':
+            return jsonify({'error': 'Analysis not completed yet'}), 400
+
+        output_dir = Path(analysis['paths']['output_dir'])
+        results = analysis.get('results', {})
+
+        # Generate PDF
+        pdf_path = _generate_savignano_pdf(analysis_id, output_dir, results)
+
+        if not pdf_path or not pdf_path.exists():
+            return jsonify({'error': 'PDF generation failed'}), 500
+
+        return send_file(
+            str(pdf_path),
+            as_attachment=True,
+            download_name=f'savignano_analysis_{analysis_id}.pdf',
+            mimetype='application/pdf'
+        )
+
+    except Exception as e:
+        logger.error(f"Error in export_pdf: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+def _generate_savignano_pdf(analysis_id, output_dir, results):
+    """
+    Generate PDF report for Savignano analysis.
+
+    Args:
+        analysis_id: Analysis ID
+        output_dir: Output directory path
+        results: Analysis results dict
+
+    Returns:
+        Path to generated PDF
+    """
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch, cm
+    from reportlab.lib import colors
+    from reportlab.platypus import (
+        SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer,
+        PageBreak, Image, KeepTogether
+    )
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+
+    pdf_path = output_dir / f'savignano_analysis_report_{analysis_id}.pdf'
+
+    # Create PDF document
+    doc = SimpleDocTemplate(
+        str(pdf_path),
+        pagesize=A4,
+        rightMargin=inch,
+        leftMargin=inch,
+        topMargin=inch,
+        bottomMargin=inch
+    )
+
+    # Get styles
+    styles = getSampleStyleSheet()
+
+    # Custom styles
+    title_style = ParagraphStyle(
+        name='CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=colors.HexColor('#2d3748'),
+        spaceAfter=30,
+        alignment=TA_CENTER
+    )
+
+    section_style = ParagraphStyle(
+        name='SectionHeading',
+        parent=styles['Heading2'],
+        fontSize=14,
+        textColor=colors.HexColor('#667eea'),
+        spaceAfter=10,
+        spaceBefore=15
+    )
+
+    body_style = ParagraphStyle(
+        name='BodyText',
+        parent=styles['Normal'],
+        fontSize=10,
+        textColor=colors.HexColor('#2d3748'),
+        spaceAfter=8,
+        alignment=TA_JUSTIFY,
+        leading=14
+    )
+
+    # Build story
+    story = []
+
+    # Title
+    story.append(Paragraph(
+        "Savignano sul Panaro - Archaeological Analysis Report",
+        title_style
+    ))
+    story.append(Spacer(1, 0.3*inch))
+
+    # Metadata
+    story.append(Paragraph(
+        f"Analysis ID: {analysis_id}<br/>"
+        f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}<br/>"
+        f"Bronze Age Axes Hoard (ca. 1600-1300 BCE)",
+        styles['Normal']
+    ))
+    story.append(Spacer(1, 0.5*inch))
+
+    # Summary Section
+    story.append(Paragraph("Executive Summary", section_style))
+
+    summary = results.get('results_summary', results.get('summary', {}))
+    n_axes = summary.get('n_axes_analyzed', '-')
+    n_matrices = summary.get('n_matrices', '-')
+    total_fusions = summary.get('total_fusions', '-')
+    silhouette = summary.get('silhouette_score', '-')
+
+    summary_text = f"""
+    This report presents the comprehensive archaeological analysis of <b>{n_axes} bronze axes</b>
+    from the Savignano sul Panaro hoard. The analysis identified <b>{n_matrices} distinct casting matrices</b>
+    used in the production of these axes, with an estimated <b>{total_fusions} total casting events</b>.
+    The clustering quality score (silhouette) is <b>{silhouette if isinstance(silhouette, str) else f'{silhouette:.3f}'}</b>.
+    """
+    story.append(Paragraph(summary_text, body_style))
+    story.append(Spacer(1, 0.3*inch))
+
+    # Summary table
+    summary_data = [
+        ['Metric', 'Value'],
+        ['Axes Analyzed', str(n_axes)],
+        ['Matrices Identified', str(n_matrices)],
+        ['Total Fusions', str(total_fusions)],
+        ['Quality Score', str(silhouette) if isinstance(silhouette, str) else f'{silhouette:.3f}']
+    ]
+    summary_table = Table(summary_data, colWidths=[3*inch, 2*inch])
+    summary_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#667eea')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f7fafc')),
+        ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#e2e8f0')),
+        ('FONTSIZE', (0, 1), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+    ]))
+    story.append(summary_table)
+    story.append(Spacer(1, 0.5*inch))
+
+    # Matrices Section
+    story.append(Paragraph("Matrices Analysis", section_style))
+
+    matrices = results.get('matrices_summary', results.get('matrices', []))
+    if isinstance(matrices, list) and len(matrices) > 0:
+        matrices_data = [['Matrix ID', 'Axes', 'Est. Fusions', 'Mean Length', 'Mean Width']]
+        for matrix in matrices:
+            mid = matrix.get('matrix_id', '-')
+            axes = matrix.get('n_axes', matrix.get('axes_count', '-'))
+            fusions = matrix.get('estimated_fusions', matrix.get('fusions', '-'))
+            length = matrix.get('mean_length', '-')
+            width = matrix.get('mean_width', '-')
+            matrices_data.append([
+                str(mid),
+                str(axes),
+                str(fusions),
+                f"{length:.1f} mm" if isinstance(length, (int, float)) else str(length),
+                f"{width:.1f} mm" if isinstance(width, (int, float)) else str(width)
+            ])
+
+        matrices_table = Table(matrices_data, colWidths=[1*inch, 1*inch, 1.2*inch, 1.3*inch, 1.3*inch])
+        matrices_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#667eea')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f7fafc')),
+            ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#e2e8f0')),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+        ]))
+        story.append(matrices_table)
+    else:
+        story.append(Paragraph("Detailed matrix information not available.", body_style))
+
+    story.append(Spacer(1, 0.5*inch))
+
+    # Add visualizations if available
+    story.append(PageBreak())
+    story.append(Paragraph("Visualizations", section_style))
+
+    # Dendrogram
+    dendrogram_path = output_dir / 'visualizations' / 'matrices_dendrogram.png'
+    if dendrogram_path.exists():
+        story.append(Paragraph("Hierarchical Clustering Dendrogram", styles['Heading3']))
+        try:
+            img = Image(str(dendrogram_path), width=6*inch, height=4*inch)
+            story.append(img)
+        except Exception as e:
+            story.append(Paragraph(f"Could not load dendrogram: {e}", body_style))
+        story.append(Spacer(1, 0.3*inch))
+
+    # PCA
+    pca_path = output_dir / 'visualizations' / 'matrices_pca_clusters.png'
+    if pca_path.exists():
+        story.append(Paragraph("PCA Cluster Visualization", styles['Heading3']))
+        try:
+            img = Image(str(pca_path), width=6*inch, height=4*inch)
+            story.append(img)
+        except Exception as e:
+            story.append(Paragraph(f"Could not load PCA visualization: {e}", body_style))
+        story.append(Spacer(1, 0.3*inch))
+
+    # Archaeological Q&A Section
+    story.append(PageBreak())
+    story.append(Paragraph("Archaeological Questions & Answers", section_style))
+
+    qa = results.get('archaeological_qa', results.get('qa_answers', []))
+    if isinstance(qa, list) and len(qa) > 0:
+        for i, item in enumerate(qa, 1):
+            q = item.get('question', item.get('q', f'Question {i}'))
+            a = item.get('answer', item.get('a', 'No answer available'))
+
+            story.append(Paragraph(f"<b>Q{i}: {q}</b>", body_style))
+            story.append(Paragraph(str(a), body_style))
+            story.append(Spacer(1, 0.2*inch))
+    else:
+        story.append(Paragraph(
+            "Q&A data not available. Please refer to the markdown report for full analysis.",
+            body_style
+        ))
+
+    # Footer
+    story.append(Spacer(1, 0.5*inch))
+    story.append(Paragraph(
+        "<i>Generated by Archaeological Classifier System - Savignano Analysis Module</i>",
+        styles['Normal']
+    ))
+
+    # Build PDF
+    doc.build(story)
+    logger.info(f"PDF report generated: {pdf_path}")
+
+    return pdf_path
+
+
 # =============================================================================
 # Helper Functions
 # =============================================================================

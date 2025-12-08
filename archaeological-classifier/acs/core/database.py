@@ -798,13 +798,36 @@ class ArtifactDatabase:
             cursor.execute('SELECT analysis_type, COUNT(*) as count FROM analysis_results GROUP BY analysis_type')
             stats['analysis_results'] = {row['analysis_type']: row['count'] for row in cursor.fetchall()}
 
-            # Features stats
+            # Features stats (morphometric only)
             cursor.execute('SELECT COUNT(DISTINCT artifact_id) as count FROM features')
-            stats['artifacts_with_features'] = cursor.fetchone()['count']
+            stats['artifacts_with_morphometric'] = cursor.fetchone()['count']
 
-            # Stylistic features stats
+            # Stylistic features stats (includes Savignano features)
             cursor.execute('SELECT COUNT(DISTINCT artifact_id) as count FROM stylistic_features')
             stats['artifacts_with_stylistic'] = cursor.fetchone()['count']
+
+            # Savignano features specifically
+            cursor.execute('''
+                SELECT COUNT(DISTINCT artifact_id) as count
+                FROM stylistic_features
+                WHERE feature_category = 'savignano'
+            ''')
+            stats['artifacts_with_savignano'] = cursor.fetchone()['count']
+
+            # Total unique artifacts with any features (combined)
+            cursor.execute('''
+                SELECT COUNT(DISTINCT artifact_id) as count
+                FROM (
+                    SELECT artifact_id FROM features
+                    UNION
+                    SELECT artifact_id FROM stylistic_features
+                )
+            ''')
+            stats['artifacts_with_features'] = cursor.fetchone()['count']
+
+            # Total artifacts in database
+            cursor.execute('SELECT COUNT(*) as count FROM artifacts')
+            stats['total_artifacts'] = cursor.fetchone()['count']
 
             return stats
 
