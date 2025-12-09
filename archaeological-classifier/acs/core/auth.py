@@ -206,6 +206,10 @@ def register_user(username: str, email: str, password: str,
     # Generate token
     token = JWTManager.generate_token(user_id, username, role)
 
+    # Trigger immediate backup to cloud storage (critical for ephemeral storage)
+    # This ensures new users are not lost on deploy
+    _trigger_backup_for_new_user(username)
+
     return {
         'user_id': user_id,
         'username': username,
@@ -214,6 +218,33 @@ def register_user(username: str, email: str, password: str,
         'full_name': full_name,
         'token': token
     }
+
+
+def _trigger_backup_for_new_user(username: str):
+    """Trigger database backup after user registration.
+
+    This is critical for Railway deployments where storage is ephemeral.
+    """
+    storage_backend = os.getenv('STORAGE_BACKEND', 'local')
+    if storage_backend == 'local':
+        return  # No need to backup for local storage
+
+    try:
+        from .database import backup_database_to_storage
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info(f"[User Backup] Triggering backup after new user registration: {username}")
+        result = backup_database_to_storage()
+
+        if result.get('status') == 'success':
+            logger.info(f"[User Backup] ✅ Database backed up: {result.get('backup_filename')}")
+        elif result.get('status') == 'error':
+            logger.warning(f"[User Backup] ⚠️ Backup failed: {result.get('error')}")
+    except Exception as e:
+        # Don't fail user registration if backup fails
+        import logging
+        logging.getLogger(__name__).warning(f"[User Backup] Backup error (non-fatal): {e}")
 
 
 def login_required(f: Callable) -> Callable:

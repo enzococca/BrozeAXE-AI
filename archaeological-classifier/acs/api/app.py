@@ -8,6 +8,55 @@ Main Flask application with all API blueprints.
 from flask import Flask, jsonify
 from flask_cors import CORS
 import os
+import atexit
+import signal
+import sys
+
+
+# Track if shutdown backup has already been done
+_shutdown_backup_done = False
+
+
+def _perform_shutdown_backup():
+    """Backup database to cloud storage before shutdown.
+
+    This is critical for Railway deployments where storage is ephemeral.
+    Without this, user accounts and AI cache would be lost on each deploy.
+    """
+    global _shutdown_backup_done
+
+    # Avoid duplicate backups (can be called by both atexit and signal)
+    if _shutdown_backup_done:
+        return
+    _shutdown_backup_done = True
+
+    storage_backend = os.getenv('STORAGE_BACKEND', 'local')
+    if storage_backend == 'local':
+        print("[Shutdown] ℹ️  Using local storage, skipping cloud backup")
+        return
+
+    try:
+        from acs.core.database import backup_database_to_storage
+
+        print("[Shutdown] 🔄 Backing up database before shutdown...")
+        result = backup_database_to_storage()
+
+        if result.get('status') == 'success':
+            print(f"[Shutdown] ✅ Database backed up: {result.get('backup_filename')}")
+        elif result.get('status') == 'error':
+            print(f"[Shutdown] ⚠️  Backup failed: {result.get('error')}")
+        else:
+            print(f"[Shutdown] ℹ️  Backup status: {result.get('status')}")
+    except Exception as e:
+        print(f"[Shutdown] ⚠️  Backup error: {e}")
+
+
+def _signal_handler(signum, frame):
+    """Handle shutdown signals (SIGTERM, SIGINT) by backing up first."""
+    signal_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+    print(f"[Shutdown] Received {signal_name}, initiating graceful shutdown...")
+    _perform_shutdown_backup()
+    sys.exit(0)
 
 
 def _initialize_mesh_persistence(app):
@@ -55,6 +104,17 @@ def create_app(config=None):
 
     # Create upload folder
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
+    # Register shutdown hooks for database backup (critical for Railway ephemeral storage)
+    storage_backend = os.getenv('STORAGE_BACKEND', 'local')
+    if storage_backend != 'local':
+        print(f"[Shutdown Hook] Registering database backup handlers for {storage_backend}...")
+        # Register atexit handler (called on normal Python exit)
+        atexit.register(_perform_shutdown_backup)
+        # Register signal handlers (called on SIGTERM from Railway, SIGINT from Ctrl+C)
+        signal.signal(signal.SIGTERM, _signal_handler)
+        signal.signal(signal.SIGINT, _signal_handler)
+        print("[Shutdown Hook] ✅ Backup handlers registered")
 
     # Register API blueprints
     from acs.api.blueprints.auth import auth_bp

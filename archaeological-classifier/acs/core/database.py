@@ -604,6 +604,9 @@ class ArtifactDatabase:
                 datetime.now().isoformat()
             ))
 
+        # Trigger periodic backup (non-blocking, in background thread)
+        _trigger_periodic_backup()
+
     def get_analysis_results(self, analysis_type: str = None, limit: int = 10) -> List[Dict]:
         """Retrieve analysis results."""
         with self.get_connection() as conn:
@@ -669,6 +672,9 @@ class ArtifactDatabase:
                 model,
                 datetime.now().isoformat()
             ))
+
+        # Trigger periodic backup (non-blocking, in background thread)
+        _trigger_periodic_backup()
 
     def clear_ai_cache(self, artifact_id: str = None, cache_type: str = None):
         """Clear AI cache. If no params, clears all. Can filter by artifact or type."""
@@ -1294,6 +1300,39 @@ class ArtifactDatabase:
 
 # Global database instance
 _db_instance = None
+
+# Track cache saves for periodic backup
+_cache_save_count = 0
+_CACHE_BACKUP_THRESHOLD = 5  # Backup after every N cache saves
+
+
+def _trigger_periodic_backup():
+    """Trigger backup if threshold reached (non-blocking)."""
+    global _cache_save_count
+    _cache_save_count += 1
+
+    if _cache_save_count >= _CACHE_BACKUP_THRESHOLD:
+        _cache_save_count = 0
+        storage_backend = os.getenv('STORAGE_BACKEND', 'local')
+        if storage_backend != 'local':
+            try:
+                import threading
+                import logging
+                logger = logging.getLogger(__name__)
+
+                def do_backup():
+                    try:
+                        result = backup_database_to_storage()
+                        if result.get('status') == 'success':
+                            logger.info(f"[Periodic Backup] ✅ Database backed up: {result.get('backup_filename')}")
+                    except Exception as e:
+                        logger.warning(f"[Periodic Backup] Backup error: {e}")
+
+                # Run backup in background thread to not block the request
+                thread = threading.Thread(target=do_backup, daemon=True)
+                thread.start()
+            except Exception:
+                pass
 
 
 def get_database() -> ArtifactDatabase:
