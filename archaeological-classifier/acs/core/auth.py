@@ -224,6 +224,7 @@ def _trigger_backup_for_new_user(username: str):
     """Trigger database backup after user registration.
 
     This is critical for Railway deployments where storage is ephemeral.
+    The backup is SYNCHRONOUS to ensure it completes before returning.
     """
     storage_backend = os.getenv('STORAGE_BACKEND', 'local')
     if storage_backend == 'local':
@@ -231,20 +232,25 @@ def _trigger_backup_for_new_user(username: str):
 
     try:
         from .database import backup_database_to_storage
-        import logging
-        logger = logging.getLogger(__name__)
 
-        logger.info(f"[User Backup] Triggering backup after new user registration: {username}")
+        print(f"[User Backup] 🔄 Triggering SYNC backup after new user registration: {username}")
+
+        # SYNCHRONOUS backup - wait for completion
         result = backup_database_to_storage()
 
         if result.get('status') == 'success':
-            logger.info(f"[User Backup] ✅ Database backed up: {result.get('backup_filename')}")
+            print(f"[User Backup] ✅ Database backed up: {result.get('backup_filename')}")
+            print(f"[User Backup] ✅ latest.db also updated")
         elif result.get('status') == 'error':
-            logger.warning(f"[User Backup] ⚠️ Backup failed: {result.get('error')}")
+            print(f"[User Backup] ⚠️ Backup FAILED: {result.get('error')}")
+        else:
+            print(f"[User Backup] ℹ️ Backup status: {result}")
+
     except Exception as e:
-        # Don't fail user registration if backup fails
-        import logging
-        logging.getLogger(__name__).warning(f"[User Backup] Backup error (non-fatal): {e}")
+        # Don't fail user registration if backup fails, but log loudly
+        print(f"[User Backup] ❌ CRITICAL: Backup error (non-fatal): {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def login_required(f: Callable) -> Callable:

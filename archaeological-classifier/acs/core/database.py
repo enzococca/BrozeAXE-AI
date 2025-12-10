@@ -1343,11 +1343,12 @@ def get_database() -> ArtifactDatabase:
     return _db_instance
 
 
-def backup_database_to_storage(db_path: str = None) -> dict:
+def backup_database_to_storage(db_path: str = None, update_latest: bool = True) -> dict:
     """Backup database to configured storage (Google Drive or local).
 
     Args:
         db_path: Path to database file (default: from environment)
+        update_latest: If True, also update 'latest.db' for reliable restore
 
     Returns:
         dict with backup info: {'status': 'success', 'backup_path': '...', 'timestamp': '...'}
@@ -1366,26 +1367,36 @@ def backup_database_to_storage(db_path: str = None) -> dict:
             db_path = os.getenv('DATABASE_PATH', '/data/acs_artifacts.db')
 
         if not os.path.exists(db_path):
-            raise FileNotFoundError(f"Database file not found: {db_path}")
+            logger.warning(f"Database file not found: {db_path}")
+            return {'status': 'error', 'error': f"Database file not found: {db_path}"}
 
         # Check if backups are enabled
         if os.getenv('DB_BACKUP_ENABLED', 'true').lower() not in ('true', '1', 'yes'):
             logger.info("Database backups are disabled")
             return {'status': 'disabled', 'message': 'DB_BACKUP_ENABLED is false'}
 
+        # Get storage backend
+        storage = get_default_storage()
+
         # Create backup filename with timestamp
         timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
         backup_filename = f"acs_artifacts_backup_{timestamp}.db"
         remote_path = f"backups/database/{backup_filename}"
 
-        # Get storage backend
-        storage = get_default_storage()
-
-        # Upload to storage
-        logger.info(f"Backing up database to storage: {remote_path}")
+        # Upload timestamped backup
+        logger.info(f"[Backup] Uploading timestamped backup: {remote_path}")
         storage_id = storage.upload_file(db_path, remote_path)
+        logger.info(f"[Backup] ✅ Timestamped backup successful: {backup_filename}")
 
-        logger.info(f"✅ Database backup successful: {backup_filename}")
+        # Also upload as 'latest.db' for reliable restore
+        if update_latest:
+            latest_path = "backups/database/latest.db"
+            try:
+                logger.info(f"[Backup] Updating latest.db...")
+                storage.upload_file(db_path, latest_path)
+                logger.info(f"[Backup] ✅ latest.db updated")
+            except Exception as e:
+                logger.warning(f"[Backup] Failed to update latest.db: {e}")
 
         return {
             'status': 'success',
@@ -1476,35 +1487,58 @@ def restore_database_from_storage(db_path: str = None) -> dict:
             logger.info("Using local storage, no cloud backup to restore from")
             return {'status': 'skipped', 'reason': 'local_storage'}
 
-        # List backups and find the most recent
-        logger.info("Looking for database backups in cloud storage...")
+        # First try to restore from 'latest.db' (most reliable)
+        logger.info("[Restore] Looking for latest.db in cloud storage...")
+        latest_path = "backups/database/latest.db"
+        use_latest = False
+
         try:
+            # Try to check if latest.db exists
             backups = storage.list_files('backups/database')
+            latest_exists = any(b['name'] == 'latest.db' for b in backups)
+            if latest_exists:
+                logger.info("[Restore] Found latest.db - will use it for restore")
+                use_latest = True
         except Exception as e:
-            logger.warning(f"Could not list backups: {e}")
-            return {'status': 'skipped', 'reason': 'no_backups_found', 'error': str(e)}
+            logger.warning(f"[Restore] Could not check for latest.db: {e}")
 
-        if not backups:
-            logger.info("No backups found in cloud storage")
-            return {'status': 'skipped', 'reason': 'no_backups'}
+        if not use_latest:
+            # Fall back to timestamped backups
+            logger.info("[Restore] latest.db not found, looking for timestamped backups...")
+            try:
+                if not backups:
+                    backups = storage.list_files('backups/database')
+            except Exception as e:
+                logger.warning(f"Could not list backups: {e}")
+                return {'status': 'skipped', 'reason': 'no_backups_found', 'error': str(e)}
 
-        # Sort by name (timestamp) to get most recent
-        db_backups = [b for b in backups if b['name'].endswith('.db')]
-        if not db_backups:
-            logger.info("No database backups found")
-            return {'status': 'skipped', 'reason': 'no_db_backups'}
+            if not backups:
+                logger.info("No backups found in cloud storage")
+                return {'status': 'skipped', 'reason': 'no_backups'}
 
-        db_backups.sort(key=lambda x: x['name'], reverse=True)
-        latest_backup = db_backups[0]
+            # Sort by name (timestamp) to get most recent, excluding latest.db
+            db_backups = [b for b in backups if b['name'].endswith('.db') and b['name'] != 'latest.db']
+            if not db_backups:
+                logger.info("No database backups found")
+                return {'status': 'skipped', 'reason': 'no_db_backups'}
 
-        logger.info(f"Found latest backup: {latest_backup['name']}")
+            db_backups.sort(key=lambda x: x['name'], reverse=True)
+            latest_backup = db_backups[0]
+            logger.info(f"[Restore] Found latest timestamped backup: {latest_backup['name']}")
 
         # Download to temp file first
         with tempfile.NamedTemporaryFile(delete=False, suffix='.db') as tmp:
             tmp_path = tmp.name
 
         try:
-            remote_path = f"backups/database/{latest_backup['name']}"
+            if use_latest:
+                remote_path = latest_path
+                backup_name = 'latest.db'
+            else:
+                remote_path = f"backups/database/{latest_backup['name']}"
+                backup_name = latest_backup['name']
+
+            logger.info(f"[Restore] Downloading {backup_name}...")
             storage.download_file(remote_path, tmp_path)
 
             # Verify downloaded file
@@ -1517,13 +1551,13 @@ def restore_database_from_storage(db_path: str = None) -> dict:
             # Move temp file to target location
             shutil.move(tmp_path, db_path)
 
-            logger.info(f"✅ Database restored from: {latest_backup['name']}")
+            logger.info(f"[Restore] ✅ Database restored from: {backup_name}")
 
             return {
                 'status': 'success',
-                'restored_from': latest_backup['name'],
+                'restored_from': backup_name,
                 'restored_to': db_path,
-                'backup_size': latest_backup.get('size', 0),
+                'backup_size': os.path.getsize(db_path),
                 'storage_backend': os.getenv('STORAGE_BACKEND', 'local')
             }
 
