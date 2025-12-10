@@ -73,8 +73,24 @@
     </div>
     <div id="global-search-results" style="margin-top: 15px; display: none;">
         <div id="rag-answer-section" style="display: none; margin-bottom: 15px; padding: 15px; background: linear-gradient(135deg, #667eea22 0%, #764ba222 100%); border-radius: 8px; border-left: 4px solid #667eea;">
-            <h4 style="margin: 0 0 10px 0; color: #667eea;">🤖 Risposta AI</h4>
-            <div id="rag-answer-content" style="white-space: pre-wrap;"></div>
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <h4 style="margin: 0; color: #667eea;">🤖 Risposta AI</h4>
+                <div id="export-buttons" style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button class="btn btn-sm" onclick="exportRAGResult('docx')" style="background: #2b5797; color: white; font-size: 0.85em; padding: 5px 10px;">
+                        📄 Word
+                    </button>
+                    <button class="btn btn-sm" onclick="exportRAGResult('xlsx')" style="background: #1d6f42; color: white; font-size: 0.85em; padding: 5px 10px;">
+                        📊 Excel
+                    </button>
+                    <button class="btn btn-sm" onclick="exportRAGResult('pdf')" style="background: #d93025; color: white; font-size: 0.85em; padding: 5px 10px;">
+                        📕 PDF
+                    </button>
+                    <button class="btn btn-sm" onclick="exportRAGResult('image')" style="background: #7c3aed; color: white; font-size: 0.85em; padding: 5px 10px;">
+                        🖼️ Immagine
+                    </button>
+                </div>
+            </div>
+            <div id="rag-answer-content" style="white-space: pre-wrap; margin-top: 10px;"></div>
         </div>
         <h4>📄 Documenti rilevanti (<span id="results-count">0</span>):</h4>
         <div id="search-results-content"></div>
@@ -1007,6 +1023,15 @@ async function executeGlobalSearch() {
             throw new Error(data.error || 'Ricerca fallita');
         }
 
+        // Store response for export
+        lastRAGResponse = {
+            query: searchTerm,
+            answer: data.answer,
+            sections: data.sections,
+            results: data.results,
+            visualization: data.visualization
+        };
+
         // Update RAG stats
         if (data.stats) {
             document.getElementById('rag-stats').textContent =
@@ -1194,6 +1219,70 @@ function clearGlobalSearch() {
     document.getElementById('rag-answer-section').style.display = 'none';
     document.getElementById('rag-answer-content').textContent = '';
     document.getElementById('results-count').textContent = '0';
+    lastRAGResponse = null;
+}
+
+// Store last RAG response for export
+let lastRAGResponse = null;
+
+// Export RAG result in different formats
+async function exportRAGResult(format) {
+    if (!lastRAGResponse) {
+        alert('Nessun risultato da esportare. Esegui prima una ricerca con risposta AI.');
+        return;
+    }
+
+    const exportBtn = event.target;
+    const originalText = exportBtn.textContent;
+    exportBtn.disabled = true;
+    exportBtn.textContent = '⏳...';
+
+    try {
+        const response = await AuthHelper.fetch('/web/rag-export', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                format: format,
+                query: lastRAGResponse.query,
+                answer: lastRAGResponse.answer,
+                sections: lastRAGResponse.sections,
+                results: lastRAGResponse.results,
+                visualization: lastRAGResponse.visualization
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error('Errore durante l\'esportazione');
+        }
+
+        // Get filename from Content-Disposition header
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = `rag_export.${format}`;
+        if (contentDisposition) {
+            const match = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+            if (match && match[1]) {
+                filename = match[1].replace(/['"]/g, '');
+            }
+        }
+
+        // Download file
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+
+    } catch (error) {
+        console.error('Export error:', error);
+        alert('Errore durante l\'esportazione: ' + error.message);
+    } finally {
+        exportBtn.disabled = false;
+        exportBtn.textContent = originalText;
+    }
 }
 
 // Generate summary report
