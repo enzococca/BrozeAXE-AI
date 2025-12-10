@@ -300,15 +300,22 @@ class RAGSearchEngine:
                 self.document_vectors = self.vectorizer.fit_transform(texts)
                 self.is_indexed = True
                 self._last_index_time = datetime.now()
+                vocab_size = len(self.vectorizer.vocabulary_)
+                # Show sample of vocabulary for debugging
+                sample_vocab = list(self.vectorizer.vocabulary_.keys())[:20]
+                print(f"[RAG] Indexed {len(texts)} documents with {vocab_size} vocabulary terms")
+                print(f"[RAG] Sample vocabulary: {sample_vocab}")
                 logger.info(f"RAG: Indexed {len(texts)} documents "
                            f"(cache: {len(cache_items)}, comparisons: {len(comparisons or [])}, "
                            f"features: {len(features or {})}, analyses: {len(analysis_results or [])}, "
                            f"artifacts: {len(artifacts or [])})")
             except Exception as e:
+                print(f"[RAG] Indexing FAILED: {e}")
                 logger.error(f"RAG: Indexing failed: {e}")
                 self.is_indexed = False
         else:
             self.is_indexed = False
+            print("[RAG] No documents to index!")
             logger.warning("RAG: No documents to index")
 
     def search(self, query: str, top_k: int = 10,
@@ -326,11 +333,23 @@ class RAGSearchEngine:
             List of matching documents with scores
         """
         if not self.is_indexed or not self.documents:
+            print(f"[RAG] Not indexed or no documents. is_indexed={self.is_indexed}, docs={len(self.documents)}")
             return []
 
         try:
             # Vectorize query
             query_vector = self.vectorizer.transform([query])
+
+            # Check if query vector is all zeros (no matching terms in vocabulary)
+            query_sum = query_vector.sum()
+            if query_sum == 0:
+                print(f"[RAG] WARNING: Query '{query}' has no matching terms in vocabulary!")
+                # Try to find partial matches by searching each word
+                query_words = query.lower().split()
+                vocab = set(self.vectorizer.vocabulary_.keys())
+                matching_words = [w for w in query_words if w in vocab]
+                print(f"[RAG] Query words: {query_words}")
+                print(f"[RAG] Matching in vocab: {matching_words}")
 
             # Calculate similarities
             similarities = cosine_similarity(query_vector, self.document_vectors)[0]
@@ -338,9 +357,9 @@ class RAGSearchEngine:
             # Get top results
             top_indices = np.argsort(similarities)[::-1][:top_k * 2]  # Get extra for filtering
 
-            # Debug: log top similarity scores
+            # Debug: log top similarity scores (using print for visibility)
             top_scores = [(int(idx), float(similarities[idx])) for idx in top_indices[:5]]
-            logger.debug(f"RAG: Top 5 similarities for '{query[:30]}': {top_scores}")
+            print(f"[RAG] Query: '{query[:50]}' | Top 5 scores: {[f'{s:.4f}' for _, s in top_scores]} | min_score={min_score}")
 
             results = []
             for idx in top_indices:
@@ -357,6 +376,7 @@ class RAGSearchEngine:
             # Fallback: if no results with threshold, return top results anyway with warning
             if not results and len(top_indices) > 0:
                 # Get top results regardless of threshold
+                print(f"[RAG] No results above threshold {min_score}, using fallback...")
                 for idx in top_indices[:min(3, top_k)]:
                     score = float(similarities[idx])
                     if score > 0:  # Only include if there's any similarity
@@ -366,9 +386,9 @@ class RAGSearchEngine:
                         doc['low_confidence'] = True
                         results.append(doc)
                 if results:
-                    logger.info(f"RAG: Low confidence results for '{query[:30]}' (best score: {results[0]['score']:.4f})")
+                    print(f"[RAG] Fallback returned {len(results)} low-confidence results (best: {results[0]['score']:.4f})")
 
-            logger.debug(f"RAG: Query '{query[:50]}...' returned {len(results)} results (threshold: {min_score})")
+            print(f"[RAG] Final: {len(results)} results returned")
             return results
 
         except Exception as e:
