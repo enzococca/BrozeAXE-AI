@@ -226,26 +226,9 @@ def _trigger_backup_for_new_user(username: str):
     This is critical for Railway deployments where storage is ephemeral.
     The backup is SYNCHRONOUS to ensure it completes before returning.
     """
-    storage_backend = os.getenv('STORAGE_BACKEND', 'local')
-    if storage_backend == 'local':
-        return  # No need to backup for local storage
-
     try:
-        from .database import backup_database_to_storage
-
-        print(f"[User Backup] 🔄 Triggering SYNC backup after new user registration: {username}")
-
-        # SYNCHRONOUS backup - wait for completion
-        result = backup_database_to_storage()
-
-        if result.get('status') == 'success':
-            print(f"[User Backup] ✅ Database backed up: {result.get('backup_filename')}")
-            print(f"[User Backup] ✅ latest.db also updated")
-        elif result.get('status') == 'error':
-            print(f"[User Backup] ⚠️ Backup FAILED: {result.get('error')}")
-        else:
-            print(f"[User Backup] ℹ️ Backup status: {result}")
-
+        from .database import _trigger_critical_backup
+        _trigger_critical_backup(f"new user registered: {username}")
     except Exception as e:
         # Don't fail user registration if backup fails, but log loudly
         print(f"[User Backup] ❌ CRITICAL: Backup error (non-fatal): {e}")

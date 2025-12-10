@@ -3681,10 +3681,18 @@ def rag_search():
 
         # Re-index if needed (check if documents changed)
         if not rag.is_indexed:
-            # Load all cache data
+            # Load all data for comprehensive indexing
             ai_cache = db.get_all_ai_cache()
             comparisons = db.get_all_comparisons()
-            rag.index_documents(ai_cache, comparisons)
+            features = db.get_all_features()
+            analysis_results = db.get_analysis_results(limit=100)
+            artifacts = db.get_all_artifacts()
+            rag.index_documents(
+                ai_cache, comparisons,
+                features=features,
+                analysis_results=analysis_results,
+                artifacts=artifacts
+            )
 
         # Search
         results = rag.search(query, top_k=top_k)
@@ -3747,22 +3755,337 @@ def rag_reindex():
         rag = get_rag_engine()
         db = get_database()
 
-        # Load all cache data
+        # Load all data for comprehensive indexing
         ai_cache = db.get_all_ai_cache()
         comparisons = db.get_all_comparisons()
+        features = db.get_all_features()
+        analysis_results = db.get_analysis_results(limit=100)
+        artifacts = db.get_all_artifacts()
 
-        # Re-index
-        rag.index_documents(ai_cache, comparisons)
+        # Re-index with all data
+        rag.index_documents(
+            ai_cache, comparisons,
+            features=features,
+            analysis_results=analysis_results,
+            artifacts=artifacts
+        )
 
         return jsonify({
             'status': 'success',
-            'message': 'RAG index rebuilt',
+            'message': 'RAG index rebuilt with full data',
             'stats': rag.get_stats()
         })
 
     except Exception as e:
         logging.error(f"RAG reindex error: {e}")
         return jsonify({'status': 'error', 'error': str(e)}), 500
+
+
+@web_bp.route('/rag-export', methods=['POST'])
+def rag_export():
+    """Export RAG search results in various formats (DOCX, XLSX, PDF, Image)."""
+    import io
+    import base64
+    from datetime import datetime
+
+    try:
+        data = request.get_json() or {}
+        export_format = data.get('format', 'docx')
+        query = data.get('query', 'N/A')
+        answer = data.get('answer', '')
+        sections = data.get('sections', {})
+        results = data.get('results', [])
+        visualization = data.get('visualization')
+
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+
+        if export_format == 'docx':
+            return _export_rag_docx(query, answer, sections, results, timestamp)
+        elif export_format == 'xlsx':
+            return _export_rag_xlsx(query, answer, sections, results, timestamp)
+        elif export_format == 'pdf':
+            return _export_rag_pdf(query, answer, sections, results, timestamp)
+        elif export_format == 'image':
+            return _export_rag_image(query, answer, sections, results, visualization, timestamp)
+        else:
+            return jsonify({'error': f'Formato non supportato: {export_format}'}), 400
+
+    except Exception as e:
+        logging.error(f"RAG export error: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+def _export_rag_docx(query, answer, sections, results, timestamp):
+    """Export RAG results to Word document."""
+    import io
+    try:
+        from docx import Document
+        from docx.shared import Inches, Pt
+        from docx.enum.style import WD_STYLE_TYPE
+    except ImportError:
+        return jsonify({'error': 'python-docx non installato. Esegui: pip install python-docx'}), 500
+
+    doc = Document()
+
+    # Title
+    title = doc.add_heading('Risultato Ricerca Archaeological Classifier', 0)
+
+    # Query section
+    doc.add_heading('Domanda', level=1)
+    doc.add_paragraph(query)
+
+    # AI Answer section
+    if answer:
+        doc.add_heading('Risposta AI', level=1)
+        # Clean markdown formatting
+        clean_answer = answer.replace('## ', '\n').replace('**', '').replace('_', '').replace('• ', '- ')
+        doc.add_paragraph(clean_answer)
+
+    # Key points from sections
+    if sections:
+        if sections.get('punti_chiave'):
+            doc.add_heading('Punti Chiave', level=2)
+            for punto in sections['punti_chiave']:
+                doc.add_paragraph(f"• {punto}", style='List Bullet')
+
+        if sections.get('artefatti'):
+            doc.add_heading('Artefatti Analizzati', level=2)
+            doc.add_paragraph(', '.join(sections['artefatti']))
+
+    # Results table
+    if results:
+        doc.add_heading('Documenti Rilevanti', level=1)
+        for i, result in enumerate(results[:10], 1):
+            doc.add_paragraph(f"{i}. {result.get('artifact_id', 'N/A')} ({result.get('type', 'N/A')}) - Score: {result.get('score_pct', 'N/A')}")
+
+    # Footer
+    doc.add_paragraph(f"\nGenerato il {timestamp} da Archaeological Classifier RAG System")
+
+    # Save to bytes
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+
+    return Response(
+        buffer.getvalue(),
+        mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        headers={'Content-Disposition': f'attachment; filename=rag_export_{timestamp}.docx'}
+    )
+
+
+def _export_rag_xlsx(query, answer, sections, results, timestamp):
+    """Export RAG results to Excel."""
+    import io
+    try:
+        import pandas as pd
+    except ImportError:
+        return jsonify({'error': 'pandas non installato. Esegui: pip install pandas openpyxl'}), 500
+
+    buffer = io.BytesIO()
+
+    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+        # Summary sheet
+        summary_data = {
+            'Campo': ['Domanda', 'Data Export', 'N. Risultati'],
+            'Valore': [query, timestamp, len(results)]
+        }
+        df_summary = pd.DataFrame(summary_data)
+        df_summary.to_excel(writer, sheet_name='Sommario', index=False)
+
+        # Results sheet
+        if results:
+            results_data = []
+            for r in results:
+                results_data.append({
+                    'Artefatto': r.get('artifact_id', 'N/A'),
+                    'Tipo': r.get('type', 'N/A'),
+                    'Score': r.get('score', 0),
+                    'Score %': r.get('score_pct', 'N/A'),
+                    'Data': r.get('date', 'N/A')
+                })
+            df_results = pd.DataFrame(results_data)
+            df_results.to_excel(writer, sheet_name='Risultati', index=False)
+
+        # Key points sheet
+        if sections and sections.get('punti_chiave'):
+            df_punti = pd.DataFrame({'Punti Chiave': sections['punti_chiave']})
+            df_punti.to_excel(writer, sheet_name='Punti Chiave', index=False)
+
+        # Artifacts sheet
+        if sections and sections.get('artefatti'):
+            df_artefatti = pd.DataFrame({'Artefatti Citati': sections['artefatti']})
+            df_artefatti.to_excel(writer, sheet_name='Artefatti', index=False)
+
+    buffer.seek(0)
+
+    return Response(
+        buffer.getvalue(),
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': f'attachment; filename=rag_export_{timestamp}.xlsx'}
+    )
+
+
+def _export_rag_pdf(query, answer, sections, results, timestamp):
+    """Export RAG results to PDF using simple HTML conversion."""
+    import io
+
+    # Create HTML content
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }}
+            h1 {{ color: #667eea; border-bottom: 2px solid #667eea; padding-bottom: 10px; }}
+            h2 {{ color: #4a5568; margin-top: 20px; }}
+            .answer {{ background: #f7fafc; padding: 15px; border-radius: 8px; margin: 10px 0; }}
+            .results {{ margin: 20px 0; }}
+            .result-item {{ background: #fff; border: 1px solid #e2e8f0; padding: 10px; margin: 5px 0; border-radius: 4px; }}
+            .footer {{ margin-top: 30px; color: #718096; font-size: 0.9em; }}
+        </style>
+    </head>
+    <body>
+        <h1>Risultato Ricerca Archaeological Classifier</h1>
+
+        <h2>Domanda</h2>
+        <p>{query}</p>
+
+        <h2>Risposta AI</h2>
+        <div class="answer">{answer.replace(chr(10), '<br>')}</div>
+    """
+
+    if sections and sections.get('punti_chiave'):
+        html_content += "<h2>Punti Chiave</h2><ul>"
+        for punto in sections['punti_chiave']:
+            html_content += f"<li>{punto}</li>"
+        html_content += "</ul>"
+
+    if results:
+        html_content += f"<h2>Documenti Rilevanti ({len(results)})</h2><div class='results'>"
+        for i, r in enumerate(results[:10], 1):
+            html_content += f"""
+            <div class='result-item'>
+                <strong>{i}. {r.get('artifact_id', 'N/A')}</strong>
+                <span style='color: #718096;'>({r.get('type', 'N/A')})</span>
+                <span style='float: right; color: #48bb78;'>{r.get('score_pct', 'N/A')}</span>
+            </div>
+            """
+        html_content += "</div>"
+
+    html_content += f"""
+        <div class='footer'>
+            Generato il {timestamp} da Archaeological Classifier RAG System
+        </div>
+    </body>
+    </html>
+    """
+
+    # For PDF, we'll return HTML that can be printed to PDF by the browser
+    # or use a library if available
+    try:
+        from weasyprint import HTML
+        buffer = io.BytesIO()
+        HTML(string=html_content).write_pdf(buffer)
+        buffer.seek(0)
+        return Response(
+            buffer.getvalue(),
+            mimetype='application/pdf',
+            headers={'Content-Disposition': f'attachment; filename=rag_export_{timestamp}.pdf'}
+        )
+    except ImportError:
+        # Fallback: return HTML for browser printing
+        return Response(
+            html_content,
+            mimetype='text/html',
+            headers={'Content-Disposition': f'attachment; filename=rag_export_{timestamp}.html'}
+        )
+
+
+def _export_rag_image(query, answer, sections, results, visualization, timestamp):
+    """Export RAG results as image."""
+    import io
+    import base64
+
+    # If there's a visualization already, return it
+    if visualization and visualization.get('data'):
+        img_data = visualization['data']
+        if img_data.startswith('data:image/png;base64,'):
+            img_bytes = base64.b64decode(img_data.split(',')[1])
+            return Response(
+                img_bytes,
+                mimetype='image/png',
+                headers={'Content-Disposition': f'attachment; filename=rag_visualization_{timestamp}.png'}
+            )
+
+    # Otherwise, generate a simple text-based image
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        return jsonify({'error': 'Pillow non installato. Esegui: pip install Pillow'}), 500
+
+    # Create image
+    width, height = 800, 600
+    img = Image.new('RGB', (width, height), color='white')
+    draw = ImageDraw.Draw(img)
+
+    # Try to use a nice font, fallback to default
+    try:
+        font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
+        font_body = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
+    except:
+        font_title = ImageFont.load_default()
+        font_body = ImageFont.load_default()
+
+    y = 20
+    # Title
+    draw.text((20, y), "Archaeological Classifier - RAG Search", fill='#667eea', font=font_title)
+    y += 40
+
+    # Query
+    draw.text((20, y), f"Query: {query[:60]}...", fill='#4a5568', font=font_body)
+    y += 30
+
+    # Draw a line
+    draw.line([(20, y), (width-20, y)], fill='#e2e8f0', width=2)
+    y += 20
+
+    # Key points
+    if sections and sections.get('punti_chiave'):
+        draw.text((20, y), "Punti Chiave:", fill='#2d3748', font=font_title)
+        y += 30
+        for punto in sections['punti_chiave'][:5]:
+            text = f"• {punto[:70]}..." if len(punto) > 70 else f"• {punto}"
+            draw.text((30, y), text, fill='#4a5568', font=font_body)
+            y += 25
+
+    y += 20
+    # Results count
+    draw.text((20, y), f"Risultati trovati: {len(results)}", fill='#48bb78', font=font_body)
+    y += 30
+
+    # Top artifacts
+    if results:
+        draw.text((20, y), "Top Artefatti:", fill='#2d3748', font=font_title)
+        y += 30
+        for r in results[:5]:
+            text = f"  {r.get('artifact_id', 'N/A')} - {r.get('score_pct', 'N/A')}"
+            draw.text((30, y), text, fill='#4a5568', font=font_body)
+            y += 25
+
+    # Footer
+    draw.text((20, height - 30), f"Generato: {timestamp}", fill='#a0aec0', font=font_body)
+
+    # Save to bytes
+    buffer = io.BytesIO()
+    img.save(buffer, format='PNG')
+    buffer.seek(0)
+
+    return Response(
+        buffer.getvalue(),
+        mimetype='image/png',
+        headers={'Content-Disposition': f'attachment; filename=rag_export_{timestamp}.png'}
+    )
 
 
 @web_bp.route("/savignano-analysis")

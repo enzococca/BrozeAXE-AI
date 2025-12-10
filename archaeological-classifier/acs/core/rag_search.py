@@ -53,43 +53,164 @@ class RAGSearchEngine:
         if 'artifact_id' in item:
             parts.append(f"artefatto {item['artifact_id']}")
 
-        # Add cache type
+        # Add cache type with expanded labels for better search
         if 'cache_type' in item:
             type_labels = {
-                'savignano_interpretation': 'interpretazione savignano analisi',
-                'tech_analysis': 'analisi tecnologica',
-                'hammering_analysis': 'analisi martellatura',
-                'casting_analysis': 'analisi fusione',
-                'comprehensive_report': 'report comprensivo completo',
-                'pca_analysis': 'analisi PCA componenti principali',
-                'clustering_analysis': 'clustering raggruppamento cluster'
+                'savignano_interpretation': 'interpretazione savignano analisi tipologia',
+                'tech_analysis': 'analisi tecnologica produzione fabbricazione',
+                'hammering_analysis': 'analisi martellatura lavorazione metallurgica',
+                'casting_analysis': 'analisi fusione colata stampo matrice',
+                'comprehensive_report': 'report comprensivo completo sommario',
+                'pca_analysis': 'analisi PCA componenti principali morfometria varianza',
+                'clustering_analysis': 'clustering raggruppamento cluster dendrogramma gruppi simili'
             }
             parts.append(type_labels.get(item['cache_type'], item['cache_type']))
 
-        # Add content
+        # Add content with enhanced extraction
         content = item.get('content', '')
         if isinstance(content, dict):
-            # Flatten dict to text
-            for key, value in content.items():
-                if isinstance(value, str):
-                    parts.append(f"{key}: {value}")
-                elif isinstance(value, (int, float)):
-                    parts.append(f"{key}: {value}")
-                elif isinstance(value, list):
-                    parts.append(f"{key}: {', '.join(str(v) for v in value[:10])}")
+            # Flatten dict to text with better formatting
+            parts.extend(self._extract_dict_text(content))
         elif isinstance(content, str):
             parts.append(content)
 
         return ' '.join(parts)
 
+    def _extract_dict_text(self, d: Dict[str, Any], prefix: str = '') -> List[str]:
+        """Recursively extract text from nested dictionaries."""
+        parts = []
+        for key, value in d.items():
+            full_key = f"{prefix}{key}" if prefix else key
+
+            if isinstance(value, str):
+                parts.append(f"{full_key}: {value}")
+            elif isinstance(value, (int, float)):
+                # Add measurement context for numeric values
+                parts.append(f"{full_key}: {value}")
+                # Add unit hints for common measurements
+                if any(k in key.lower() for k in ['volume', 'area', 'length', 'width', 'height', 'depth']):
+                    parts.append(f"misura {key} {value}")
+                if any(k in key.lower() for k in ['angle', 'angolo']):
+                    parts.append(f"angolo {value} gradi")
+            elif isinstance(value, list):
+                if value and isinstance(value[0], (int, float)):
+                    # Numeric array (PCA components, cluster assignments, etc.)
+                    parts.append(f"{full_key}: {', '.join(str(v) for v in value[:10])}")
+                elif value and isinstance(value[0], str):
+                    parts.append(f"{full_key}: {', '.join(value[:10])}")
+                elif value and isinstance(value[0], dict):
+                    # List of objects (like cluster members)
+                    for i, item in enumerate(value[:5]):
+                        parts.extend(self._extract_dict_text(item, f"{full_key}[{i}]."))
+            elif isinstance(value, dict):
+                parts.extend(self._extract_dict_text(value, f"{full_key}."))
+        return parts
+
+    def _extract_features_text(self, artifact_id: str, features: Dict[str, Any]) -> str:
+        """Extract searchable text from morphometric features."""
+        parts = [f"artefatto {artifact_id} misure morfometriche 3D mesh"]
+
+        # Common feature labels
+        feature_labels = {
+            'volume': 'volume mm3 millimetri cubi',
+            'surface_area': 'superficie area mm2 millimetri quadrati',
+            'length': 'lunghezza mm',
+            'width': 'larghezza mm',
+            'height': 'altezza mm',
+            'depth': 'profondità mm',
+            'n_vertices': 'vertici mesh 3D',
+            'n_faces': 'facce triangoli mesh 3D',
+            'centroid': 'centroide baricentro',
+            'bounding_box': 'bounding box dimensioni',
+            'edge_angle': 'angolo lama taglio',
+            'socket_depth': 'profondità immanicatura',
+            'is_watertight': 'mesh chiuso watertight',
+        }
+
+        for key, value in features.items():
+            if isinstance(value, (int, float)):
+                label = feature_labels.get(key, key)
+                parts.append(f"{label}: {value}")
+            elif isinstance(value, dict):
+                # Nested features (e.g., savignano features)
+                parts.extend(self._extract_dict_text(value, f"{key}."))
+
+        return ' '.join(parts)
+
+    def _extract_analysis_text(self, analysis: Dict[str, Any]) -> str:
+        """Extract searchable text from PCA/clustering analysis results."""
+        parts = []
+
+        analysis_type = analysis.get('analysis_type', '')
+        if 'pca' in analysis_type.lower():
+            parts.append('analisi PCA componenti principali varianza spiegata morfometria')
+        elif 'cluster' in analysis_type.lower():
+            parts.append('clustering raggruppamento cluster dendrogramma gruppi matrici')
+
+        # Extract artifact IDs
+        artifact_ids = analysis.get('artifact_ids', [])
+        if artifact_ids:
+            parts.append(f"artefatti analizzati: {', '.join(artifact_ids[:20])}")
+
+        # Extract results
+        results = analysis.get('results', {})
+        if isinstance(results, dict):
+            parts.extend(self._extract_dict_text(results))
+        elif isinstance(results, str):
+            parts.append(results)
+
+        return ' '.join(parts)
+
+    def _format_features_for_context(self, features: Dict[str, Any]) -> str:
+        """Format features for human-readable context in AI prompts."""
+        parts = []
+
+        # Mapping for human-readable labels
+        labels = {
+            'volume': 'Volume',
+            'surface_area': 'Area superficiale',
+            'length': 'Lunghezza',
+            'width': 'Larghezza',
+            'height': 'Altezza',
+            'depth': 'Profondità',
+            'edge_angle': 'Angolo lama',
+            'socket_depth': 'Profondità immanicatura',
+            'n_vertices': 'Vertici',
+            'n_faces': 'Facce',
+        }
+
+        for key, value in features.items():
+            if isinstance(value, (int, float)):
+                label = labels.get(key, key)
+                if isinstance(value, float):
+                    parts.append(f"{label}: {value:.2f}")
+                else:
+                    parts.append(f"{label}: {value}")
+            elif isinstance(value, dict) and key == 'savignano':
+                # Special handling for Savignano typology features
+                sav_parts = []
+                for skey, sval in value.items():
+                    if isinstance(sval, (int, float)):
+                        sav_parts.append(f"{skey}: {sval:.2f}" if isinstance(sval, float) else f"{skey}: {sval}")
+                if sav_parts:
+                    parts.append(f"Tipologia Savignano: {', '.join(sav_parts)}")
+
+        return ', '.join(parts) if parts else 'N/A'
+
     def index_documents(self, cache_items: List[Dict[str, Any]],
-                       comparisons: List[Dict[str, Any]] = None):
+                       comparisons: List[Dict[str, Any]] = None,
+                       features: Dict[str, Dict[str, Any]] = None,
+                       analysis_results: List[Dict[str, Any]] = None,
+                       artifacts: List[Dict[str, Any]] = None):
         """
         Index documents for search.
 
         Args:
             cache_items: List of AI cache entries
             comparisons: List of comparison entries
+            features: Dict mapping artifact_id to features
+            analysis_results: List of PCA/clustering analysis results
+            artifacts: List of artifact records (with 3D mesh info)
         """
         self.documents = []
         texts = []
@@ -122,12 +243,67 @@ class RAGSearchEngine:
                 })
                 texts.append(text)
 
+        # Index morphometric features (3D measurements)
+        if features:
+            for artifact_id, feature_data in features.items():
+                text = self._extract_features_text(artifact_id, feature_data)
+                if text.strip():
+                    self.documents.append({
+                        'type': 'features',
+                        'artifact_id': artifact_id,
+                        'features': feature_data,
+                        'text': text
+                    })
+                    texts.append(text)
+
+        # Index analysis results (PCA, clustering)
+        if analysis_results:
+            for analysis in analysis_results:
+                text = self._extract_analysis_text(analysis)
+                if text.strip():
+                    self.documents.append({
+                        'type': 'analysis',
+                        'analysis_type': analysis.get('analysis_type', ''),
+                        'artifact_ids': analysis.get('artifact_ids', []),
+                        'results': analysis.get('results', {}),
+                        'date': analysis.get('analysis_date', ''),
+                        'text': text
+                    })
+                    texts.append(text)
+
+        # Index artifact metadata (3D mesh info)
+        if artifacts:
+            for artifact in artifacts:
+                artifact_id = artifact.get('artifact_id', '')
+                text = (
+                    f"artefatto {artifact_id} "
+                    f"mesh 3D file {artifact.get('mesh_path', '')} "
+                    f"vertici {artifact.get('n_vertices', 0)} "
+                    f"facce {artifact.get('n_faces', 0)} "
+                    f"{'watertight chiuso' if artifact.get('is_watertight') else 'aperto'} "
+                    f"caricato {artifact.get('upload_date', '')}"
+                )
+                self.documents.append({
+                    'type': 'artifact',
+                    'artifact_id': artifact_id,
+                    'mesh_path': artifact.get('mesh_path', ''),
+                    'n_vertices': artifact.get('n_vertices', 0),
+                    'n_faces': artifact.get('n_faces', 0),
+                    'is_watertight': artifact.get('is_watertight', False),
+                    'date': artifact.get('upload_date', ''),
+                    'text': text
+                })
+                texts.append(text)
+
         if texts:
             try:
                 self.document_vectors = self.vectorizer.fit_transform(texts)
                 self.is_indexed = True
                 self._last_index_time = datetime.now()
-                logger.info(f"RAG: Indexed {len(texts)} documents")
+                logger.info(f"RAG: Indexed {len(texts)} documents "
+                           f"(cache: {len(cache_items)}, comparisons: {len(comparisons or [])}, "
+                           f"features: {len(features or {})}, analyses: {len(analysis_results or [])}, "
+                           f"artifacts: {len(artifacts or [])})")
             except Exception as e:
                 logger.error(f"RAG: Indexing failed: {e}")
                 self.is_indexed = False
@@ -199,22 +375,54 @@ class RAGSearchEngine:
 
         # Build context from top results
         context_parts = []
-        for i, result in enumerate(results[:5], 1):
-            if result['type'] == 'ai_cache':
+        for i, result in enumerate(results[:7], 1):  # Increased to 7 for richer context
+            doc_type = result.get('type', 'unknown')
+
+            if doc_type == 'ai_cache':
                 content = result.get('content', '')
                 if isinstance(content, dict):
                     content = json.dumps(content, ensure_ascii=False, indent=2)[:1500]
                 elif isinstance(content, str):
                     content = content[:1500]
                 context_parts.append(
-                    f"[Documento {i}] Artefatto: {result['artifact_id']}\n"
+                    f"[Documento {i} - Interpretazione AI]\n"
+                    f"Artefatto: {result['artifact_id']}\n"
                     f"Tipo analisi: {result['cache_type']}\n"
                     f"Contenuto: {content}"
                 )
-            elif result['type'] == 'comparison':
+            elif doc_type == 'comparison':
                 context_parts.append(
-                    f"[Documento {i}] Comparazione: {result['artifact1_id']} ↔ {result['artifact2_id']}\n"
+                    f"[Documento {i} - Confronto]\n"
+                    f"Artefatti: {result['artifact1_id']} ↔ {result['artifact2_id']}\n"
                     f"Similarità: {result['similarity_score']*100:.1f}%"
+                )
+            elif doc_type == 'features':
+                # Morphometric features
+                features = result.get('features', {})
+                feature_text = self._format_features_for_context(features)
+                context_parts.append(
+                    f"[Documento {i} - Misure Morfometriche 3D]\n"
+                    f"Artefatto: {result['artifact_id']}\n"
+                    f"Misure: {feature_text}"
+                )
+            elif doc_type == 'analysis':
+                # PCA/Clustering results
+                analysis_type = result.get('analysis_type', '')
+                artifact_ids = result.get('artifact_ids', [])
+                results_data = result.get('results', {})
+                context_parts.append(
+                    f"[Documento {i} - Analisi {analysis_type.upper()}]\n"
+                    f"Artefatti analizzati: {', '.join(artifact_ids[:10])}\n"
+                    f"Risultati: {json.dumps(results_data, ensure_ascii=False)[:800]}"
+                )
+            elif doc_type == 'artifact':
+                # 3D mesh metadata
+                context_parts.append(
+                    f"[Documento {i} - Dati 3D Mesh]\n"
+                    f"Artefatto: {result['artifact_id']}\n"
+                    f"File: {result.get('mesh_path', 'N/A')}\n"
+                    f"Vertici: {result.get('n_vertices', 0):,}, Facce: {result.get('n_faces', 0):,}\n"
+                    f"Mesh chiuso: {'Sì' if result.get('is_watertight') else 'No'}"
                 )
 
         context = '\n\n---\n\n'.join(context_parts)

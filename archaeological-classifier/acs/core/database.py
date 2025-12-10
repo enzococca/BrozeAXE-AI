@@ -900,6 +900,9 @@ class ArtifactDatabase:
                 VALUES (?, ?, ?, ?, ?, 'active')
             ''', (project_id, name, description, owner_id, datetime.now().isoformat()))
 
+        # Trigger SYNCHRONOUS backup to preserve project data
+        _trigger_critical_backup(f"project created: {project_id}")
+
     def update_project_owner(self, project_id: str, new_owner_id: int):
         """Update the owner of a project."""
         with self.get_connection() as conn:
@@ -1226,6 +1229,9 @@ class ArtifactDatabase:
                 # User already a collaborator
                 raise ValueError(f"User {user_id} is already a collaborator on project {project_id}")
 
+        # Trigger SYNCHRONOUS backup to preserve collaborator associations
+        _trigger_critical_backup(f"collaborator added: user {user_id} to project {project_id}")
+
     def remove_collaborator(self, project_id: str, user_id: int):
         """Remove a collaborator from a project."""
         with self.get_connection() as conn:
@@ -1234,6 +1240,9 @@ class ArtifactDatabase:
                 DELETE FROM project_collaborators
                 WHERE project_id = ? AND user_id = ?
             ''', (project_id, user_id))
+
+        # Trigger SYNCHRONOUS backup to preserve the change
+        _trigger_critical_backup(f"collaborator removed: user {user_id} from project {project_id}")
 
     def get_project_collaborators(self, project_id: str) -> List[Dict]:
         """Get all collaborators for a project."""
@@ -1333,6 +1342,34 @@ def _trigger_periodic_backup():
                 thread.start()
             except Exception:
                 pass
+
+
+def _trigger_critical_backup(reason: str):
+    """Trigger SYNCHRONOUS backup for critical changes like user/collaborator updates.
+
+    Unlike periodic backup, this runs immediately and blocks until complete.
+    This ensures critical data changes are preserved before the request returns.
+    """
+    storage_backend = os.getenv('STORAGE_BACKEND', 'local')
+    if storage_backend == 'local':
+        return  # No backup needed for local storage
+
+    try:
+        print(f"[Critical Backup] 🔄 Backing up after: {reason}")
+        result = backup_database_to_storage()
+
+        if result.get('status') == 'success':
+            print(f"[Critical Backup] ✅ Backup successful: {result.get('backup_filename')}")
+        elif result.get('status') == 'error':
+            print(f"[Critical Backup] ⚠️ Backup failed: {result.get('error')}")
+        else:
+            print(f"[Critical Backup] ℹ️ Backup status: {result}")
+
+    except Exception as e:
+        # Don't fail the original operation, but log loudly
+        print(f"[Critical Backup] ❌ Backup error (non-fatal): {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def get_database() -> ArtifactDatabase:
