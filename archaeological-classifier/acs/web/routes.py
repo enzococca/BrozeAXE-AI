@@ -10,6 +10,7 @@ from werkzeug.utils import secure_filename
 import os
 import json
 import io
+import logging
 from datetime import datetime
 import numpy as np
 
@@ -3581,7 +3582,7 @@ def _generate_rag_visualization(viz_type: str, results: list, artifact_ids: list
             data = []
             labels = []
             for aid in artifact_ids[:10]:
-                features = db.get_morphometric_features(aid)
+                features = db.get_features(aid)
                 if features:
                     data.append({
                         'id': aid,
