@@ -136,14 +136,15 @@ class RAGSearchEngine:
             logger.warning("RAG: No documents to index")
 
     def search(self, query: str, top_k: int = 10,
-               min_score: float = 0.1) -> List[Dict[str, Any]]:
+               min_score: float = 0.01) -> List[Dict[str, Any]]:
         """
         Search for documents matching the query.
 
         Args:
             query: Search query (natural language)
             top_k: Maximum number of results
-            min_score: Minimum similarity score (0-1)
+            min_score: Minimum similarity score (0-1). Default lowered to 0.01
+                       because TF-IDF with sparse vectors produces low scores.
 
         Returns:
             List of matching documents with scores
@@ -161,6 +162,10 @@ class RAGSearchEngine:
             # Get top results
             top_indices = np.argsort(similarities)[::-1][:top_k * 2]  # Get extra for filtering
 
+            # Debug: log top similarity scores
+            top_scores = [(int(idx), float(similarities[idx])) for idx in top_indices[:5]]
+            logger.debug(f"RAG: Top 5 similarities for '{query[:30]}': {top_scores}")
+
             results = []
             for idx in top_indices:
                 score = float(similarities[idx])
@@ -173,7 +178,21 @@ class RAGSearchEngine:
                     if len(results) >= top_k:
                         break
 
-            logger.debug(f"RAG: Query '{query[:50]}...' returned {len(results)} results")
+            # Fallback: if no results with threshold, return top results anyway with warning
+            if not results and len(top_indices) > 0:
+                # Get top results regardless of threshold
+                for idx in top_indices[:min(3, top_k)]:
+                    score = float(similarities[idx])
+                    if score > 0:  # Only include if there's any similarity
+                        doc = self.documents[idx].copy()
+                        doc['score'] = score
+                        doc['score_pct'] = f"{score * 100:.1f}%"
+                        doc['low_confidence'] = True
+                        results.append(doc)
+                if results:
+                    logger.info(f"RAG: Low confidence results for '{query[:30]}' (best score: {results[0]['score']:.4f})")
+
+            logger.debug(f"RAG: Query '{query[:50]}...' returned {len(results)} results (threshold: {min_score})")
             return results
 
         except Exception as e:
