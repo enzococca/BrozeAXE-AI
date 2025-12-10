@@ -1,326 +1,375 @@
-# Archaeological Classifier System (ACS)
+# BrozeAXE-AI
 
-**Advanced 3D mesh analysis and formal taxonomy system for archaeological artifacts**
+**Archaeological Classifier System (ACS) - Advanced 3D Mesh Analysis for Bronze Age Artifacts**
 
 [![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![Flask](https://img.shields.io/badge/flask-3.0+-green.svg)](https://flask.palletsprojects.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Overview
 
-Archaeological Classifier System (ACS) is a comprehensive Python framework for analyzing 3D scanned archaeological artifacts. It combines advanced morphometric analysis, formal parametric taxonomy, and AI-powered reasoning to answer complex archaeological questions.
+BrozeAXE-AI is a sophisticated web-based archaeological analysis system designed for the morphometric study and classification of Bronze Age artifacts. Originally developed for analyzing the **Savignano bronze axes hoard**, this system combines 3D mesh processing, advanced statistical analysis, machine learning, and AI-powered reasoning (Claude 4.5 Sonnet) to provide comprehensive archaeological insights.
 
-### Key Features
+### What It Does
 
-✅ **3D Mesh Processing** - Load and analyze OBJ, PLY, STL files
-✅ **Morphometric Analysis** - PCA, clustering, Procrustes, Elliptic Fourier Analysis
-✅ **Formal Taxonomy** - Parametric classification with versioning and traceability
-✅ **REST API** - Complete Flask API for all functionalities
-✅ **MCP Integration** - Claude Desktop integration via Model Context Protocol
-✅ **CLI Tools** - Command-line interface for all operations
-✅ **Rigorous Validation** - Statistical validation and confidence scoring
+- **Analyzes 3D scanned artifacts** - Process OBJ, PLY, and STL mesh files
+- **Extracts morphometric parameters** - 36+ measurements specific to Bronze Age axes
+- **Identifies casting matrices** - Groups artifacts that came from the same mold
+- **Classifies artifacts** - Using AI, ML, or hybrid approaches
+- **Generates comprehensive reports** - Multi-page PDFs with visualizations and analysis
+- **Enables comparative studies** - Compare artifacts 1:1 or across entire collections
 
-## Installation
+## Key Features
 
-### Quick Install
+### 3D Mesh Processing
+- Load and process OBJ, PLY, STL files
+- Automatic feature extraction (volume, dimensions, surface area)
+- Mesh normalization and scale factor handling
+- Interactive 3D visualization with Three.js
 
-```bash
-pip install archaeological-classifier
-```
+### Savignano Morphometric Analysis
+- **36+ specialized parameters** for Bronze Age axes:
+  - Socket (incavo) depth, width, and profile
+  - Butt (tallone) measurements
+  - Blade dimensions and edge angles
+  - Raised edges analysis
+- Detection of post-casting modifications (hammering, filing marks)
+- Archaeological Quality Assurance (QA) system
 
-### Development Install
+### Advanced Statistical Analysis
+- **Principal Component Analysis (PCA)** with explained variance tracking
+- **Hierarchical Clustering** for artifact grouping
+- **DBSCAN Clustering** for identifying casting matrices
+- **Procrustes Superimposition** for shape comparison
+- **Elliptic Fourier Analysis** for outline analysis
 
-```bash
-git clone https://github.com/yourusername/archaeological-classifier.git
-cd archaeological-classifier
-pip install -e .
-```
+### Classification Systems (4 Approaches)
+| Method | Description | Speed |
+|--------|-------------|-------|
+| **AI Classification** | Claude 4.5 Sonnet intelligent analysis | 3-8s |
+| **ML Prediction** | Random Forest/Gradient Boosting | <100ms |
+| **Hybrid** | Combined rule-based + ML | ~2s |
+| **Stylistic Auto** | Multi-feature comprehensive profiling | ~1s |
 
-For detailed installation instructions, see [INSTALL.md](INSTALL.md).
+### Formal Taxonomy System
+- Parametric class definitions with explicit morphometric parameters
+- Full version control with SHA256 hashing
+- Complete audit trail with mandatory justifications
+- Automatic class discovery from clustering results
 
-## Quick Start
-
-### 1. Process a 3D Mesh
-
-```python
-from acs import MeshProcessor
-
-processor = MeshProcessor()
-features = processor.load_mesh("path/to/axe.obj", artifact_id="AXE_001")
-
-print(f"Volume: {features['volume']:.2f} mm³")
-print(f"Length: {features['length']:.2f} mm")
-```
-
-### 2. Define a Taxonomic Class
-
-```python
-from acs import FormalTaxonomySystem
-
-taxonomy = FormalTaxonomySystem()
-
-# Reference artifacts from archaeological group
-reference_axes = [
-    {"id": "AXE_001", "volume": 145.3, "length": 120.5, "width": 65.2},
-    {"id": "AXE_002", "volume": 148.1, "length": 122.0, "width": 64.8},
-    # ... more reference objects
-]
-
-savignano_class = taxonomy.define_class_from_reference_group(
-    class_name="Savignano",
-    reference_objects=reference_axes
-)
-
-print(f"Class created: {savignano_class.class_id}")
-print(f"Parameter hash: {savignano_class.parameter_hash}")
-```
-
-### 3. Classify New Artifacts
-
-```python
-new_axe = {
-    "id": "AXE_097",
-    "volume": 146.8,
-    "length": 121.2,
-    "width": 65.0
-}
-
-is_member, confidence, diagnostic = savignano_class.classify_object(new_axe)
-
-print(f"Belongs to Savignano: {is_member}")
-print(f"Confidence: {confidence:.2%}")
-```
+### Report Generation
+- Multi-page PDF reports with professional layouts
+- 3D mesh renderings (front, profile, cross-sections)
+- Measurement tables with scientific formatting
+- AI interpretations and technical analysis
+- Bilingual support (Italian/English)
 
 ## Architecture
 
-### Core Modules
+```
+BrozeAXE-AI/
+├── app.py                          # Simple Savignano report application
+├── requirements.txt                # Python dependencies
+├── archaeological-classifier/      # Main ACS system
+│   ├── acs/
+│   │   ├── core/                  # Analysis modules
+│   │   │   ├── database.py        # SQLite ORM
+│   │   │   ├── mesh_processor.py  # 3D mesh processing
+│   │   │   ├── morphometric.py    # PCA, clustering
+│   │   │   ├── taxonomy.py        # Formal taxonomy
+│   │   │   ├── ml_classifier.py   # ML models
+│   │   │   └── ai_assistant.py    # Claude integration
+│   │   │
+│   │   ├── savignano/             # Savignano-specific modules
+│   │   │   ├── morphometric_extractor.py
+│   │   │   ├── comprehensive_report.py
+│   │   │   ├── matrix_analyzer.py
+│   │   │   └── archaeological_qa.py
+│   │   │
+│   │   ├── api/                   # REST API (Flask blueprints)
+│   │   ├── web/                   # Web interface
+│   │   │   ├── routes.py          # Web routes
+│   │   │   ├── templates/         # 24 HTML templates
+│   │   │   └── static/            # CSS, JS, images
+│   │   │
+│   │   └── mcp/                   # Model Context Protocol
+│   │       └── server.py          # Claude Desktop integration
+│   │
+│   └── docs/                      # Documentation
+│
+├── templates/                      # Simple app templates
+├── static/                         # Static assets
+└── data/                          # Database and uploads
+```
 
-- **`acs.core.mesh_processor`** - 3D mesh loading and feature extraction
-- **`acs.core.morphometric`** - Advanced morphometric analysis
-- **`acs.core.taxonomy`** - Formal parametric taxonomy system
+## Installation
 
-### API & Integration
+### Prerequisites
+- Python 3.9+
+- pip package manager
+- Virtual environment (recommended)
 
-- **`acs.api`** - Flask REST API with complete endpoint coverage
-- **`acs.mcp`** - Model Context Protocol server for Claude Desktop
-- **`acs.cli`** - Command-line interface
+### Quick Start
 
-## Use Cases
+```bash
+# Clone the repository
+git clone https://github.com/enzococca/BrozeAXE-AI.git
+cd BrozeAXE-AI
 
-### Archaeological Questions Answered
+# Create and activate virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
-This system was designed to answer questions like:
+# Install dependencies
+pip install -r requirements.txt
 
-1. **How many casting matrices were used?**
-   → Clustering identifies distinct groups from the same matrix
+# Set up environment variables
+cp .env.example .env
+# Edit .env with your settings (especially ANTHROPIC_API_KEY for AI features)
 
-2. **How many castings per matrix?**
-   → Count artifacts per cluster
+# Run the application
+python app.py
+```
 
-3. **What post-casting treatments were applied?**
-   → Technological parameter analysis (hammering, filing)
+The application will start on http://127.0.0.1:5000/
 
-4. **How much were the artifacts used?**
-   → Wear analysis on cutting edge
+### Full ACS System
 
-5. **Why the socket in the butt?**
-   → Functional analysis and interpretation
+```bash
+cd archaeological-classifier
+pip install -e .
 
-### Example: Savignano Bronze Axes
+# Run the full web interface
+python -m acs.web.routes
+# Or use the CLI
+acs-cli --help
+```
+
+## Configuration
+
+Create a `.env` file with the following variables:
+
+```env
+# Required for AI features
+ANTHROPIC_API_KEY=sk-ant-your-key-here
+
+# Application settings
+FLASK_ENV=production
+PORT=5001
+DATABASE_PATH=/data/acs_artifacts.db
+
+# Optional: Cloud storage
+DROPBOX_ACCESS_TOKEN=your-token
+GOOGLE_DRIVE_CREDENTIALS=path/to/credentials.json
+
+# Security
+JWT_SECRET_KEY=your-secret-key
+MAX_UPLOAD_SIZE=100000000
+```
+
+## Usage
+
+### Web Interface
+
+1. **Upload Meshes**: Navigate to the upload page and select your 3D mesh files (OBJ, PLY, STL)
+2. **Extract Features**: The system automatically extracts morphometric parameters
+3. **Analyze**: Choose your analysis method:
+   - Run PCA for dimensionality reduction
+   - Perform clustering to identify groups
+   - Use AI/ML for classification
+4. **Compare**: Use the comparison tools to analyze similarities
+5. **Generate Reports**: Create comprehensive PDF reports
+
+### REST API
+
+```bash
+# Upload a mesh
+curl -X POST -F "file=@axe.obj" http://localhost:5000/api/mesh/upload
+
+# Run PCA analysis
+curl -X POST http://localhost:5000/api/morphometric/pca \
+  -H "Content-Type: application/json" \
+  -d '{"artifact_ids": ["AXE_001", "AXE_002"]}'
+
+# Classify an artifact
+curl -X POST http://localhost:5000/api/classification/classify \
+  -H "Content-Type: application/json" \
+  -d '{"artifact_id": "AXE_097", "method": "ai"}'
+```
+
+### Python API
 
 ```python
-# See examples/savignano_analysis.py for complete workflow
 from acs import MeshProcessor, MorphometricAnalyzer, FormalTaxonomySystem
 
-# 1. Process 96 OBJ files
+# Process a mesh
 processor = MeshProcessor()
-results = processor.batch_process(obj_files)
+features = processor.load_mesh("axe.obj", artifact_id="AXE_001")
 
-# 2. Morphometric analysis
+# Run morphometric analysis
 analyzer = MorphometricAnalyzer()
-for result in results:
-    analyzer.add_features(result['artifact_id'], result['features'])
+analyzer.add_features("AXE_001", features)
+pca_results = analyzer.perform_pca(n_components=3)
 
-clustering = analyzer.hierarchical_clustering(n_clusters=None, distance_threshold=0.5)
-print(f"Identified {clustering['n_clusters']} potential matrices")
-
-# 3. Define classes from clusters
+# Define a taxonomic class
 taxonomy = FormalTaxonomySystem()
-for cluster_id, artifact_ids in clustering['clusters'].items():
-    cluster_objects = [get_features(aid) for aid in artifact_ids]
-
-    taxonomy.define_class_from_reference_group(
-        class_name=f"Matrix_{cluster_id}",
-        reference_objects=cluster_objects
-    )
-
-# 4. Export for publication
-taxonomy.export_taxonomy("savignano_taxonomy.json")
-```
-
-## REST API
-
-Start the API server:
-
-```bash
-acs-server --port 5000
-```
-
-### Endpoints
-
-**Mesh Processing**
-- `POST /api/mesh/upload` - Upload and process mesh
-- `POST /api/mesh/batch` - Batch processing
-- `GET /api/mesh/<id>` - Get artifact features
-
-**Morphometric Analysis**
-- `POST /api/morphometric/pca` - PCA analysis
-- `POST /api/morphometric/cluster` - Clustering
-- `POST /api/morphometric/find-similar` - Similarity search
-
-**Classification**
-- `POST /api/classification/define-class` - Define taxonomic class
-- `POST /api/classification/classify` - Classify artifact
-- `POST /api/classification/modify-class` - Modify class (tracked)
-- `GET /api/classification/classes` - List all classes
-
-See full API documentation at `/api/docs`.
-
-## Claude Desktop Integration
-
-Archaeological Classifier System integrates with Claude Desktop via the Model Context Protocol (MCP).
-
-### Setup
-
-1. Install ACS:
-   ```bash
-   pip install archaeological-classifier
-   ```
-
-2. Configure Claude Desktop (see [INSTALL.md](INSTALL.md) for detailed instructions):
-   ```json
-   {
-     "mcpServers": {
-       "archaeological-classifier": {
-         "command": "python",
-         "args": ["-m", "acs.mcp.server"]
-       }
-     }
-   }
-   ```
-
-3. Restart Claude Desktop
-
-### Available Tools
-
-- `process_mesh` - Process 3D mesh files
-- `morphometric_analysis` - PCA, clustering, similarity
-- `define_taxonomic_class` - Create formal classes
-- `classify_artifact` - Classify artifacts
-- `modify_class_parameters` - Modify classes (with justification)
-- `discover_new_classes` - Automatic class discovery
-- And more...
-
-## Formal Taxonomy System
-
-### Key Principles
-
-✅ **Explicit Parameters** - Every class defined by quantitative parameters
-✅ **Versioning** - Complete version history with MD5 hashing
-✅ **Traceability** - All modifications logged with justification
-✅ **Reproducibility** - Same parameters = same classification
-✅ **Statistical Validation** - Confidence scores and diagnostics
-
-### Parameter Types
-
-1. **Morphometric** - Geometric features (volume, length, width)
-2. **Technological** - Manufacturing features (socket depth, edge angle)
-3. **Optional** - Presence/absence features (socket, midrib)
-
-### Modification Control
-
-```python
-# Modifications require justification and create new versions
-new_class = taxonomy.modify_class_parameters(
-    class_id="TYPE_SAVIGNANO_20250104_123456",
-    parameter_changes={
-        "morphometric": {
-            "length": {"min_threshold": 115.0, "max_threshold": 130.0}
-        }
-    },
-    justification="Range expansion after discovery of 3 new specimens",
-    operator="Enzo Ferroni"
+new_class = taxonomy.define_class_from_reference_group(
+    class_name="Savignano",
+    reference_objects=[features]
 )
-
-# New version created: TYPE_SAVIGNANO_20250104_123456_v2
-# Original class preserved in version history
 ```
 
-## CLI Usage
+### Claude Desktop Integration (MCP)
 
-```bash
-# Process single mesh
-acs-cli process axe.obj --output features.json
+Add to your Claude Desktop configuration:
 
-# Batch process directory
-acs-cli batch ./meshes --pattern "*.obj" --output batch_results.json
-
-# Define taxonomic class
-acs-cli define-class "Savignano" references.json --output class.json
-
-# Classify artifact
-acs-cli classify artifact.json taxonomy.json
-
-# List classes
-acs-cli list-classes taxonomy.json
-
-# Start API server
-acs-cli server --port 5000 --debug
+```json
+{
+  "mcpServers": {
+    "archaeological-classifier": {
+      "command": "python",
+      "args": ["-m", "acs.mcp.server"]
+    }
+  }
+}
 ```
 
-## Development
+## Savignano Analysis Workflow
 
-### Running Tests
+The system includes specialized tools for analyzing Bronze Age axes from the Savignano hoard:
+
+```
+1. UPLOAD MULTIPLE MESHES
+   Upload 10-96 OBJ files of Bronze Age axes
+   Optional: Upload weight data (Excel, CSV, JSON)
+   ↓
+2. FEATURE EXTRACTION
+   Extract 36+ Savignano morphometric parameters:
+   - Socket dimensions and profile
+   - Butt measurements
+   - Blade analysis
+   - Raised edges
+   ↓
+3. MATRIX CLUSTERING
+   DBSCAN clustering identifies potential casting dies
+   Archaeological QA validates results
+   ↓
+4. CLASSIFICATION
+   Formal taxonomy definition for each matrix group
+   AI-powered archaeological interpretation
+   ↓
+5. REPORT GENERATION
+   Comprehensive multi-page PDF with all analysis
+```
+
+## Database Schema
+
+SQLite database with the following core tables:
+
+| Table | Purpose |
+|-------|---------|
+| `artifacts` | 3D mesh registry and metadata |
+| `features` | Morphometric measurements |
+| `stylistic_features` | Non-morphometric analysis |
+| `classifications` | Classification results |
+| `training_data` | ML training dataset |
+| `analysis_results` | Cached analysis outputs |
+| `comparisons` | Similarity results |
+| `projects` | Multi-project organization |
+
+## Technologies
+
+### Backend
+- **Flask 3.0+** - Web framework
+- **SQLite** - Database
+- **Anthropic API** - Claude 4.5 Sonnet for AI analysis
+- **Trimesh 4.0+** - 3D mesh processing
+- **NumPy, SciPy** - Numerical computing
+- **Scikit-learn 1.3+** - Machine Learning
+
+### Frontend
+- **Jinja2** - HTML templating
+- **Three.js** - 3D visualization
+- **Bootstrap** - UI framework
+
+### Integration
+- **Model Context Protocol (MCP)** - Claude Desktop
+- **Dropbox API** - Cloud backup
+- **Google Drive** - Cloud storage
+
+## Deployment
+
+### Railway.app (Recommended)
+
+The project includes Railway.app configuration for easy deployment:
 
 ```bash
+railway login
+railway init
+railway up
+```
+
+### Docker
+
+```bash
+docker build -t brozeaxe-ai .
+docker run -p 5000:5000 brozeaxe-ai
+```
+
+### Manual Deployment
+
+```bash
+# Production mode
+export FLASK_ENV=production
+gunicorn -w 4 -b 0.0.0.0:5000 app:app
+```
+
+## Documentation
+
+Comprehensive documentation is available:
+
+- [QUICKSTART.md](archaeological-classifier/QUICKSTART.md) - 5-minute getting started
+- [INSTALL.md](archaeological-classifier/INSTALL.md) - Detailed installation
+- [WORKFLOW_GUIDE.md](WORKFLOW_GUIDE.md) - Usage workflows
+- [SAVIGNANO_QUICK_START.md](archaeological-classifier/SAVIGNANO_QUICK_START.md) - Savignano analysis guide
+- [ACS_ARCHITECTURAL_ANALYSIS.md](archaeological-classifier/ACS_ARCHITECTURAL_ANALYSIS.md) - Technical architecture
+
+## Contributing
+
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+### Development
+
+```bash
+# Install dev dependencies
 pip install -e ".[dev]"
+
+# Run tests
 pytest tests/
-```
 
-### Code Formatting
-
-```bash
+# Code formatting
 black acs/
-```
 
-### Type Checking
-
-```bash
+# Type checking
 mypy acs/
-```
-
-## Publishing to PyPI
-
-```bash
-# Build distribution
-python -m build
-
-# Upload to Test PyPI
-twine upload --repository testpypi dist/*
-
-# Upload to PyPI
-twine upload dist/*
 ```
 
 ## Citation
 
-If you use Archaeological Classifier System in your research, please cite:
+If you use BrozeAXE-AI in your research, please cite:
 
 ```bibtex
-@software{archaeological_classifier_2025,
-  author = {Ferroni, Enzo},
-  title = {Archaeological Classifier System: Advanced 3D Analysis and Formal Taxonomy},
+@software{brozeaxe_ai_2025,
+  author = {Cocca, Enzo},
+  title = {BrozeAXE-AI: Archaeological Classifier System for Bronze Age Artifacts},
   year = {2025},
-  url = {https://github.com/yourusername/archaeological-classifier}
+  url = {https://github.com/enzococca/BrozeAXE-AI}
 }
 ```
 
@@ -328,25 +377,10 @@ If you use Archaeological Classifier System in your research, please cite:
 
 MIT License - see [LICENSE](LICENSE) for details.
 
-## Contributing
-
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Submit a pull request
-
-## Support
-
-- **Issues**: [GitHub Issues](https://github.com/yourusername/archaeological-classifier/issues)
-- **Documentation**: [Full Documentation](https://github.com/yourusername/archaeological-classifier#readme)
-- **Examples**: See `examples/` directory
-
 ## Acknowledgments
 
-Developed for the analysis of the Savignano bronze axes hoard and similar archaeological assemblages.
+Developed for the morphometric analysis of the Savignano bronze axes hoard and similar archaeological assemblages. This project combines traditional archaeological methodology with modern computational techniques to bring rigor and reproducibility to archaeological typology.
 
 ---
 
-**Archaeological Classifier System** - Bringing rigor and reproducibility to archaeological typology.
+**BrozeAXE-AI** - Bringing AI-powered precision to archaeological artifact analysis.
