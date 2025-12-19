@@ -19,12 +19,12 @@ if requirements_file.exists():
 setup(
     name="archaeological-classifier",
     version="0.1.0",
-    author="Enzo Ferroni",
-    author_email="enzo@example.com",  # Update with actual email
+    author="Enzo Cocca",
+    author_email="enzo.ccc@gmail.com",  # Update with actual email
     description="Advanced 3D mesh analysis and formal taxonomy system for archaeological artifacts",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/archaeological-classifier",  # Update with actual URL
+    url="https://github.com/enzococca/BronzeAXE-AI",  # Update with actual URL
     packages=find_packages(),
     classifiers=[
         "Development Status :: 3 - Alpha",

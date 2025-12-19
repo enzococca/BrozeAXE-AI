@@ -2624,21 +2624,24 @@ def batch_extract_features():
     try:
         db = get_database()
 
-        # Get limit from request
+        # Get options from request
         data = request.json or {}
         limit = data.get('limit', 1)  # Default: process 1 at a time
+        force = data.get('force', False)  # Force re-extraction even if features exist
 
         # Get all artifacts
         result = db.get_artifacts_paginated(page=1, per_page=10000)
         all_artifacts = result.get('artifacts', [])
 
-        # Find artifacts without features
+        # Find artifacts to process
         pending = []
         already_done = 0
         for artifact in all_artifacts:
             artifact_id = artifact['artifact_id']
             existing_features = db.get_features(artifact_id)
-            if existing_features and len(existing_features) > 2:
+            # Check if has enough features AND has the new keys (height, compactness)
+            has_new_keys = existing_features and 'height' in existing_features and 'compactness' in existing_features
+            if not force and existing_features and len(existing_features) > 2 and has_new_keys:
                 already_done += 1
             else:
                 pending.append(artifact)
@@ -2698,6 +2701,67 @@ def batch_extract_features():
     except Exception as e:
         import traceback
         logging.error(f"Batch feature extraction failed: {traceback.format_exc()}")
+        return jsonify({'error': str(e)}), 500
+
+
+@web_bp.route('/reextract-features/<artifact_id>', methods=['POST'])
+def reextract_features(artifact_id):
+    """
+    Force re-extraction of features for a specific artifact.
+
+    Useful when:
+    - Features are missing after upload
+    - Code was updated with new feature calculations
+    - Features need to be refreshed
+    """
+    import logging
+    from acs.core.database import get_database
+
+    try:
+        db = get_database()
+
+        # Check if artifact exists
+        artifact = db.get_artifact(artifact_id)
+        if not artifact:
+            return jsonify({'error': f'Artifact {artifact_id} not found'}), 404
+
+        # Load mesh from storage
+        if not ensure_mesh_loaded(artifact_id):
+            return jsonify({'error': 'Could not load mesh from storage'}), 500
+
+        # Extract features with latest code
+        mesh = mesh_processor.meshes[artifact_id]
+        features = mesh_processor._extract_features(mesh, artifact_id)
+
+        # Save to database (overwrites existing)
+        db.add_features(artifact_id, features)
+
+        # Also add to morphometric analyzer for immediate use
+        morphometric_analyzer.add_features(artifact_id, features)
+
+        logging.info(f"✅ Re-extracted features for {artifact_id}")
+
+        # Return the new features
+        return jsonify({
+            'status': 'success',
+            'artifact_id': artifact_id,
+            'features': {
+                'volume': features.get('volume'),
+                'surface_area': features.get('surface_area'),
+                'length': features.get('length'),
+                'width': features.get('width'),
+                'height': features.get('height'),
+                'compactness': features.get('compactness'),
+                'convexity': features.get('convexity'),
+                'n_vertices': features.get('n_vertices'),
+                'n_faces': features.get('n_faces')
+            },
+            'message': f'Features re-extracted for {artifact_id}'
+        })
+
+    except Exception as e:
+        import traceback
+        logging.error(f"Re-extract features failed for {artifact_id}: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 500
 
 

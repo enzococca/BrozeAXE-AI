@@ -78,6 +78,73 @@ def _initialize_mesh_persistence(app):
         print(f"[Mesh Persistence] Error during initialization: {str(e)}")
 
 
+def _update_missing_features():
+    """Update artifacts that are missing the new feature keys (height, compactness)."""
+    try:
+        from acs.core.database import get_database
+        from acs.web.routes import mesh_processor, morphometric_analyzer, ensure_mesh_loaded
+
+        db = get_database()
+
+        # Get all artifacts
+        result = db.get_artifacts_paginated(page=1, per_page=10000)
+        all_artifacts = result.get('artifacts', [])
+
+        if not all_artifacts:
+            print("[Feature Update] No artifacts in database")
+            return
+
+        # Find artifacts missing new features
+        missing_features = []
+        for artifact in all_artifacts:
+            artifact_id = artifact['artifact_id']
+            features = db.get_features(artifact_id)
+            # Check if missing height or compactness (new features)
+            if not features or 'height' not in features or 'compactness' not in features:
+                missing_features.append(artifact)
+
+        if not missing_features:
+            print(f"[Feature Update] ✓ All {len(all_artifacts)} artifacts have updated features")
+            return
+
+        print(f"[Feature Update] 🔄 Found {len(missing_features)} artifacts missing new features, updating...")
+
+        updated = 0
+        failed = 0
+        for artifact in missing_features:
+            artifact_id = artifact['artifact_id']
+            try:
+                # Load mesh from storage
+                if not ensure_mesh_loaded(artifact_id):
+                    print(f"[Feature Update] ⚠️  Could not load mesh for {artifact_id}")
+                    failed += 1
+                    continue
+
+                # Extract features with latest code
+                mesh = mesh_processor.meshes[artifact_id]
+                features = mesh_processor._extract_features(mesh, artifact_id)
+
+                # Save to database
+                db.add_features(artifact_id, features)
+
+                # Add to morphometric analyzer
+                morphometric_analyzer.add_features(artifact_id, features)
+
+                updated += 1
+                print(f"[Feature Update] ✅ Updated {artifact_id}")
+
+            except Exception as e:
+                print(f"[Feature Update] ❌ Failed for {artifact_id}: {e}")
+                failed += 1
+
+        print(f"[Feature Update] 📊 Complete: {updated} updated, {failed} failed")
+
+    except Exception as e:
+        import traceback
+        print(f"[Feature Update] ⚠️  Error: {e}")
+        traceback.print_exc()
+
+
 def create_app(config=None):
     """Create and configure Flask application."""
 
@@ -198,6 +265,19 @@ def create_app(config=None):
     # Meshes are loaded on-demand when needed instead
     # with app.app_context():
     #     _initialize_mesh_persistence(app)
+
+    # Update artifacts with missing features (height, compactness) in background
+    # This runs in a separate thread to avoid slowing down startup
+    def background_feature_update():
+        import time
+        time.sleep(5)  # Wait for app to fully initialize
+        with app.app_context():
+            _update_missing_features()
+
+    import threading
+    update_thread = threading.Thread(target=background_feature_update, daemon=True)
+    update_thread.start()
+    print("[Feature Update] 🔄 Background feature update scheduled")
 
     # Root endpoint - redirect to web interface
     @app.route('/')

@@ -132,6 +132,7 @@ class MeshProcessor:
         features['length'] = float(max(dimensions))
         features['width'] = float(sorted(dimensions)[-2])
         features['thickness'] = float(min(dimensions))
+        features['height'] = features['thickness']  # Alias for compatibility
 
         # Calculate dimensional ratios (important for classification)
         if features['width'] > 0:
@@ -154,6 +155,16 @@ class MeshProcessor:
         convex_hull = mesh.convex_hull
         features['convex_volume'] = float(convex_hull.volume)
         features['convexity'] = float(mesh.volume / convex_hull.volume)
+
+        # Compactness (sphericity measure: 1.0 = perfect sphere)
+        # Formula: (36 * pi * V^2) / (A^3) where V = volume, A = surface area
+        if features['surface_area'] > 0:
+            features['compactness'] = float(
+                (36.0 * np.pi * features['volume'] ** 2) /
+                (features['surface_area'] ** 3)
+            )
+        else:
+            features['compactness'] = 0.0
 
         # Vertex and face counts
         features['n_vertices'] = len(mesh.vertices)
