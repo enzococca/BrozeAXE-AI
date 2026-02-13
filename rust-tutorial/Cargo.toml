@@ -1,0 +1,45 @@
+[package]
+name = "rust_tutorial"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = "0.4"
+
+[[example]]
+name = "cap01_basi"
+path = "examples/cap01_basi.rs"
+
+[[example]]
+name = "cap02_ownership"
+path = "examples/cap02_ownership.rs"
+
+[[example]]
+name = "cap03_strutture"
+path = "examples/cap03_strutture.rs"
+
+[[example]]
+name = "cap04_errori"
+path = "examples/cap04_errori.rs"
+
+[[example]]
+name = "cap05_collezioni"
+path = "examples/cap05_collezioni.rs"
+
+[[example]]
+name = "cap06_traits"
+path = "examples/cap06_traits.rs"
+
+[[example]]
+name = "cap07_moduli"
+path = "examples/cap07_moduli.rs"
+
+[[example]]
+name = "cap08_concorrenza"
+path = "examples/cap08_concorrenza.rs"
+
+[[example]]
+name = "cap09_progetto_finale"
+path = "examples/cap09_progetto_finale.rs"
