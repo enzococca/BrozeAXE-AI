@@ -947,49 +947,151 @@ class TechnicalDrawingGenerator:
         """
         Create complete professional composite sheet - CATARUZZA-STYLE LAYOUT.
 
-        Layout (tavola archeologica stile Cataruzza):
-        - In alto (sopra la frontale): sezione del tallone vista dall'alto
-        - Centro sinistra: VISTA FRONTALE (principale, grande)
-        - Centro destra: sezione trasversale al punto più largo
-        - In basso sinistra: profilo longitudinale (vista laterale)
-        - In basso destra: pannello info (ID, misure)
-        """
-        fig = plt.figure(figsize=(11, 14), dpi=self.dpi)  # A4 proportions
+        Draws each view DIRECTLY into the composite figure (not embedding
+        pre-rendered PNGs) so that all views share proportional mm-based
+        coordinates and the result looks like a real archaeological plate.
 
-        # Title
+        Layout:
+        - Row 0, col 0: tallone dall'alto (sized to tallone width)
+        - Row 1, col 0: VISTA FRONTALE (main, large)
+        - Row 1, col 1: sezione trasversale (beside front, same row height)
+        - Row 2, col 0: profilo longitudinale + scala
+        - Row 2, col 1: pannello info
+        """
+        fig = plt.figure(figsize=(11, 14), dpi=self.dpi)
+
         fig.suptitle(f'Documentazione Tecnica - {artifact_id}',
                     fontsize=14, fontweight='bold', y=0.98)
 
-        # Cataruzza grid: 3 rows x 2 cols
-        #   row 0: tallone dall'alto (sopra la frontale)
-        #   row 1: frontale (grande) + sezione trasversale
-        #   row 2: profilo laterale + info panel
-        gs = fig.add_gridspec(3, 2, hspace=0.22, wspace=0.25,
+        bounds = mesh.bounds
+        x_ext = bounds[1][0] - bounds[0][0]
+        y_ext = bounds[1][1] - bounds[0][1]
+        z_ext = bounds[1][2] - bounds[0][2]
+
+        # Grid ratios from mesh geometry → proportional layout
+        h_tallone = max(y_ext, z_ext * 0.10)
+        h_main = z_ext
+        h_bottom = z_ext * 0.30
+
+        gs = fig.add_gridspec(3, 2, hspace=0.12, wspace=0.10,
                              left=0.05, right=0.95, top=0.94, bottom=0.05,
-                             height_ratios=[1.1, 3.2, 2.2],
-                             width_ratios=[1.4, 1.0])
+                             height_ratios=[h_tallone, h_main, h_bottom],
+                             width_ratios=[1.3, 1.0])
 
-        # Sub-view PNGs already carry their own titles; the composite only
-        # arranges them so we don't double-title each panel.
+        # -- ROW 0: Tallone dall'alto --
+        ax_tallone = fig.add_subplot(gs[0, 0])
+        try:
+            band_z = bounds[0][2] + z_ext * 0.85
+            butt_mask = mesh.vertices[:, 2] >= band_z
+            butt_verts = mesh.vertices[butt_mask]
+            if len(butt_verts) < 10:
+                band_z = bounds[0][2] + z_ext * 0.67
+                butt_mask = mesh.vertices[:, 2] >= band_z
+                butt_verts = mesh.vertices[butt_mask]
+            verts_2d = butt_verts[:, [0, 1]]
+            outline = self._alpha_shape(verts_2d)
+            if outline is None or len(outline) <= 2:
+                from scipy.spatial import ConvexHull
+                outline = verts_2d[ConvexHull(verts_2d).vertices]
+            ax_tallone.plot(*np.vstack([outline, outline[0]]).T,
+                           'k-', linewidth=0.8, solid_capstyle='round')
+            try:
+                import trimesh as _trimesh
+                fm = butt_mask[mesh.faces].all(axis=1)
+                if fm.any():
+                    bm = _trimesh.Trimesh(vertices=mesh.vertices,
+                                          faces=mesh.faces[fm], process=False)
+                    self._draw_feature_edges(ax_tallone, bm, (0, 1))
+            except Exception:
+                pass
+            self._add_stippling_shading(ax_tallone, mesh, verts_2d, outline,
+                                        'front')
+        except Exception as e:
+            print(f"Warning: tallone render failed ({e})")
+        ax_tallone.set_title("Tallone (dall'alto)", fontsize=9, pad=4)
+        ax_tallone.set_aspect('equal')
+        ax_tallone.axis('off')
 
-        # SOPRA LA FRONTALE: sezione del tallone vista dall'alto
-        if 'tallone_top' in views:
-            ax_tallone = fig.add_subplot(gs[0, 0])
-            self._plot_image_in_axis(ax_tallone, views['tallone_top'])
-
-        # CENTRO SINISTRA: vista frontale (PRINCIPALE - grande)
+        # -- ROW 1 COL 0: Vista Frontale --
         ax_front = fig.add_subplot(gs[1, 0])
-        self._plot_image_in_axis(ax_front, views['front_view'])
+        front_2d = mesh.vertices[:, [0, 2]]
+        try:
+            fout = self._get_real_silhouette(mesh, [0, 1, 0], (0, 2))
+            if fout is None or len(fout) <= 2:
+                from scipy.spatial import ConvexHull
+                fout = front_2d[ConvexHull(front_2d).vertices]
+            ax_front.plot(*np.vstack([fout, fout[0]]).T,
+                         'k-', linewidth=0.8, solid_capstyle='round')
+            self._draw_feature_edges(ax_front, mesh, (0, 2))
+            self._add_stippling_shading(ax_front, mesh, front_2d, fout,
+                                        'front')
+        except Exception as e:
+            print(f"Warning: front view render failed ({e})")
+        ax_front.set_title('Vista Frontale', fontsize=10, pad=4)
+        ax_front.set_aspect('equal')
+        ax_front.axis('off')
 
-        # CENTRO DESTRA: sezione trasversale al punto più largo (affianco)
-        ax_section = fig.add_subplot(gs[1, 1])
-        self._plot_image_in_axis(ax_section, views['cross_section_high'])
+        # -- ROW 1 COL 1: Sezione Trasversale --
+        ax_sec = fig.add_subplot(gs[1, 1])
+        try:
+            z_pos = bounds[0][2] + z_ext * 0.50
+            sec = mesh.section(plane_origin=[0, 0, z_pos],
+                               plane_normal=[0, 0, 1])
+            if sec is not None and len(sec.vertices) > 2:
+                planar, _ = sec.to_planar()
+                sv = np.array(planar.vertices)
+                polys = []
+                for ent in planar.entities:
+                    pts = sv[ent.points]
+                    if len(pts) > 1:
+                        ax_sec.plot(*np.vstack([pts, pts[0]]).T,
+                                   'k-', linewidth=0.8, solid_capstyle='round')
+                    if len(pts) > 2:
+                        polys.append(pts)
+                if polys:
+                    self._stipple_section(ax_sec, polys)
+            else:
+                raise ValueError("Section returned no geometry")
+        except Exception as e:
+            print(f"Warning: section render failed ({e})")
+            try:
+                from scipy.spatial import ConvexHull
+                z_pos = bounds[0][2] + z_ext * 0.50
+                mask = np.abs(mesh.vertices[:, 2] - z_pos) < 5.0
+                nearby = mesh.vertices[mask]
+                if len(nearby) > 3:
+                    sv2d = nearby[:, :2]
+                    hull = ConvexHull(sv2d)
+                    sout = sv2d[hull.vertices]
+                    ax_sec.plot(*np.vstack([sout, sout[0]]).T,
+                               'k-', linewidth=0.8)
+                    self._stipple_section(ax_sec, [sout])
+            except Exception:
+                pass
+        ax_sec.set_title('Sezione Trasversale', fontsize=9, pad=4)
+        ax_sec.set_aspect('equal')
+        ax_sec.axis('off')
 
-        # BASSO SINISTRA: profilo longitudinale (vista laterale)
-        ax_long = fig.add_subplot(gs[2, 0])
-        self._plot_image_in_axis(ax_long, views['longitudinal_profile'])
+        # -- ROW 2 COL 0: Profilo Longitudinale --
+        ax_prof = fig.add_subplot(gs[2, 0])
+        prof_2d = mesh.vertices[:, [1, 2]]
+        try:
+            pout = self._get_real_silhouette(mesh, [1, 0, 0], (1, 2))
+            if pout is None or len(pout) <= 2:
+                from scipy.spatial import ConvexHull
+                pout = prof_2d[ConvexHull(prof_2d).vertices]
+            ax_prof.plot(*np.vstack([pout, pout[0]]).T,
+                        'k-', linewidth=0.8, solid_capstyle='round')
+            self._draw_feature_edges(ax_prof, mesh, (1, 2))
+            self._add_stippling_shading(ax_prof, mesh, prof_2d, pout, 'side')
+        except Exception as e:
+            print(f"Warning: profile render failed ({e})")
+        ax_prof.set_title('Profilo Longitudinale', fontsize=9, pad=4)
+        ax_prof.set_aspect('equal')
+        self._add_scale_bar(ax_prof)
+        ax_prof.axis('off')
 
-        # BASSO DESTRA: pannello info
+        # -- ROW 2 COL 1: Info panel --
         ax_info = fig.add_subplot(gs[2, 1])
         ax_info.axis('off')
         self._add_info_panel(ax_info, artifact_id, features)
