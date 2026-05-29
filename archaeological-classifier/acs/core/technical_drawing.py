@@ -391,14 +391,40 @@ class TechnicalDrawingGenerator:
         the stippling boundary), or None on failure.
         """
         try:
-            from scipy.ndimage import gaussian_filter
+            from scipy.ndimage import (gaussian_filter, binary_fill_holes,
+                                       binary_closing, label)
 
             mask, xs, ys = self._silhouette_mask(mesh, projection_axes, res)
             if mask is None:
                 return None
+
+            # Triangle rasterization (plus the random face subsampling in
+            # _silhouette_mask) leaves a peppering of 1-2 px pinholes inside
+            # the silhouette. Contouring at 0.5 would trace a closed loop
+            # around every one of them -> the scattered "polygon" blobs.
+            # Close the speckle and fill interior holes so only the TRUE
+            # outline survives; then re-open the genuinely large holes
+            # (real broken-through parts) so those stay faithful.
+            solid = binary_closing(mask > 0.5, iterations=2)
+            filled = binary_fill_holes(solid)
+            holes = filled & ~solid
+            lab, n = label(holes)
+            if n > 0:
+                area = float(filled.sum())
+                sizes = np.bincount(lab.ravel())
+                big = np.zeros_like(filled)
+                for i in range(1, n + 1):
+                    # keep holes bigger than 0.4% of the object's area
+                    if sizes[i] > area * 0.004:
+                        big |= (lab == i)
+                clean = filled & ~big
+            else:
+                clean = filled
+
             Xg, Yg = np.meshgrid(xs, ys)
-            cs = ax.contour(Xg, Yg, gaussian_filter(mask, 1.2), levels=[0.5],
-                            colors='black', linewidths=linewidth, zorder=4)
+            cs = ax.contour(Xg, Yg, gaussian_filter(clean.astype(float), 1.2),
+                            levels=[0.5], colors='black',
+                            linewidths=linewidth, zorder=4)
             segs = cs.allsegs[0] if cs.allsegs else []
             if not segs:
                 return None
@@ -1168,7 +1194,7 @@ class TechnicalDrawingGenerator:
         coordinates and the result looks like a real archaeological plate.
 
         Layout (orthographic plate, Cataruzza-style):
-        - Row 0, col 0: tallone dall'alto      col 1: sezione trasversale
+        - Row 0, col 0: sezione trasversale
         - Row 1, col 0: VISTA FRONTALE         col 1: PROFILO LONGITUDINALE
                         (front & profile aligned, drawn at the SAME length)
         - Row 2, col 0: barra di scala (3 cm)  col 1: pannello info
@@ -1191,102 +1217,19 @@ class TechnicalDrawingGenerator:
         bar_room = z_ext * 0.12
         y_lo, y_hi = z_min - pad - bar_room, z_max + pad
 
-        # Grid ratios from mesh geometry → proportional layout
-        h_tallone = max(y_ext, z_ext * 0.12)
+        # Grid ratios from mesh geometry → proportional layout. Row 0 holds
+        # the cross-section (height ≈ object thickness plus flange margins).
+        h_section = max(y_ext, z_ext * 0.12)
         h_main = z_ext + pad + bar_room
         h_bottom = z_ext * 0.18
 
         gs = fig.add_gridspec(3, 2, hspace=0.10, wspace=0.08,
                              left=0.05, right=0.95, top=0.94, bottom=0.04,
-                             height_ratios=[h_tallone, h_main, h_bottom],
+                             height_ratios=[h_section, h_main, h_bottom],
                              width_ratios=[1.3, 1.0])
 
-        # -- ROW 0: Tallone dall'alto (real section for incavo) --
-        ax_tallone = fig.add_subplot(gs[0, 0])
-        tallone_drawn = False
-        for frac in (0.95, 0.92, 0.88, 0.84):
-            try:
-                tz = z_min + z_ext * frac
-                tsec = mesh.section(plane_origin=[0, 0, tz],
-                                    plane_normal=[0, 0, 1])
-                if tsec is not None and len(tsec.vertices) > 2:
-                    tp, _ = tsec.to_planar()
-                    tsv = np.array(tp.vertices)
-                    tpolys = []
-                    for tent in tp.entities:
-                        tpts = tsv[tent.points]
-                        if len(tpts) > 1:
-                            ax_tallone.plot(*np.vstack([tpts, tpts[0]]).T,
-                                           'k-', linewidth=0.8,
-                                           solid_capstyle='round')
-                        if len(tpts) > 2:
-                            tpolys.append(tpts)
-                    if tpolys:
-                        self._stipple_section(ax_tallone, tpolys)
-                    tallone_drawn = True
-                    break
-            except Exception:
-                continue
-        if not tallone_drawn:
-            try:
-                band_z = z_min + z_ext * 0.85
-                butt_mask = mesh.vertices[:, 2] >= band_z
-                butt_verts = mesh.vertices[butt_mask]
-                if len(butt_verts) < 10:
-                    band_z = z_min + z_ext * 0.67
-                    butt_mask = mesh.vertices[:, 2] >= band_z
-                    butt_verts = mesh.vertices[butt_mask]
-                verts_2d = butt_verts[:, [0, 1]]
-                outline = self._alpha_shape(verts_2d, alpha_factor=0.8)
-                if outline is None or len(outline) <= 2:
-                    from scipy.spatial import ConvexHull
-                    outline = verts_2d[ConvexHull(verts_2d).vertices]
-                ax_tallone.plot(*np.vstack([outline, outline[0]]).T,
-                               'k-', linewidth=0.8, solid_capstyle='round')
-                self._add_stippling_shading(ax_tallone, mesh, verts_2d,
-                                            outline, 'front')
-            except Exception as e:
-                print(f"Warning: tallone render failed ({e})")
-        ax_tallone.set_title("Tallone (dall'alto)", fontsize=9, pad=4)
-        ax_tallone.set_aspect('equal')
-        ax_tallone.axis('off')
-
-        # -- ROW 1 COL 0: Vista Frontale --
-        ax_front = fig.add_subplot(gs[1, 0])
-        front_2d = mesh.vertices[:, [0, 2]]
-        try:
-            # Faithful outline from the 3D projection (incavo, holes)
-            fout = self._draw_real_outline(ax_front, mesh, (0, 2))
-            if fout is None or len(fout) <= 2:
-                fout = self._get_real_silhouette(mesh, [0, 1, 0], (0, 2))
-                if fout is None or len(fout) <= 2:
-                    from scipy.spatial import ConvexHull
-                    fout = front_2d[ConvexHull(front_2d).vertices]
-                ax_front.plot(*np.vstack([fout, fout[0]]).T,
-                             'k-', linewidth=0.8, solid_capstyle='round')
-            # Alette ridge lines from the real 3D relief
-            self._draw_alette_lines(ax_front, mesh, projection_axes=(0, 2),
-                                    depth_axis=1)
-            self._add_stippling_shading(ax_front, mesh, front_2d, fout,
-                                        'front')
-        except Exception as e:
-            print(f"Warning: front view render failed ({e})")
-        ax_front.set_title('Vista Frontale', fontsize=10, pad=4)
-        ax_front.set_aspect('equal')
-        # Lock the length so the profile beside it matches exactly
-        ax_front.set_ylim(y_lo, y_hi)
-        # 3 cm scale bar below the object (axis is in mm, aspect equal)
-        fb = ax_front.get_xlim()
-        xc = (fb[0] + fb[1]) / 2
-        by = z_min - pad - bar_room * 0.5
-        ax_front.plot([xc - 15, xc + 15], [by, by], 'k-', linewidth=4,
-                      solid_capstyle='butt')
-        ax_front.text(xc, by - z_ext * 0.025, '3 cm', ha='center', va='top',
-                      fontsize=9)
-        ax_front.axis('off')
-
-        # -- ROW 0 COL 1: Sezione Trasversale --
-        ax_sec = fig.add_subplot(gs[0, 1])
+        # -- ROW 0 COL 0: Sezione Trasversale (cross-section, dog-bone H) --
+        ax_sec = fig.add_subplot(gs[0, 0])
         try:
             z_pos = bounds[0][2] + z_ext * 0.50
             sec = mesh.section(plane_origin=[0, 0, z_pos],
@@ -1325,6 +1268,41 @@ class TechnicalDrawingGenerator:
         ax_sec.set_title('Sezione Trasversale', fontsize=9, pad=4)
         ax_sec.set_aspect('equal')
         ax_sec.axis('off')
+
+        # -- ROW 1 COL 0: Vista Frontale --
+        ax_front = fig.add_subplot(gs[1, 0])
+        front_2d = mesh.vertices[:, [0, 2]]
+        try:
+            # Faithful outline from the 3D projection (incavo, holes)
+            fout = self._draw_real_outline(ax_front, mesh, (0, 2))
+            if fout is None or len(fout) <= 2:
+                fout = self._get_real_silhouette(mesh, [0, 1, 0], (0, 2))
+                if fout is None or len(fout) <= 2:
+                    from scipy.spatial import ConvexHull
+                    fout = front_2d[ConvexHull(front_2d).vertices]
+                ax_front.plot(*np.vstack([fout, fout[0]]).T,
+                             'k-', linewidth=0.8, solid_capstyle='round')
+            # Alette ridge lines from the real 3D relief
+            self._draw_alette_lines(ax_front, mesh, projection_axes=(0, 2),
+                                    depth_axis=1)
+            self._add_stippling_shading(ax_front, mesh, front_2d, fout,
+                                        'front')
+        except Exception as e:
+            print(f"Warning: front view render failed ({e})")
+        ax_front.set_title('Vista Frontale', fontsize=10, pad=4)
+        ax_front.set_aspect('equal')
+        # Lock the length so the profile beside it matches exactly
+        ax_front.set_ylim(y_lo, y_hi)
+        # 3 cm scale bar below the object (axis is in mm, aspect equal)
+        fb = ax_front.get_xlim()
+        xc = (fb[0] + fb[1]) / 2
+        by = z_min - pad - bar_room * 0.5
+        ax_front.plot([xc - 15, xc + 15], [by, by], 'k-', linewidth=4,
+                      solid_capstyle='butt')
+        ax_front.text(xc, by - z_ext * 0.025, '3 cm', ha='center', va='top',
+                      fontsize=9)
+        ax_front.axis('off')
+
 
         # -- ROW 1 COL 1: Profilo Longitudinale (beside front, same length) --
         ax_prof = fig.add_subplot(gs[1, 1])
