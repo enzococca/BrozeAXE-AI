@@ -8,6 +8,7 @@ matplotlib threading issues on macOS.
 
 import os
 import sys
+import platform
 
 
 def generate_drawing_worker(mesh_data, artifact_id, features, view_type='complete_sheet',
@@ -35,22 +36,16 @@ def generate_drawing_worker(mesh_data, artifact_id, features, view_type='complet
         from acs.core.technical_drawing import TechnicalDrawingGenerator
 
         mesh = pickle.loads(mesh_data)
-
         drawer = TechnicalDrawingGenerator()
 
-        if view_type == 'complete_sheet':
-            views = drawer.generate_complete_drawing(
-                mesh, artifact_id, features, output_format=output_format
-            )
-            return (True, views['complete_sheet'])
+        views = drawer.generate_complete_drawing(
+            mesh, artifact_id, features, output_format=output_format
+        )
+
+        if view_type in views:
+            return (True, views[view_type])
         else:
-            views = drawer.generate_complete_drawing(
-                mesh, artifact_id, features, output_format=output_format
-            )
-            if view_type in views:
-                return (True, views[view_type])
-            else:
-                return (False, f"Invalid view type: {view_type}")
+            return (False, f"Invalid view type: {view_type}")
 
     except Exception as e:
         import traceback
@@ -58,12 +53,12 @@ def generate_drawing_worker(mesh_data, artifact_id, features, view_type='complet
 
 
 def generate_drawing_safe(mesh, artifact_id, features, view_type='complete_sheet',
-                          timeout=30, output_format='png'):
+                          timeout=120, output_format='png'):
     """
     Generate technical drawing in a safe way using multiprocessing.
 
-    This avoids matplotlib threading issues on macOS by running
-    the drawing generation in a completely separate process.
+    Uses 'spawn' on macOS (avoids matplotlib threading crashes) and
+    'fork' on Linux (much faster, no full interpreter restart).
 
     Args:
         mesh: Trimesh object
@@ -80,15 +75,15 @@ def generate_drawing_safe(mesh, artifact_id, features, view_type='complete_sheet
         Exception: On generation failure
     """
     import pickle
-    from multiprocessing import Pool
+    import multiprocessing
 
     try:
         mesh_data = pickle.dumps(mesh)
     except Exception as e:
         raise Exception(f"Failed to serialize mesh: {str(e)}")
 
-    import multiprocessing
-    ctx = multiprocessing.get_context('spawn')
+    start_method = 'spawn' if platform.system() == 'Darwin' else 'fork'
+    ctx = multiprocessing.get_context(start_method)
 
     with ctx.Pool(processes=1) as pool:
         result = pool.apply_async(
@@ -108,7 +103,7 @@ def generate_drawing_safe(mesh, artifact_id, features, view_type='complete_sheet
             pool.terminate()
             pool.join()
             raise Exception(f"Drawing generation timed out after {timeout} seconds")
-        except Exception as e:
+        except Exception:
             pool.terminate()
             pool.join()
             raise
