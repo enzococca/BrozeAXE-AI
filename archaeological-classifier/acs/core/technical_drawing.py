@@ -351,12 +351,17 @@ class TechnicalDrawingGenerator:
             span = mx - mn
             span[span == 0] = 1.0
 
+            # Floor the short axis at 200px so elongated projections (e.g. the
+            # longitudinal profile: ~15 mm thick × ~160 mm long) don't end up
+            # with a sub-pixel-thin coverage band that leaves gaps in the
+            # rasterized outline.
+            min_dim = 200
             if span[0] >= span[1]:
                 W = res
-                H = max(10, int(res * span[1] / span[0]))
+                H = max(min_dim, int(res * span[1] / span[0]))
             else:
                 H = res
-                W = max(10, int(res * span[0] / span[1]))
+                W = max(min_dim, int(res * span[0] / span[1]))
             sx = (W - 1) / span[0]
             sy = (H - 1) / span[1]
 
@@ -586,9 +591,6 @@ class TechnicalDrawingGenerator:
                     outline = vertices_2d[ConvexHull(vertices_2d).vertices]
                 ax.plot(*np.vstack([outline, outline[0]]).T,
                        'k-', linewidth=0.8, solid_capstyle='round')
-            # Real sharp creases from the 3D model (flange ridges, etc.)
-            self._draw_feature_edges(ax, mesh, projection_axes=(1, 2),
-                                     angle_threshold=0.5)
             self._add_stippling_shading(ax, mesh, vertices_2d, outline, view='side')
 
         except Exception as e:
@@ -703,9 +705,7 @@ class TechnicalDrawingGenerator:
                     outline = vertices_2d[ConvexHull(vertices_2d).vertices]
                 ax.plot(*np.vstack([outline, outline[0]]).T,
                        'k-', linewidth=0.8, solid_capstyle='round')
-            # Real sharp creases + alette ridge lines from the 3D relief
-            self._draw_feature_edges(ax, mesh, projection_axes=(0, 2),
-                                     angle_threshold=0.5)
+            # Alette ridge lines from the 3D relief
             self._draw_alette_lines(ax, mesh, projection_axes=(0, 2),
                                     depth_axis=1)
             self._add_stippling_shading(ax, mesh, vertices_2d, outline, view='front')
@@ -751,8 +751,6 @@ class TechnicalDrawingGenerator:
                     outline = vertices_2d[ConvexHull(vertices_2d).vertices]
                 ax.plot(*np.vstack([outline, outline[0]]).T,
                        'k-', linewidth=0.8, solid_capstyle='round')
-            self._draw_feature_edges(ax, flipped, projection_axes=(0, 2),
-                                     angle_threshold=0.5)
             self._draw_alette_lines(ax, flipped, projection_axes=(0, 2),
                                     depth_axis=1)
             self._add_stippling_shading(ax, flipped, vertices_2d, outline, view='back')
@@ -1266,8 +1264,6 @@ class TechnicalDrawingGenerator:
                     fout = front_2d[ConvexHull(front_2d).vertices]
                 ax_front.plot(*np.vstack([fout, fout[0]]).T,
                              'k-', linewidth=0.8, solid_capstyle='round')
-            self._draw_feature_edges(ax_front, mesh, (0, 2),
-                                     angle_threshold=0.5)
             # Alette ridge lines from the real 3D relief
             self._draw_alette_lines(ax_front, mesh, projection_axes=(0, 2),
                                     depth_axis=1)
@@ -1342,8 +1338,6 @@ class TechnicalDrawingGenerator:
                     pout = prof_2d[ConvexHull(prof_2d).vertices]
                 ax_prof.plot(*np.vstack([pout, pout[0]]).T,
                             'k-', linewidth=0.8, solid_capstyle='round')
-            self._draw_feature_edges(ax_prof, mesh, (1, 2),
-                                     angle_threshold=0.5)
             self._add_stippling_shading(ax_prof, mesh, prof_2d, pout, 'side')
         except Exception as e:
             print(f"Warning: profile render failed ({e})")
