@@ -45,8 +45,11 @@ class TechnicalDrawingGenerator:
         """Save figure to bytes in the current output format (png or svg)."""
         buf = io.BytesIO()
         fmt = getattr(self, '_output_format', 'png')
-        plt.tight_layout()
-        plt.savefig(buf, format=fmt, dpi=self.dpi, bbox_inches='tight')
+        try:
+            fig.tight_layout()
+        except Exception:
+            pass
+        fig.savefig(buf, format=fmt, dpi=self.dpi, bbox_inches='tight')
         plt.close(fig)
         buf.seek(0)
         return buf.getvalue()
@@ -66,31 +69,23 @@ class TechnicalDrawingGenerator:
         Returns:
             Dictionary with image buffers for each view
         """
-        self._output_format = output_format if output_format in ('png', 'svg') else 'png'
+        requested_format = output_format if output_format in ('png', 'svg') else 'png'
+        self._output_format = 'png'
         oriented_mesh = self._reorient_mesh(mesh)
 
         views = {}
 
-        # Generate standard archaeological views:
-        # 1. Longitudinal profile (SIDE view - most important!)
         views['longitudinal_profile'] = self._draw_longitudinal_profile(oriented_mesh, artifact_id)
-
-        # 2. Three cross-sections at different heights (archaeological standard)
-        views['cross_section_high'] = self._draw_cross_section(oriented_mesh, 'high')   # 70% - blade
-        views['cross_section_mid'] = self._draw_cross_section(oriented_mesh, 'mid')     # 50% - middle
-        views['cross_section_low'] = self._draw_cross_section(oriented_mesh, 'low')     # 30% - shaft
-
-        # 3. Front view (optional)
+        views['cross_section_high'] = self._draw_cross_section(oriented_mesh, 'high')
+        views['cross_section_mid'] = self._draw_cross_section(oriented_mesh, 'mid')
+        views['cross_section_low'] = self._draw_cross_section(oriented_mesh, 'low')
         views['front_view'] = self._draw_front_view(oriented_mesh)
-
-        # 4. Back view
         views['back_view'] = self._draw_back_view(oriented_mesh)
 
-        # 5. Aliases for frontend compatibility
         views['cross_section_max'] = views['cross_section_high']
         views['cross_section_min'] = views['cross_section_low']
 
-        # Generate complete composite sheet (archaeological layout)
+        self._output_format = requested_format
         views['complete_sheet'] = self._create_composite_sheet(
             oriented_mesh, artifact_id, features, views
         )
@@ -744,9 +739,14 @@ class TechnicalDrawingGenerator:
         ax_low = fig.add_subplot(gs[2, 1])
         self._plot_image_in_axis(ax_low, views['cross_section_low'])
 
-        # Vista frontale (opzionale, in basso a sinistra)
+        # Vista frontale (in basso a sinistra)
         ax_front = fig.add_subplot(gs[3, 0])
         self._plot_image_in_axis(ax_front, views['front_view'])
+
+        # Vista posteriore (sotto la frontale)
+        if 'back_view' in views:
+            ax_back = fig.add_subplot(gs[4, 0])
+            self._plot_image_in_axis(ax_back, views['back_view'])
 
         # Metadata panel (basso a destra)
         ax_info = fig.add_subplot(gs[3:5, 1])
