@@ -1,0 +1,293 @@
+{% extends "base.html" %}
+
+{% block title %}Tutorial Rust - ACS{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<style>
+.rust-container {
+    max-width: 1300px;
+    margin: 0 auto;
+    padding: 20px;
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+}
+
+.rust-sidebar {
+    flex: 0 0 240px;
+    position: sticky;
+    top: 20px;
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 16px;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+}
+
+.rust-sidebar h3 {
+    margin: 0 0 12px 0;
+    font-size: 15px;
+    color: #2d3748;
+}
+
+.rust-sidebar a {
+    display: block;
+    padding: 6px 10px;
+    color: #4a5568;
+    text-decoration: none;
+    border-radius: 4px;
+    font-size: 13px;
+    transition: background 0.15s;
+}
+
+.rust-sidebar a:hover {
+    background: #f7fafc;
+    color: #dd6b20;
+}
+
+.rust-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.rust-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+    border-bottom: 2px solid #e2e8f0;
+}
+
+.rust-tab {
+    padding: 10px 20px;
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: 600;
+    color: #718096;
+}
+
+.rust-tab.active {
+    color: #dd6b20;
+    border-bottom-color: #dd6b20;
+}
+
+.rust-content {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 32px;
+    line-height: 1.7;
+    color: #2d3748;
+}
+
+.rust-content h1 { font-size: 28px; border-bottom: 2px solid #ed8936; padding-bottom: 10px; margin-top: 0; }
+.rust-content h2 { font-size: 22px; margin-top: 32px; color: #c05621; }
+.rust-content h3 { font-size: 18px; margin-top: 24px; }
+.rust-content code:not(pre code) {
+    background: #fef5e7;
+    color: #c05621;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+.rust-content pre {
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 16px 0;
+}
+.rust-content pre code {
+    font-size: 13px;
+    line-height: 1.5;
+}
+.rust-content a { color: #dd6b20; }
+.rust-content table { border-collapse: collapse; margin: 16px 0; width: 100%; }
+.rust-content th, .rust-content td { border: 1px solid #e2e8f0; padding: 8px 12px; text-align: left; }
+.rust-content th { background: #f7fafc; }
+
+.example-selector {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.example-btn {
+    padding: 10px;
+    background: #f7fafc;
+    border: 2px solid #cbd5e0;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    text-align: left;
+}
+
+.example-btn:hover { background: #edf2f7; border-color: #ed8936; }
+.example-btn.active { background: #ed8936; color: white; border-color: #ed8936; }
+
+.run-hint {
+    background: #1a202c;
+    color: #cbd5e0;
+    padding: 10px 16px;
+    border-radius: 6px;
+    font-family: monospace;
+    font-size: 13px;
+    margin-bottom: 12px;
+}
+
+.rust-loading { padding: 60px; text-align: center; color: #718096; }
+.spinner {
+    display: inline-block; width: 40px; height: 40px;
+    border: 4px solid #f3f3f3; border-top: 4px solid #ed8936;
+    border-radius: 50%; animation: spin 1s linear infinite;
+}
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+@media (max-width: 900px) {
+    .rust-container { flex-direction: column; }
+    .rust-sidebar { position: static; flex: 1; width: 100%; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rust-container">
+    <aside class="rust-sidebar" id="sidebar">
+        <h3>🦀 Indice</h3>
+        <div id="tocList"><p style="font-size:13px;color:#a0aec0;">Caricamento...</p></div>
+    </aside>
+
+    <div class="rust-main">
+        <div class="rust-tabs">
+            <button class="rust-tab active" onclick="switchTab('guide', event)">📖 Guida</button>
+            <button class="rust-tab" onclick="switchTab('examples', event)">💻 Esempi di codice</button>
+        </div>
+
+        <!-- Guide tab -->
+        <div id="guideTab">
+            <div class="rust-content" id="markdownContent">
+                <div class="rust-loading"><div class="spinner"></div><p>Caricamento tutorial...</p></div>
+            </div>
+        </div>
+
+        <!-- Examples tab -->
+        <div id="examplesTab" style="display:none;">
+            <div class="example-selector" id="exampleSelector"></div>
+            <div class="run-hint" id="runHint">cargo run --example ...</div>
+            <div class="rust-content" style="padding:0;">
+                <pre style="margin:0;"><code class="language-rust" id="exampleCode">Seleziona un esempio</code></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.1.1/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/rust.min.js"></script>
+<script>
+let tutorialData = null;
+
+document.addEventListener('DOMContentLoaded', loadTutorial);
+
+async function loadTutorial() {
+    try {
+        const resp = await fetch('/web/rust-tutorial/content');
+        if (!resp.ok) {
+            const err = await resp.json();
+            throw new Error(err.error || 'Errore nel caricamento');
+        }
+        tutorialData = await resp.json();
+        renderMarkdown(tutorialData.markdown);
+        renderExamples(tutorialData.examples);
+    } catch (e) {
+        document.getElementById('markdownContent').innerHTML =
+            `<div style="padding:40px;color:#e53e3e;"><p>❌ ${e.message}</p></div>`;
+    }
+}
+
+function renderMarkdown(md) {
+    marked.setOptions({
+        highlight: function(code, lang) {
+            if (lang && hljs.getLanguage(lang)) {
+                return hljs.highlight(code, {language: lang}).value;
+            }
+            return hljs.highlightAuto(code).value;
+        }
+    });
+
+    const container = document.getElementById('markdownContent');
+    container.innerHTML = marked.parse(md);
+
+    // Highlight any code blocks marked.js didn't catch
+    container.querySelectorAll('pre code').forEach(block => {
+        if (!block.classList.contains('hljs')) hljs.highlightElement(block);
+    });
+
+    // Build TOC from headings
+    buildToc(container);
+}
+
+function buildToc(container) {
+    const toc = document.getElementById('tocList');
+    toc.innerHTML = '';
+    const headings = container.querySelectorAll('h2');
+    headings.forEach((h, i) => {
+        const id = 'sec-' + i;
+        h.id = id;
+        const link = document.createElement('a');
+        link.href = '#' + id;
+        link.textContent = h.textContent;
+        link.onclick = (e) => {
+            e.preventDefault();
+            h.scrollIntoView({behavior: 'smooth'});
+        };
+        toc.appendChild(link);
+    });
+}
+
+function renderExamples(examples) {
+    const selector = document.getElementById('exampleSelector');
+    selector.innerHTML = '';
+    const names = Object.keys(examples);
+
+    names.forEach((name, i) => {
+        const btn = document.createElement('button');
+        btn.className = 'example-btn' + (i === 0 ? ' active' : '');
+        const label = name.replace('.rs', '').replace(/_/g, ' ');
+        btn.textContent = label;
+        btn.onclick = () => showExample(name, btn);
+        selector.appendChild(btn);
+    });
+
+    if (names.length > 0) {
+        showExample(names[0], selector.querySelector('.example-btn'));
+    }
+}
+
+function showExample(name, btn) {
+    document.querySelectorAll('.example-btn').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+
+    const code = tutorialData.examples[name];
+    const codeEl = document.getElementById('exampleCode');
+    codeEl.textContent = code;
+    codeEl.className = 'language-rust';
+    hljs.highlightElement(codeEl);
+
+    const cmd = name.replace('.rs', '');
+    document.getElementById('runHint').textContent = `cargo run --example ${cmd}`;
+}
+
+function switchTab(tab, ev) {
+    document.querySelectorAll('.rust-tab').forEach(t => t.classList.remove('active'));
+    ev.target.classList.add('active');
+    document.getElementById('guideTab').style.display = tab === 'guide' ? 'block' : 'none';
+    document.getElementById('examplesTab').style.display = tab === 'examples' ? 'block' : 'none';
+    document.getElementById('sidebar').style.display = tab === 'guide' ? 'block' : 'none';
+}
+</script>
+{% endblock %}

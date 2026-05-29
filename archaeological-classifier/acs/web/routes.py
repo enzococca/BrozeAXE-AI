@@ -2922,6 +2922,56 @@ def plate_composer_page():
     return render_template('plate_composer.html')
 
 
+def _find_rust_tutorial_dir():
+    """Locate the rust-tutorial directory robustly across deploy layouts."""
+    candidates = [
+        os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'rust-tutorial')),
+        os.path.join(os.getcwd(), 'rust-tutorial'),
+        os.path.join(os.getcwd(), '..', 'rust-tutorial'),
+    ]
+    for c in candidates:
+        if os.path.isdir(c) and os.path.isfile(os.path.join(c, 'TUTORIAL_RUST.md')):
+            return c
+    return None
+
+
+@web_bp.route('/rust-tutorial')
+def rust_tutorial_page():
+    """Rust tutorial page (rendered client-side from markdown)."""
+    return render_template('rust_tutorial.html')
+
+
+@web_bp.route('/rust-tutorial/content', methods=['GET'])
+def rust_tutorial_content():
+    """Return the Rust tutorial markdown and example sources as JSON."""
+    tutorial_dir = _find_rust_tutorial_dir()
+    if not tutorial_dir:
+        return jsonify({'error': 'Tutorial non trovato sul server'}), 404
+
+    try:
+        md_path = os.path.join(tutorial_dir, 'TUTORIAL_RUST.md')
+        with open(md_path, 'r', encoding='utf-8') as f:
+            markdown = f.read()
+
+        examples = {}
+        examples_dir = os.path.join(tutorial_dir, 'examples')
+        if os.path.isdir(examples_dir):
+            for fname in sorted(os.listdir(examples_dir)):
+                if fname.endswith('.rs'):
+                    with open(os.path.join(examples_dir, fname), 'r', encoding='utf-8') as f:
+                        examples[fname] = f.read()
+
+        return jsonify({
+            'markdown': markdown,
+            'examples': examples,
+        })
+    except Exception as e:
+        import traceback
+        print(f"Error reading rust tutorial: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+
 @web_bp.route('/compose-plate', methods=['POST'])
 def compose_plate():
     """
