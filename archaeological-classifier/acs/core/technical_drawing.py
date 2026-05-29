@@ -323,6 +323,49 @@ class TechnicalDrawingGenerator:
         except Exception as e:
             print(f"Warning: Could not draw occluding contours ({str(e)})")
 
+    def _draw_depth_contours(self, ax, mesh, view_axis, projection_axes,
+                             n_levels=4, linewidth=0.30, alpha=0.45):
+        """
+        Draw iso-depth contour lines to reveal internal 3D topology.
+
+        For an orthographic view along *view_axis*, computes a depth map
+        (max depth toward the viewer) on a regular grid, then draws a few
+        contour lines.  On a real 3D scan these reliably trace the crests
+        of the margini rialzati (alette) and any surface undulation that a
+        pure silhouette hides.
+        """
+        try:
+            from scipy.interpolate import griddata
+
+            proj = list(projection_axes)
+            verts = mesh.vertices
+            # Subsample for performance on dense scans (>30k verts)
+            if len(verts) > 30000:
+                idx = np.random.default_rng(42).choice(
+                    len(verts), 30000, replace=False)
+                verts = verts[idx]
+            pts_2d = verts[:, proj]
+            depth = verts[:, view_axis]
+
+            x_min, y_min = pts_2d.min(axis=0)
+            x_max, y_max = pts_2d.max(axis=0)
+            nx, ny = 200, 200
+            xi = np.linspace(x_min, x_max, nx)
+            yi = np.linspace(y_min, y_max, ny)
+            Xi, Yi = np.meshgrid(xi, yi)
+
+            Zi = griddata(pts_2d, depth, (Xi, Yi), method='linear')
+
+            d_min = np.nanmin(Zi)
+            d_max = np.nanmax(Zi)
+            if d_max - d_min < 1e-6:
+                return
+            levels = np.linspace(d_min, d_max, n_levels + 2)[1:-1]
+            ax.contour(Xi, Yi, Zi, levels=levels, colors='black',
+                       linewidths=linewidth, alpha=alpha, zorder=2)
+        except Exception as e:
+            print(f"Warning: Could not draw depth contours ({str(e)})")
+
     def _alpha_shape(self, points, alpha_factor=0.3):
         """
         Compute alpha shape (concave hull) of 2D points.
@@ -436,6 +479,8 @@ class TechnicalDrawingGenerator:
             # Fold lines (alette crests, incavo rim) — view looks along X
             self._draw_occluding_contours(ax, mesh, view_axis=0,
                                           projection_axes=(1, 2))
+            self._draw_depth_contours(ax, mesh, view_axis=0,
+                                      projection_axes=(1, 2))
             self._add_stippling_shading(ax, mesh, vertices_2d, outline, view='side')
 
         except Exception as e:
@@ -555,6 +600,9 @@ class TechnicalDrawingGenerator:
             # Fold lines (alette crests, incavo rim) — front view looks along Y
             self._draw_occluding_contours(ax, mesh, view_axis=1,
                                           projection_axes=(0, 2))
+            # Depth contours reveal alette ridges on smooth scans
+            self._draw_depth_contours(ax, mesh, view_axis=1,
+                                      projection_axes=(0, 2))
             self._add_stippling_shading(ax, mesh, vertices_2d, outline, view='front')
 
         except Exception as e:
@@ -602,6 +650,8 @@ class TechnicalDrawingGenerator:
             self._draw_feature_edges(ax, flipped, projection_axes=(0, 2))
             self._draw_occluding_contours(ax, flipped, view_axis=1,
                                           projection_axes=(0, 2))
+            self._draw_depth_contours(ax, flipped, view_axis=1,
+                                      projection_axes=(0, 2))
             self._add_stippling_shading(ax, flipped, vertices_2d, outline, view='back')
 
         except Exception as e:
@@ -628,11 +678,10 @@ class TechnicalDrawingGenerator:
         """
         Draw the tallone (butt end) seen from above (top-down).
 
-        Looks down the Z axis at the upper part of the axe (the butt), projecting
-        onto the X-Y plane (width x thickness). This reveals the incavo (socket)
-        as a concavity and the alette/margini rialzati as raised rims, exactly as
-        in Cataruzza-style archaeological plates where the butt section is drawn
-        above the front view.
+        Uses a real mesh.section() at ~90% Z height to capture the EXACT
+        cross-section outline including the incavo (socket concavity) and
+        the alette/margini rialzati as convex bumps. Falls back to alpha-
+        shape vertex projection if slicing fails.
         """
         fig, ax = plt.subplots(figsize=(4, 3), dpi=self.dpi)
 
@@ -641,50 +690,50 @@ class TechnicalDrawingGenerator:
             z_min, z_max = bounds[0][2], bounds[1][2]
             z_range = z_max - z_min
 
-            # Upper 15% = the tallone (butt) region
-            band_threshold = z_min + z_range * 0.85
-            butt_mask = mesh.vertices[:, 2] >= band_threshold
-            butt_vertices = mesh.vertices[butt_mask]
+            section_drawn = False
+            # Try real cross-section at several heights near the top
+            for frac in (0.90, 0.85, 0.80):
+                try:
+                    z_pos = z_min + z_range * frac
+                    sec = mesh.section(plane_origin=[0, 0, z_pos],
+                                       plane_normal=[0, 0, 1])
+                    if sec is not None and len(sec.vertices) > 2:
+                        planar, _ = sec.to_planar()
+                        sv = np.array(planar.vertices)
+                        polys = []
+                        for ent in planar.entities:
+                            pts = sv[ent.points]
+                            if len(pts) > 1:
+                                ax.plot(*np.vstack([pts, pts[0]]).T,
+                                       'k-', linewidth=0.8,
+                                       solid_capstyle='round')
+                            if len(pts) > 2:
+                                polys.append(pts)
+                        if polys:
+                            self._stipple_section(ax, polys)
+                        section_drawn = True
+                        break
+                except Exception:
+                    continue
 
-            if len(butt_vertices) < 10:
-                # Fall back to the upper third if the very top is too sparse
-                band_threshold = z_min + z_range * 0.67
-                butt_mask = mesh.vertices[:, 2] >= band_threshold
-                butt_vertices = mesh.vertices[butt_mask]
-
-            vertices_2d = butt_vertices[:, [0, 1]]  # X (width), Y (thickness)
-
-            outline = self._alpha_shape(vertices_2d)
-            if outline is None or len(outline) <= 2:
-                from scipy.spatial import ConvexHull
-                hull = ConvexHull(vertices_2d)
-                outline = vertices_2d[hull.vertices]
-
-            outline_closed = np.vstack([outline, outline[0]])
-            ax.plot(outline_closed[:, 0], outline_closed[:, 1],
-                   'k-', linewidth=0.8, solid_capstyle='round')
-
-            # Build a sub-mesh of the butt so feature edges (incavo rim,
-            # flange ridges) project onto the X-Y plane.
-            try:
-                import trimesh as _trimesh
-                face_mask = butt_mask[mesh.faces].all(axis=1)
-                if face_mask.any():
-                    butt_mesh = _trimesh.Trimesh(
-                        vertices=mesh.vertices,
-                        faces=mesh.faces[face_mask],
-                        process=False
-                    )
-                    self._draw_feature_edges(ax, butt_mesh,
-                                             projection_axes=(0, 1))
-                    # Rim of the incavo (butt notch) — top view looks along Z
-                    self._draw_occluding_contours(ax, butt_mesh, view_axis=2,
-                                                  projection_axes=(0, 1))
-            except Exception as fe:
-                print(f"Warning: tallone feature edges failed ({str(fe)})")
-
-            self._add_stippling_shading(ax, mesh, vertices_2d, outline,
-                                        view='front')
+            if not section_drawn:
+                # Fallback: project top-band vertices with aggressive concavity
+                band_z = z_min + z_range * 0.85
+                butt_mask = mesh.vertices[:, 2] >= band_z
+                butt_verts = mesh.vertices[butt_mask]
+                if len(butt_verts) < 10:
+                    band_z = z_min + z_range * 0.67
+                    butt_mask = mesh.vertices[:, 2] >= band_z
+                    butt_verts = mesh.vertices[butt_mask]
+                verts_2d = butt_verts[:, [0, 1]]
+                outline = self._alpha_shape(verts_2d, alpha_factor=0.8)
+                if outline is None or len(outline) <= 2:
+                    from scipy.spatial import ConvexHull
+                    outline = verts_2d[ConvexHull(verts_2d).vertices]
+                ax.plot(*np.vstack([outline, outline[0]]).T,
+                       'k-', linewidth=0.8, solid_capstyle='round')
+                self._add_stippling_shading(ax, mesh, verts_2d, outline,
+                                            'front')
 
         except Exception as e:
             print(f"Warning: Could not create tallone top view ({str(e)})")
@@ -1051,39 +1100,52 @@ class TechnicalDrawingGenerator:
                              height_ratios=[h_tallone, h_main, h_bottom],
                              width_ratios=[1.3, 1.0])
 
-        # -- ROW 0: Tallone dall'alto --
+        # -- ROW 0: Tallone dall'alto (real section for incavo) --
         ax_tallone = fig.add_subplot(gs[0, 0])
-        try:
-            band_z = bounds[0][2] + z_ext * 0.85
-            butt_mask = mesh.vertices[:, 2] >= band_z
-            butt_verts = mesh.vertices[butt_mask]
-            if len(butt_verts) < 10:
-                band_z = bounds[0][2] + z_ext * 0.67
+        tallone_drawn = False
+        for frac in (0.90, 0.85, 0.80):
+            try:
+                tz = z_min + z_ext * frac
+                tsec = mesh.section(plane_origin=[0, 0, tz],
+                                    plane_normal=[0, 0, 1])
+                if tsec is not None and len(tsec.vertices) > 2:
+                    tp, _ = tsec.to_planar()
+                    tsv = np.array(tp.vertices)
+                    tpolys = []
+                    for tent in tp.entities:
+                        tpts = tsv[tent.points]
+                        if len(tpts) > 1:
+                            ax_tallone.plot(*np.vstack([tpts, tpts[0]]).T,
+                                           'k-', linewidth=0.8,
+                                           solid_capstyle='round')
+                        if len(tpts) > 2:
+                            tpolys.append(tpts)
+                    if tpolys:
+                        self._stipple_section(ax_tallone, tpolys)
+                    tallone_drawn = True
+                    break
+            except Exception:
+                continue
+        if not tallone_drawn:
+            try:
+                band_z = z_min + z_ext * 0.85
                 butt_mask = mesh.vertices[:, 2] >= band_z
                 butt_verts = mesh.vertices[butt_mask]
-            verts_2d = butt_verts[:, [0, 1]]
-            outline = self._alpha_shape(verts_2d)
-            if outline is None or len(outline) <= 2:
-                from scipy.spatial import ConvexHull
-                outline = verts_2d[ConvexHull(verts_2d).vertices]
-            ax_tallone.plot(*np.vstack([outline, outline[0]]).T,
-                           'k-', linewidth=0.8, solid_capstyle='round')
-            try:
-                import trimesh as _trimesh
-                fm = butt_mask[mesh.faces].all(axis=1)
-                if fm.any():
-                    bm = _trimesh.Trimesh(vertices=mesh.vertices,
-                                          faces=mesh.faces[fm], process=False)
-                    self._draw_feature_edges(ax_tallone, bm, (0, 1))
-                    # Rim of the incavo (butt notch) seen from above
-                    self._draw_occluding_contours(ax_tallone, bm, view_axis=2,
-                                                  projection_axes=(0, 1))
-            except Exception:
-                pass
-            self._add_stippling_shading(ax_tallone, mesh, verts_2d, outline,
-                                        'front')
-        except Exception as e:
-            print(f"Warning: tallone render failed ({e})")
+                if len(butt_verts) < 10:
+                    band_z = z_min + z_ext * 0.67
+                    butt_mask = mesh.vertices[:, 2] >= band_z
+                    butt_verts = mesh.vertices[butt_mask]
+                verts_2d = butt_verts[:, [0, 1]]
+                outline = self._alpha_shape(verts_2d, alpha_factor=0.8)
+                if outline is None or len(outline) <= 2:
+                    from scipy.spatial import ConvexHull
+                    outline = verts_2d[ConvexHull(verts_2d).vertices]
+                ax_tallone.plot(*np.vstack([outline, outline[0]]).T,
+                               'k-', linewidth=0.8, solid_capstyle='round')
+                self._add_stippling_shading(ax_tallone, mesh, verts_2d,
+                                            outline, 'front')
+            except Exception as e:
+                print(f"Warning: tallone render failed ({e})")
         ax_tallone.set_title("Tallone (dall'alto)", fontsize=9, pad=4)
         ax_tallone.set_aspect('equal')
         ax_tallone.axis('off')
@@ -1102,6 +1164,9 @@ class TechnicalDrawingGenerator:
             # Fold lines: alette crests + incavo rim (view looks along Y)
             self._draw_occluding_contours(ax_front, mesh, view_axis=1,
                                           projection_axes=(0, 2))
+            # Depth iso-lines reveal alette ridges on smooth scans
+            self._draw_depth_contours(ax_front, mesh, view_axis=1,
+                                      projection_axes=(0, 2))
             self._add_stippling_shading(ax_front, mesh, front_2d, fout,
                                         'front')
         except Exception as e:
@@ -1175,6 +1240,8 @@ class TechnicalDrawingGenerator:
             # Fold lines (margini/lama) — profile view looks along X
             self._draw_occluding_contours(ax_prof, mesh, view_axis=0,
                                           projection_axes=(1, 2))
+            self._draw_depth_contours(ax_prof, mesh, view_axis=0,
+                                      projection_axes=(1, 2))
             self._add_stippling_shading(ax_prof, mesh, prof_2d, pout, 'side')
         except Exception as e:
             print(f"Warning: profile render failed ({e})")
@@ -1184,14 +1251,10 @@ class TechnicalDrawingGenerator:
         ax_prof.set_ylim(y_lo, y_hi)
         ax_prof.axis('off')
 
-        # -- ROW 2 COL 0: empty spacer --
-        ax_empty = fig.add_subplot(gs[2, 0])
-        ax_empty.axis('off')
-
-        # -- ROW 2 COL 1: Info panel --
-        ax_info = fig.add_subplot(gs[2, 1])
+        # -- ROW 2: Info strip spanning both columns --
+        ax_info = fig.add_subplot(gs[2, :])
         ax_info.axis('off')
-        self._add_info_panel(ax_info, artifact_id, features)
+        self._add_info_strip(ax_info, artifact_id, features)
 
         return self._save_figure(fig)
 
@@ -1201,8 +1264,31 @@ class TechnicalDrawingGenerator:
         ax.imshow(img)
         ax.axis('off')
 
+    def _add_info_strip(self, ax, artifact_id: str, features: Dict):
+        """Add a clean horizontal info strip at the bottom of the plate."""
+        parts = [f"ID: {artifact_id}"]
+        if features:
+            if 'length' in features:
+                parts.append(f"L: {features['length']:.1f} mm")
+            if 'width' in features:
+                parts.append(f"W: {features['width']:.1f} mm")
+            if 'height' in features:
+                parts.append(f"H: {features['height']:.1f} mm")
+            if 'volume' in features:
+                parts.append(f"Vol: {features['volume']:.0f} mm³")
+            if 'surface_area' in features:
+                parts.append(f"Sup: {features['surface_area']:.0f} mm²")
+            if 'compactness' in features:
+                parts.append(f"Comp: {features['compactness']:.3f}")
+
+        line = "  │  ".join(parts)
+        ax.text(0.5, 0.5, line, transform=ax.transAxes,
+               fontsize=8, ha='center', va='center', fontfamily='sans-serif',
+               bbox=dict(boxstyle='round,pad=0.4', facecolor='#f5f5f0',
+                         edgecolor='#cccccc', linewidth=0.5))
+
     def _add_info_panel(self, ax, artifact_id: str, features: Dict):
-        """Add information panel with measurements and metadata."""
+        """Add information panel with measurements and metadata (legacy)."""
         info_text = f"IDENTIFICAZIONE\n"
         info_text += f"ID: {artifact_id}\n\n"
 
