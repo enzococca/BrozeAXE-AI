@@ -81,6 +81,7 @@ class TechnicalDrawingGenerator:
         views['cross_section_low'] = self._draw_cross_section(oriented_mesh, 'low')
         views['front_view'] = self._draw_front_view(oriented_mesh)
         views['back_view'] = self._draw_back_view(oriented_mesh)
+        views['tallone_top'] = self._draw_tallone_top_view(oriented_mesh)
 
         views['cross_section_max'] = views['cross_section_high']
         views['cross_section_min'] = views['cross_section_low']
@@ -124,6 +125,8 @@ class TechnicalDrawingGenerator:
             return self._draw_front_view(oriented_mesh)
         elif resolved == 'back_view':
             return self._draw_back_view(oriented_mesh)
+        elif resolved == 'tallone_top':
+            return self._draw_tallone_top_view(oriented_mesh)
         else:
             raise ValueError(f"Invalid view type: {view_type}")
 
@@ -206,22 +209,29 @@ class TechnicalDrawingGenerator:
         except Exception:
             return None
 
-    def _draw_feature_edges(self, ax, mesh, projection_axes, angle_threshold=0.5,
+    def _draw_feature_edges(self, ax, mesh, projection_axes, angle_threshold=0.25,
                             linewidth=0.35):
         """
         Draw internal feature edges (sharp creases) projected to 2D.
 
         These reveal real morphological features from the 3D model that the
         outer silhouette misses — e.g. the ridges of the margini rialzati
-        (flanges/alette) of a flanged axe.
+        (flanges/alette) of a flanged axe, and the rim of the incavo (socket)
+        in the tallone.
+
+        Uses a DUAL threshold so both crisp creases (synthetic models) and the
+        softer transitions typical of real 3D scans are picked up:
+        - strong edges (dihedral angle > 0.5 rad ≈ 29°): solid, thicker
+        - subtle edges (angle_threshold .. 0.5 rad): thinner, lighter
 
         Args:
             ax: Matplotlib axis
             mesh: Trimesh object
             projection_axes: (axis1, axis2) indices to project onto
-            angle_threshold: Dihedral angle (radians) above which an edge is
-                             considered a sharp feature edge (~0.5 rad ≈ 29°)
-            linewidth: Line width for feature edges
+            angle_threshold: Lower dihedral angle (radians) above which an edge
+                             is drawn at all (~0.25 rad ≈ 14°). Lowered from 0.5
+                             so real scans with smoother flange ridges still show.
+            linewidth: Base line width for strong feature edges
         """
         try:
             from matplotlib.collections import LineCollection
@@ -233,17 +243,28 @@ class TechnicalDrawingGenerator:
             if angles is None or len(angles) == 0:
                 return
 
-            sharp_mask = angles > angle_threshold
-            sharp_edges = edges[sharp_mask]
-            if len(sharp_edges) == 0:
-                return
-
             verts_2d = mesh.vertices[:, proj]
-            segments = verts_2d[sharp_edges]  # (N, 2, 2)
 
-            lc = LineCollection(segments, colors='black', linewidths=linewidth,
-                                alpha=0.85, zorder=2)
-            ax.add_collection(lc)
+            strong_threshold = 0.5
+            strong_mask = angles > strong_threshold
+            subtle_mask = (angles > angle_threshold) & (angles <= strong_threshold)
+
+            strong_edges = edges[strong_mask]
+            subtle_edges = edges[subtle_mask]
+
+            # Subtle edges first (under the strong ones), lighter and thinner
+            if len(subtle_edges) > 0:
+                segments = verts_2d[subtle_edges]
+                lc = LineCollection(segments, colors='black',
+                                    linewidths=linewidth * 0.55,
+                                    alpha=0.45, zorder=2)
+                ax.add_collection(lc)
+
+            if len(strong_edges) > 0:
+                segments = verts_2d[strong_edges]
+                lc = LineCollection(segments, colors='black',
+                                    linewidths=linewidth, alpha=0.85, zorder=2)
+                ax.add_collection(lc)
         except Exception as e:
             print(f"Warning: Could not draw feature edges ({str(e)})")
 
@@ -535,6 +556,76 @@ class TechnicalDrawingGenerator:
                    'k-', linewidth=0.8)
 
         ax.set_title('Vista Posteriore', fontsize=10, pad=10)
+        ax.set_aspect('equal')
+        ax.axis('off')
+
+        return self._save_figure(fig)
+
+    def _draw_tallone_top_view(self, mesh) -> bytes:
+        """
+        Draw the tallone (butt end) seen from above (top-down).
+
+        Looks down the Z axis at the upper part of the axe (the butt), projecting
+        onto the X-Y plane (width x thickness). This reveals the incavo (socket)
+        as a concavity and the alette/margini rialzati as raised rims, exactly as
+        in Cataruzza-style archaeological plates where the butt section is drawn
+        above the front view.
+        """
+        fig, ax = plt.subplots(figsize=(4, 3), dpi=self.dpi)
+
+        try:
+            bounds = mesh.bounds
+            z_min, z_max = bounds[0][2], bounds[1][2]
+            z_range = z_max - z_min
+
+            # Upper 15% = the tallone (butt) region
+            band_threshold = z_min + z_range * 0.85
+            butt_mask = mesh.vertices[:, 2] >= band_threshold
+            butt_vertices = mesh.vertices[butt_mask]
+
+            if len(butt_vertices) < 10:
+                # Fall back to the upper third if the very top is too sparse
+                band_threshold = z_min + z_range * 0.67
+                butt_mask = mesh.vertices[:, 2] >= band_threshold
+                butt_vertices = mesh.vertices[butt_mask]
+
+            vertices_2d = butt_vertices[:, [0, 1]]  # X (width), Y (thickness)
+
+            outline = self._alpha_shape(vertices_2d)
+            if outline is None or len(outline) <= 2:
+                from scipy.spatial import ConvexHull
+                hull = ConvexHull(vertices_2d)
+                outline = vertices_2d[hull.vertices]
+
+            outline_closed = np.vstack([outline, outline[0]])
+            ax.plot(outline_closed[:, 0], outline_closed[:, 1],
+                   'k-', linewidth=0.8, solid_capstyle='round')
+
+            # Build a sub-mesh of the butt so feature edges (incavo rim,
+            # flange ridges) project onto the X-Y plane.
+            try:
+                import trimesh as _trimesh
+                face_mask = butt_mask[mesh.faces].all(axis=1)
+                if face_mask.any():
+                    butt_mesh = _trimesh.Trimesh(
+                        vertices=mesh.vertices,
+                        faces=mesh.faces[face_mask],
+                        process=False
+                    )
+                    self._draw_feature_edges(ax, butt_mesh,
+                                             projection_axes=(0, 1))
+            except Exception as fe:
+                print(f"Warning: tallone feature edges failed ({str(fe)})")
+
+            self._add_stippling_shading(ax, mesh, vertices_2d, outline,
+                                        view='front')
+
+        except Exception as e:
+            print(f"Warning: Could not create tallone top view ({str(e)})")
+            ax.text(0.5, 0.5, 'Tallone view unavailable', ha='center',
+                   va='center', transform=ax.transAxes)
+
+        ax.set_title('Sezione Tallone (dall\'alto)', fontsize=10, pad=10)
         ax.set_aspect('equal')
         ax.axis('off')
 
@@ -854,12 +945,14 @@ class TechnicalDrawingGenerator:
     def _create_composite_sheet(self, mesh, artifact_id: str,
                                 features: Dict, views: Dict) -> bytes:
         """
-        Create complete professional composite sheet - ARCHAEOLOGICAL STANDARD LAYOUT.
+        Create complete professional composite sheet - CATARUZZA-STYLE LAYOUT.
 
-        Layout (standard archeologico italiano):
-        - Sinistra: Profilo longitudinale (vista laterale - PRINCIPALE)
-        - Destra: 3 sezioni trasversali impilate (alta, media, bassa)
-        - Info panel in basso
+        Layout (tavola archeologica stile Cataruzza):
+        - In alto (sopra la frontale): sezione del tallone vista dall'alto
+        - Centro sinistra: VISTA FRONTALE (principale, grande)
+        - Centro destra: sezione trasversale al punto più largo
+        - In basso sinistra: profilo longitudinale (vista laterale)
+        - In basso destra: pannello info (ID, misure)
         """
         fig = plt.figure(figsize=(11, 14), dpi=self.dpi)  # A4 proportions
 
@@ -867,37 +960,37 @@ class TechnicalDrawingGenerator:
         fig.suptitle(f'Documentazione Tecnica - {artifact_id}',
                     fontsize=14, fontweight='bold', y=0.98)
 
-        # Create grid for archaeological layout
-        gs = fig.add_gridspec(5, 2, hspace=0.25, wspace=0.3,
+        # Cataruzza grid: 3 rows x 2 cols
+        #   row 0: tallone dall'alto (sopra la frontale)
+        #   row 1: frontale (grande) + sezione trasversale
+        #   row 2: profilo laterale + info panel
+        gs = fig.add_gridspec(3, 2, hspace=0.22, wspace=0.25,
                              left=0.05, right=0.95, top=0.94, bottom=0.05,
-                             height_ratios=[3, 1, 1, 1, 1.5])
+                             height_ratios=[1.1, 3.2, 2.2],
+                             width_ratios=[1.4, 1.0])
 
-        # SINISTRA: Profilo longitudinale (GRANDE - vista più importante!)
-        ax_long = fig.add_subplot(gs[0:3, 0])
-        self._plot_image_in_axis(ax_long, views['longitudinal_profile'])
-        ax_long.set_title('Profilo Longitudinale', fontweight='bold', fontsize=12)
+        # Sub-view PNGs already carry their own titles; the composite only
+        # arranges them so we don't double-title each panel.
 
-        # DESTRA: 3 sezioni trasversali impilate (standard archeologico)
-        ax_high = fig.add_subplot(gs[0, 1])
-        self._plot_image_in_axis(ax_high, views['cross_section_high'])
+        # SOPRA LA FRONTALE: sezione del tallone vista dall'alto
+        if 'tallone_top' in views:
+            ax_tallone = fig.add_subplot(gs[0, 0])
+            self._plot_image_in_axis(ax_tallone, views['tallone_top'])
 
-        ax_mid = fig.add_subplot(gs[1, 1])
-        self._plot_image_in_axis(ax_mid, views['cross_section_mid'])
-
-        ax_low = fig.add_subplot(gs[2, 1])
-        self._plot_image_in_axis(ax_low, views['cross_section_low'])
-
-        # Vista frontale (in basso a sinistra)
-        ax_front = fig.add_subplot(gs[3, 0])
+        # CENTRO SINISTRA: vista frontale (PRINCIPALE - grande)
+        ax_front = fig.add_subplot(gs[1, 0])
         self._plot_image_in_axis(ax_front, views['front_view'])
 
-        # Vista posteriore (sotto la frontale)
-        if 'back_view' in views:
-            ax_back = fig.add_subplot(gs[4, 0])
-            self._plot_image_in_axis(ax_back, views['back_view'])
+        # CENTRO DESTRA: sezione trasversale al punto più largo (affianco)
+        ax_section = fig.add_subplot(gs[1, 1])
+        self._plot_image_in_axis(ax_section, views['cross_section_high'])
 
-        # Metadata panel (basso a destra)
-        ax_info = fig.add_subplot(gs[3:5, 1])
+        # BASSO SINISTRA: profilo longitudinale (vista laterale)
+        ax_long = fig.add_subplot(gs[2, 0])
+        self._plot_image_in_axis(ax_long, views['longitudinal_profile'])
+
+        # BASSO DESTRA: pannello info
+        ax_info = fig.add_subplot(gs[2, 1])
         ax_info.axis('off')
         self._add_info_panel(ax_info, artifact_id, features)
 
