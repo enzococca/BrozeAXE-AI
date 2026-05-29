@@ -10,7 +10,8 @@ import os
 import sys
 
 
-def generate_drawing_worker(mesh_data, artifact_id, features, view_type='complete_sheet'):
+def generate_drawing_worker(mesh_data, artifact_id, features, view_type='complete_sheet',
+                            output_format='png'):
     """
     Worker function that runs in a separate process.
 
@@ -19,31 +20,33 @@ def generate_drawing_worker(mesh_data, artifact_id, features, view_type='complet
         artifact_id: Artifact identifier
         features: Feature dictionary
         view_type: Type of view to generate
+        output_format: 'png' or 'svg'
 
     Returns:
         Tuple of (success: bool, data: bytes or error_message: str)
     """
     try:
-        # Import here to avoid loading in main process
         import pickle
         import trimesh
         import numpy as np
         import matplotlib
-        matplotlib.use('Agg')  # Must be set before importing pyplot
+        matplotlib.use('Agg')
 
         from acs.core.technical_drawing import TechnicalDrawingGenerator
 
-        # Deserialize mesh
         mesh = pickle.loads(mesh_data)
 
-        # Generate drawing
         drawer = TechnicalDrawingGenerator()
 
         if view_type == 'complete_sheet':
-            views = drawer.generate_complete_drawing(mesh, artifact_id, features)
+            views = drawer.generate_complete_drawing(
+                mesh, artifact_id, features, output_format=output_format
+            )
             return (True, views['complete_sheet'])
         else:
-            views = drawer.generate_complete_drawing(mesh, artifact_id, features)
+            views = drawer.generate_complete_drawing(
+                mesh, artifact_id, features, output_format=output_format
+            )
             if view_type in views:
                 return (True, views[view_type])
             else:
@@ -54,7 +57,8 @@ def generate_drawing_worker(mesh_data, artifact_id, features, view_type='complet
         return (False, f"Drawing generation failed: {str(e)}\n{traceback.format_exc()}")
 
 
-def generate_drawing_safe(mesh, artifact_id, features, view_type='complete_sheet', timeout=30):
+def generate_drawing_safe(mesh, artifact_id, features, view_type='complete_sheet',
+                          timeout=30, output_format='png'):
     """
     Generate technical drawing in a safe way using multiprocessing.
 
@@ -67,6 +71,7 @@ def generate_drawing_safe(mesh, artifact_id, features, view_type='complete_sheet
         features: Feature dictionary
         view_type: Type of view to generate
         timeout: Timeout in seconds
+        output_format: 'png' or 'svg'
 
     Returns:
         bytes: Image data on success
@@ -77,26 +82,21 @@ def generate_drawing_safe(mesh, artifact_id, features, view_type='complete_sheet
     import pickle
     from multiprocessing import Pool
 
-    # Serialize mesh for IPC
     try:
         mesh_data = pickle.dumps(mesh)
     except Exception as e:
         raise Exception(f"Failed to serialize mesh: {str(e)}")
 
-    # Create a pool with a single worker
-    # Note: We use 'spawn' context to ensure clean process on macOS
     import multiprocessing
     ctx = multiprocessing.get_context('spawn')
 
     with ctx.Pool(processes=1) as pool:
-        # Submit job
         result = pool.apply_async(
             generate_drawing_worker,
-            args=(mesh_data, artifact_id, features, view_type)
+            args=(mesh_data, artifact_id, features, view_type, output_format)
         )
 
         try:
-            # Wait for result with timeout
             success, data = result.get(timeout=timeout)
 
             if success:

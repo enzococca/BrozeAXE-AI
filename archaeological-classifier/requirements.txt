@@ -42,6 +42,7 @@ Pillow>=10.0.0
 pandas>=2.0.0  # For CSV export
 pyefd>=1.5.0  # For Elliptic Fourier Analysis
 psutil>=5.9.0  # For system monitoring (health endpoints)
+ezdxf>=1.0.0  # For DXF vector export
 
 # Development dependencies (optional)
 pytest>=7.4.0
