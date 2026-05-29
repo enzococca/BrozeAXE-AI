@@ -92,6 +92,41 @@ class TechnicalDrawingGenerator:
 
         return views
 
+    def generate_single_view(self, mesh, artifact_id: str, view_type: str,
+                             features: Dict = None,
+                             output_format: str = 'png') -> bytes:
+        """
+        Generate a single view without rendering all the others.
+
+        For 'complete_sheet' this still renders all sub-views (needed for
+        the composite), but for any individual view it's much faster.
+        """
+        self._output_format = output_format if output_format in ('png', 'svg') else 'png'
+        oriented_mesh = self._reorient_mesh(mesh)
+
+        alias_map = {
+            'cross_section_max': 'cross_section_high',
+            'cross_section_min': 'cross_section_low',
+        }
+        resolved = alias_map.get(view_type, view_type)
+
+        if resolved == 'complete_sheet':
+            return self.generate_complete_drawing(
+                mesh, artifact_id, features, output_format
+            )['complete_sheet']
+
+        if resolved == 'longitudinal_profile':
+            return self._draw_longitudinal_profile(oriented_mesh, artifact_id)
+        elif resolved in ('cross_section_high', 'cross_section_mid', 'cross_section_low'):
+            section_type = resolved.replace('cross_section_', '')
+            return self._draw_cross_section(oriented_mesh, section_type)
+        elif resolved == 'front_view':
+            return self._draw_front_view(oriented_mesh)
+        elif resolved == 'back_view':
+            return self._draw_back_view(oriented_mesh)
+        else:
+            raise ValueError(f"Invalid view type: {view_type}")
+
     def _reorient_mesh(self, mesh):
         """
         Reorient mesh to standard archaeological position.

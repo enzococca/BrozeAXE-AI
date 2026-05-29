@@ -2811,7 +2811,7 @@ def get_technical_drawing(artifact_id):
 
         image_data = generate_drawing_safe(
             mesh, artifact_id, features, 'complete_sheet',
-            timeout=60, output_format=output_format
+            timeout=180, output_format=output_format
         )
 
         mimetype = 'image/svg+xml' if output_format == 'svg' else 'image/png'
@@ -2852,9 +2852,10 @@ def get_technical_drawing_view(artifact_id, view_type):
         mesh = mesh_processor.meshes[artifact_id]
         features = mesh_processor._extract_features(mesh, artifact_id)
 
+        view_timeout = 180 if view_type == 'complete_sheet' else 90
         image_data = generate_drawing_safe(
             mesh, artifact_id, features, view_type,
-            timeout=60, output_format=output_format
+            timeout=view_timeout, output_format=output_format
         )
 
         mimetype = 'image/svg+xml' if output_format == 'svg' else 'image/png'
@@ -3007,7 +3008,7 @@ def compose_plate():
 
             try:
                 image_data = generate_drawing_safe(
-                    mesh, artifact_id, features, view, timeout=60
+                    mesh, artifact_id, features, view, timeout=90
                 )
                 cell['image_data'] = image_data
             except Exception as e:

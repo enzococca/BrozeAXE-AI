@@ -205,7 +205,7 @@ class ReportGenerator:
 
             # Artifact 1 drawings
             story.append(Paragraph(f"Artifact {artifact1}", self.styles['SubHeading']))
-            img1_data = generate_drawing_safe(mesh1, artifact1, features1, 'complete_sheet', timeout=90)
+            img1_data = generate_drawing_safe(mesh1, artifact1, features1, 'complete_sheet', timeout=180)
             img1_path = self._save_temp_image(img1_data)
             if img1_path:
                 story.append(Image(img1_path, width=7*inch, height=9*inch))
@@ -215,7 +215,7 @@ class ReportGenerator:
 
             # Artifact 2 drawings
             story.append(Paragraph(f"Artifact {artifact2}", self.styles['SubHeading']))
-            img2_data = generate_drawing_safe(mesh2, artifact2, features2, 'complete_sheet', timeout=90)
+            img2_data = generate_drawing_safe(mesh2, artifact2, features2, 'complete_sheet', timeout=180)
             img2_path = self._save_temp_image(img2_data)
             if img2_path:
                 story.append(Image(img2_path, width=7*inch, height=9*inch))
