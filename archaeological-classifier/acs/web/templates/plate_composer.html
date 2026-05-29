@@ -3,13 +3,45 @@
 {% block title %}Composer Tavole - Archaeological Classifier{% endblock %}
 
 {% block content %}
-<div style="max-width: 1200px; margin: 0 auto; padding: 20px;">
+<div style="max-width: 1400px; margin: 0 auto; padding: 20px;">
     <h1>Composer Tavole per Pubblicazione</h1>
     <p style="color: #718096;">Componi tavole con layout configurabile, scala uniforme e didascalie per pubblicazioni scientifiche.</p>
 
     <div style="display: flex; gap: 20px; flex-wrap: wrap;">
         <!-- Configuration Panel -->
-        <div style="flex: 1; min-width: 350px; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.12);">
+        <div style="flex: 1; min-width: 380px; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); max-height: 90vh; overflow-y: auto;">
+
+            <!-- Template presets -->
+            <h3>Template</h3>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;">
+                <button onclick="applyTemplate('single')" class="tpl-btn" title="1 ascia, foglio completo">
+                    <svg width="32" height="40" viewBox="0 0 32 40"><rect x="1" y="1" width="30" height="38" fill="none" stroke="#4299e1" stroke-width="1.5" rx="2"/><rect x="6" y="6" width="20" height="28" fill="#bee3f8" rx="1"/></svg>
+                    <span>Singola</span>
+                </button>
+                <button onclick="applyTemplate('pair')" class="tpl-btn" title="2 asce affiancate">
+                    <svg width="32" height="40" viewBox="0 0 32 40"><rect x="1" y="1" width="30" height="38" fill="none" stroke="#4299e1" stroke-width="1.5" rx="2"/><rect x="3" y="6" width="12" height="28" fill="#bee3f8" rx="1"/><rect x="17" y="6" width="12" height="28" fill="#bee3f8" rx="1"/></svg>
+                    <span>Coppia</span>
+                </button>
+                <button onclick="applyTemplate('grid4')" class="tpl-btn" title="4 asce, griglia 2x2">
+                    <svg width="32" height="40" viewBox="0 0 32 40"><rect x="1" y="1" width="30" height="38" fill="none" stroke="#4299e1" stroke-width="1.5" rx="2"/><rect x="3" y="4" width="12" height="14" fill="#bee3f8" rx="1"/><rect x="17" y="4" width="12" height="14" fill="#bee3f8" rx="1"/><rect x="3" y="22" width="12" height="14" fill="#bee3f8" rx="1"/><rect x="17" y="22" width="12" height="14" fill="#bee3f8" rx="1"/></svg>
+                    <span>4 (2&times;2)</span>
+                </button>
+                <button onclick="applyTemplate('grid6')" class="tpl-btn" title="6 asce, griglia 3x2">
+                    <svg width="32" height="40" viewBox="0 0 32 40"><rect x="1" y="1" width="30" height="38" fill="none" stroke="#4299e1" stroke-width="1.5" rx="2"/><rect x="3" y="3" width="12" height="10" fill="#bee3f8" rx="1"/><rect x="17" y="3" width="12" height="10" fill="#bee3f8" rx="1"/><rect x="3" y="15" width="12" height="10" fill="#bee3f8" rx="1"/><rect x="17" y="15" width="12" height="10" fill="#bee3f8" rx="1"/><rect x="3" y="27" width="12" height="10" fill="#bee3f8" rx="1"/><rect x="17" y="27" width="12" height="10" fill="#bee3f8" rx="1"/></svg>
+                    <span>6 (3&times;2)</span>
+                </button>
+                <button onclick="applyTemplate('grid10')" class="tpl-btn" title="10 asce, griglia 5x2">
+                    <svg width="32" height="40" viewBox="0 0 32 40"><rect x="1" y="1" width="30" height="38" fill="none" stroke="#4299e1" stroke-width="1.5" rx="2"/><rect x="3" y="2" width="12" height="6" fill="#bee3f8" rx="1"/><rect x="17" y="2" width="12" height="6" fill="#bee3f8" rx="1"/><rect x="3" y="9.5" width="12" height="6" fill="#bee3f8" rx="1"/><rect x="17" y="9.5" width="12" height="6" fill="#bee3f8" rx="1"/><rect x="3" y="17" width="12" height="6" fill="#bee3f8" rx="1"/><rect x="17" y="17" width="12" height="6" fill="#bee3f8" rx="1"/><rect x="3" y="24.5" width="12" height="6" fill="#bee3f8" rx="1"/><rect x="17" y="24.5" width="12" height="6" fill="#bee3f8" rx="1"/><rect x="3" y="32" width="12" height="6" fill="#bee3f8" rx="1"/><rect x="17" y="32" width="12" height="6" fill="#bee3f8" rx="1"/></svg>
+                    <span>10 (5&times;2)</span>
+                </button>
+                <button onclick="applyTemplate('catalog')" class="tpl-btn" title="12 asce, griglia 4x3">
+                    <svg width="32" height="40" viewBox="0 0 32 40"><rect x="1" y="1" width="30" height="38" fill="none" stroke="#4299e1" stroke-width="1.5" rx="2"/><rect x="2" y="3" width="8" height="7" fill="#bee3f8" rx="1"/><rect x="12" y="3" width="8" height="7" fill="#bee3f8" rx="1"/><rect x="22" y="3" width="8" height="7" fill="#bee3f8" rx="1"/><rect x="2" y="12" width="8" height="7" fill="#bee3f8" rx="1"/><rect x="12" y="12" width="8" height="7" fill="#bee3f8" rx="1"/><rect x="22" y="12" width="8" height="7" fill="#bee3f8" rx="1"/><rect x="2" y="21" width="8" height="7" fill="#bee3f8" rx="1"/><rect x="12" y="21" width="8" height="7" fill="#bee3f8" rx="1"/><rect x="22" y="21" width="8" height="7" fill="#bee3f8" rx="1"/><rect x="2" y="30" width="8" height="7" fill="#bee3f8" rx="1"/><rect x="12" y="30" width="8" height="7" fill="#bee3f8" rx="1"/><rect x="22" y="30" width="8" height="7" fill="#bee3f8" rx="1"/></svg>
+                    <span>12 (4&times;3)</span>
+                </button>
+            </div>
+
+            <hr style="margin: 16px 0;">
+
             <h3>Configurazione Tavola</h3>
 
             <div style="margin-bottom: 16px;">
@@ -21,11 +53,11 @@
                 <div style="flex: 1;">
                     <label style="font-weight: bold; display: block; margin-bottom: 4px;">Formato</label>
                     <select id="pageFormat" style="width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px;">
-                        <option value="A4">A4 (210x297 mm)</option>
-                        <option value="A3">A3 (297x420 mm)</option>
-                        <option value="letter">Letter (216x279 mm)</option>
-                        <option value="single_column">Colonna singola (85x200 mm)</option>
-                        <option value="double_column">Doppia colonna (175x200 mm)</option>
+                        <option value="A4">A4 (210&times;297 mm)</option>
+                        <option value="A3">A3 (297&times;420 mm)</option>
+                        <option value="letter">Letter (216&times;279 mm)</option>
+                        <option value="single_column">Colonna singola (85&times;200 mm)</option>
+                        <option value="double_column">Doppia colonna (175&times;200 mm)</option>
                     </select>
                 </div>
                 <div style="flex: 1;">
@@ -40,43 +72,55 @@
             <div style="display: flex; gap: 12px; margin-bottom: 16px;">
                 <div style="flex: 1;">
                     <label style="font-weight: bold; display: block; margin-bottom: 4px;">Righe</label>
-                    <input type="number" id="rows" value="2" min="1" max="6" style="width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px;">
+                    <input type="number" id="rows" value="2" min="1" max="6" onchange="updateCellGrid()" style="width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px;">
                 </div>
                 <div style="flex: 1;">
                     <label style="font-weight: bold; display: block; margin-bottom: 4px;">Colonne</label>
-                    <input type="number" id="cols" value="2" min="1" max="4" style="width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px;">
+                    <input type="number" id="cols" value="2" min="1" max="5" onchange="updateCellGrid()" style="width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px;">
                 </div>
             </div>
 
-            <div style="margin-bottom: 16px;">
-                <label style="font-weight: bold; display: block; margin-bottom: 4px;">
-                    <input type="checkbox" id="uniformScale" checked> Scala uniforme
-                </label>
+            <div style="display: flex; gap: 12px; margin-bottom: 16px;">
+                <div style="flex: 1;">
+                    <label style="font-weight: bold; display: block; margin-bottom: 4px;">
+                        <input type="checkbox" id="uniformScale" checked> Scala uniforme
+                    </label>
+                </div>
+                <div style="flex: 1;">
+                    <label style="font-weight: bold; display: block; margin-bottom: 4px;">Formato export</label>
+                    <select id="outputFormat" style="width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px;">
+                        <option value="png">PNG (300 DPI)</option>
+                        <option value="svg">SVG (vettoriale)</option>
+                        <option value="pdf">PDF</option>
+                    </select>
+                </div>
             </div>
 
-            <div style="margin-bottom: 16px;">
-                <label style="font-weight: bold; display: block; margin-bottom: 4px;">Formato export</label>
-                <select id="outputFormat" style="width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px;">
-                    <option value="png">PNG (300 DPI)</option>
-                    <option value="svg">SVG (vettoriale)</option>
-                    <option value="pdf">PDF</option>
-                </select>
+            <hr style="margin: 16px 0;">
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <h3 style="margin: 0;">Celle della tavola</h3>
+                <span id="cellCount" style="color: #718096; font-size: 0.85em;"></span>
             </div>
 
-            <hr style="margin: 20px 0;">
-
-            <h3>Celle della tavola</h3>
-            <p style="font-size: 0.9em; color: #718096;">Configura il contenuto di ogni cella della griglia.</p>
+            <div style="margin-bottom: 12px;">
+                <label style="font-weight: bold; display: block; margin-bottom: 4px;">Assegna reperto a tutte le celle vuote</label>
+                <div style="display: flex; gap: 8px;">
+                    <select id="bulkArtifact" style="flex:1; padding: 6px; border: 1px solid #e2e8f0; border-radius: 4px;">
+                        <option value="">-- Scegli --</option>
+                        {% for aid in artifacts %}
+                        <option value="{{ aid }}">{{ aid }}</option>
+                        {% endfor %}
+                    </select>
+                    <button onclick="bulkAssign()" style="padding: 6px 14px; background: #4299e1; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap;">Assegna</button>
+                </div>
+            </div>
 
             <div id="cellsContainer"></div>
 
-            <button class="btn btn-primary" onclick="updateCellGrid()" style="margin-top: 12px; width: 100%; padding: 10px; background: #4299e1; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                Aggiorna griglia
-            </button>
-
             <hr style="margin: 20px 0;">
 
-            <button class="btn btn-success" onclick="composePlate()" style="width: 100%; padding: 12px; background: #48bb78; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold;">
+            <button onclick="composePlate()" id="generateBtn" style="width: 100%; padding: 14px; background: #48bb78; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold;">
                 Genera Tavola
             </button>
         </div>
@@ -84,7 +128,7 @@
         <!-- Preview Panel -->
         <div style="flex: 1.5; min-width: 400px; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.12);">
             <h3>Anteprima</h3>
-            <div id="platePreview" style="text-align: center; min-height: 400px; background: #f7fafc; border: 2px dashed #e2e8f0; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+            <div id="platePreview" style="text-align: center; min-height: 500px; background: #f7fafc; border: 2px dashed #e2e8f0; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
                 <div style="color: #a0aec0;">
                     <div style="font-size: 48px; margin-bottom: 12px;">&#128196;</div>
                     <p>Configura la tavola e clicca "Genera Tavola" per vedere l'anteprima</p>
@@ -92,7 +136,7 @@
             </div>
 
             <div id="plateDownload" style="display: none; margin-top: 16px; text-align: center;">
-                <button class="btn btn-success" onclick="downloadPlate()" style="padding: 10px 20px; background: #48bb78; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                <button onclick="downloadPlate()" style="padding: 10px 24px; background: #48bb78; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
                     Scarica Tavola
                 </button>
             </div>
@@ -100,65 +144,137 @@
     </div>
 </div>
 
+<style>
+.tpl-btn {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding: 8px 10px; background: #f7fafc; border: 2px solid #e2e8f0;
+    border-radius: 6px; cursor: pointer; transition: all 0.15s;
+}
+.tpl-btn:hover { border-color: #4299e1; background: #ebf8ff; }
+.tpl-btn.active { border-color: #4299e1; background: #ebf8ff; }
+.tpl-btn span { font-size: 0.75em; color: #4a5568; }
+.cell-card {
+    border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px;
+    margin-bottom: 8px; background: #f7fafc;
+}
+.cell-card:hover { border-color: #cbd5e0; }
+.cell-label { font-weight: 600; font-size: 0.85em; color: #4a5568; margin-bottom: 6px; }
+.cell-row { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.cell-sel { flex: 1; padding: 5px; border: 1px solid #e2e8f0; border-radius: 4px; min-width: 100px; font-size: 0.9em; }
+.cell-inp { padding: 5px; border: 1px solid #e2e8f0; border-radius: 4px; font-size: 0.9em; }
+</style>
+
 <script>
-let artifacts = [];
+const ARTIFACTS = {{ artifacts | tojson }};
 let plateBlob = null;
 
 const VIEWS = [
-    {value: 'longitudinal_profile', label: 'Profilo Longitudinale'},
+    {value: 'complete_sheet', label: 'Tavola Completa'},
     {value: 'front_view', label: 'Vista Frontale'},
     {value: 'back_view', label: 'Vista Posteriore'},
+    {value: 'longitudinal_profile', label: 'Profilo Longitudinale'},
     {value: 'cross_section_max', label: 'Sezione Max'},
-    {value: 'cross_section_min', label: 'Sezione Min'},
     {value: 'cross_section_mid', label: 'Sezione Media'},
-    {value: 'complete_sheet', label: 'Foglio Completo'},
+    {value: 'cross_section_min', label: 'Sezione Min'},
 ];
 
-document.addEventListener('DOMContentLoaded', async function() {
-    try {
-        const resp = await fetch('/api/artifacts');
-        if (resp.ok) {
-            const data = await resp.json();
-            artifacts = data.artifacts || data || [];
-        }
-    } catch(e) {
-        console.warn('Could not load artifacts:', e);
-    }
-    updateCellGrid();
-});
+const TEMPLATES = {
+    single:  { rows: 1, cols: 1, format: 'A4', orient: 'portrait', view: 'complete_sheet' },
+    pair:    { rows: 1, cols: 2, format: 'A4', orient: 'portrait', view: 'complete_sheet' },
+    grid4:   { rows: 2, cols: 2, format: 'A3', orient: 'portrait', view: 'front_view' },
+    grid6:   { rows: 3, cols: 2, format: 'A3', orient: 'portrait', view: 'front_view' },
+    grid10:  { rows: 5, cols: 2, format: 'A3', orient: 'portrait', view: 'front_view' },
+    catalog: { rows: 4, cols: 3, format: 'A3', orient: 'portrait', view: 'front_view' },
+};
 
-function updateCellGrid() {
-    const rows = parseInt(document.getElementById('rows').value) || 2;
-    const cols = parseInt(document.getElementById('cols').value) || 2;
+function applyTemplate(name) {
+    const t = TEMPLATES[name];
+    if (!t) return;
+    document.getElementById('rows').value = t.rows;
+    document.getElementById('cols').value = t.cols;
+    document.getElementById('pageFormat').value = t.format;
+    document.getElementById('orientation').value = t.orient;
+    document.querySelectorAll('.tpl-btn').forEach(b => b.classList.remove('active'));
+    event.currentTarget.classList.add('active');
+    updateCellGrid(t.view);
+}
+
+function artifactOptions(selected) {
+    let html = '<option value="">-- Vuoto --</option>';
+    for (const a of ARTIFACTS) {
+        const sel = a === selected ? ' selected' : '';
+        html += `<option value="${a}"${sel}>${a}</option>`;
+    }
+    return html;
+}
+
+function viewOptions(selected) {
+    return VIEWS.map(v => {
+        const sel = v.value === selected ? ' selected' : '';
+        return `<option value="${v.value}"${sel}>${v.label}</option>`;
+    }).join('');
+}
+
+function updateCellGrid(defaultView) {
+    const rows = Math.min(6, Math.max(1, parseInt(document.getElementById('rows').value) || 2));
+    const cols = Math.min(5, Math.max(1, parseInt(document.getElementById('cols').value) || 2));
+    const total = rows * cols;
     const container = document.getElementById('cellsContainer');
+
+    const existing = {};
+    container.querySelectorAll('.cell-card').forEach(card => {
+        const key = card.dataset.key;
+        if (key) {
+            existing[key] = {
+                artifact: card.querySelector('.cell-artifact')?.value || '',
+                view: card.querySelector('.cell-view')?.value || '',
+                fignum: card.querySelector('.cell-fignum')?.value || '',
+                caption: card.querySelector('.cell-caption')?.value || '',
+            };
+        }
+    });
+
     container.innerHTML = '';
+    document.getElementById('cellCount').textContent = `${total} celle`;
+    let figIdx = 1;
 
     for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
+            const key = `${r}_${c}`;
+            const prev = existing[key] || {};
+            const vw = prev.view || defaultView || 'front_view';
             const cellDiv = document.createElement('div');
-            cellDiv.style.cssText = 'border: 1px solid #e2e8f0; border-radius: 4px; padding: 12px; margin-bottom: 8px; background: #f7fafc;';
+            cellDiv.className = 'cell-card';
+            cellDiv.dataset.key = key;
             cellDiv.innerHTML = `
-                <strong>Cella [${r+1}, ${c+1}]</strong>
-                <div style="display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap;">
-                    <select class="cell-artifact" data-row="${r}" data-col="${c}" style="flex:1; padding: 6px; border: 1px solid #e2e8f0; border-radius: 4px; min-width: 120px;">
-                        <option value="">-- Vuoto --</option>
-                        ${artifacts.map(a => {
-                            const id = typeof a === 'string' ? a : (a.id || a.artifact_id || '');
-                            return `<option value="${id}">${id}</option>`;
-                        }).join('')}
+                <div class="cell-label">Cella [${r+1}, ${c+1}]</div>
+                <div class="cell-row">
+                    <select class="cell-artifact cell-sel" data-row="${r}" data-col="${c}">
+                        ${artifactOptions(prev.artifact || '')}
                     </select>
-                    <select class="cell-view" data-row="${r}" data-col="${c}" style="flex:1; padding: 6px; border: 1px solid #e2e8f0; border-radius: 4px; min-width: 120px;">
-                        ${VIEWS.map(v => `<option value="${v.value}">${v.label}</option>`).join('')}
+                    <select class="cell-view cell-sel" data-row="${r}" data-col="${c}">
+                        ${viewOptions(vw)}
                     </select>
                 </div>
-                <div style="display: flex; gap: 8px; margin-top: 8px;">
-                    <input type="text" class="cell-fignum" data-row="${r}" data-col="${c}" placeholder="N. Fig. (es. 1a)" style="flex:0.4; padding: 6px; border: 1px solid #e2e8f0; border-radius: 4px;">
-                    <input type="text" class="cell-caption" data-row="${r}" data-col="${c}" placeholder="Didascalia" style="flex:1; padding: 6px; border: 1px solid #e2e8f0; border-radius: 4px;">
+                <div class="cell-row">
+                    <input type="text" class="cell-fignum cell-inp" data-row="${r}" data-col="${c}"
+                           placeholder="N. Fig." value="${prev.fignum || figIdx}" style="flex:0.35;">
+                    <input type="text" class="cell-caption cell-inp" data-row="${r}" data-col="${c}"
+                           placeholder="Didascalia" value="${prev.caption || ''}" style="flex:1;">
                 </div>
             `;
             container.appendChild(cellDiv);
+            figIdx++;
         }
     }
+}
+
+function bulkAssign() {
+    const aid = document.getElementById('bulkArtifact').value;
+    if (!aid) return;
+    document.querySelectorAll('.cell-artifact').forEach(el => {
+        if (!el.value) el.value = aid;
+    });
 }
 
 async function composePlate() {
@@ -178,7 +294,7 @@ async function composePlate() {
 
         cells.push({
             artifact_id: artifactId,
-            view: viewEl ? viewEl.value : 'longitudinal_profile',
+            view: viewEl ? viewEl.value : 'front_view',
             figure_number: figEl ? figEl.value : '',
             caption: capEl ? capEl.value : '',
             row: row,
@@ -187,7 +303,7 @@ async function composePlate() {
     });
 
     if (cells.length === 0) {
-        alert('Seleziona almeno un reperto');
+        alert('Seleziona almeno un reperto nelle celle');
         return;
     }
 
@@ -203,8 +319,15 @@ async function composePlate() {
     };
 
     const preview = document.getElementById('platePreview');
-    preview.innerHTML = '<div style="padding: 40px;"><div class="loading-spinner" style="border: 4px solid #f3f3f3; border-top: 4px solid #4299e1; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto;"></div><p style="margin-top: 16px; color: #718096;">Generazione tavola in corso...</p></div>';
-    preview.innerHTML += '<style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>';
+    const btn = document.getElementById('generateBtn');
+    btn.disabled = true;
+    btn.textContent = 'Generazione in corso...';
+    preview.innerHTML = `
+        <div style="padding: 40px;">
+            <div style="border: 4px solid #f3f3f3; border-top: 4px solid #4299e1; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto;"></div>
+            <p style="margin-top: 16px; color: #718096;">Generazione tavola in corso... (${cells.length} disegni)</p>
+        </div>
+        <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>`;
 
     try {
         const resp = await fetch('/web/compose-plate', {
@@ -214,8 +337,9 @@ async function composePlate() {
         });
 
         if (!resp.ok) {
-            const err = await resp.json();
-            throw new Error(err.error || 'Errore nella generazione');
+            let msg = 'Errore nella generazione';
+            try { const err = await resp.json(); msg = err.error || msg; } catch(_) {}
+            throw new Error(msg);
         }
 
         plateBlob = await resp.blob();
@@ -223,25 +347,25 @@ async function composePlate() {
 
         const fmt = config.output_format;
         if (fmt === 'pdf') {
-            preview.innerHTML = `<iframe src="${url}" style="width:100%; height:600px; border:none;"></iframe>`;
+            preview.innerHTML = `<iframe src="${url}" style="width:100%; height:700px; border:none;"></iframe>`;
         } else {
-            preview.innerHTML = `<img src="${url}" style="max-width:100%; max-height:700px; border: 1px solid #e2e8f0;">`;
+            preview.innerHTML = `<img src="${url}" style="max-width:100%; max-height:800px; border: 1px solid #e2e8f0;">`;
         }
-
         document.getElementById('plateDownload').style.display = 'block';
 
     } catch(e) {
         preview.innerHTML = `<div style="padding: 40px; color: #e53e3e;"><p>Errore: ${e.message}</p></div>`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Genera Tavola';
     }
 }
 
 function downloadPlate() {
     if (!plateBlob) return;
-
     const fmt = document.getElementById('outputFormat').value;
     const title = document.getElementById('plateTitle').value.replace(/\s+/g, '_');
     const ext = fmt === 'pdf' ? 'pdf' : (fmt === 'svg' ? 'svg' : 'png');
-
     const url = URL.createObjectURL(plateBlob);
     const link = document.createElement('a');
     link.href = url;
@@ -251,5 +375,9 @@ function downloadPlate() {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 }
+
+document.addEventListener('DOMContentLoaded', function() {
+    updateCellGrid();
+});
 </script>
 {% endblock %}
