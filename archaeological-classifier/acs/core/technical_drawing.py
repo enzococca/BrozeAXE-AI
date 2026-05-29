@@ -112,9 +112,12 @@ class TechnicalDrawingGenerator:
         resolved = alias_map.get(view_type, view_type)
 
         if resolved == 'complete_sheet':
-            return self.generate_complete_drawing(
-                mesh, artifact_id, features, output_format
-            )['complete_sheet']
+            # The composite draws every panel DIRECTLY from the mesh, so we do
+            # NOT need to pre-render the individual sub-view PNGs (that would
+            # double the work and can blow the request timeout on heavy scans).
+            return self._create_composite_sheet(
+                oriented_mesh, artifact_id, features, {}
+            )
 
         if resolved == 'longitudinal_profile':
             return self._draw_longitudinal_profile(oriented_mesh, artifact_id)
