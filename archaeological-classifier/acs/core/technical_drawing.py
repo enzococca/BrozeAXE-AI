@@ -271,6 +271,58 @@ class TechnicalDrawingGenerator:
         except Exception as e:
             print(f"Warning: Could not draw feature edges ({str(e)})")
 
+    def _draw_occluding_contours(self, ax, mesh, view_axis, projection_axes,
+                                 linewidth=0.5, alpha=0.9):
+        """
+        Draw occluding-contour (fold) lines for an orthographic view.
+
+        For a parallel projection along ``view_axis``, an edge sits on a fold/
+        silhouette when its two adjacent faces have face-normal components of
+        OPPOSITE sign along that axis (one faces the viewer, the other faces
+        away). Unlike dihedral-angle feature edges, this captures the SMOOTH
+        folds typical of a 3D scan, so it reliably reveals the crests of the
+        margini rialzati (alette) and the rim of the incavo (the U-notch /
+        socket at the tallone) — exactly the features that are invisible when
+        only the outer silhouette is drawn.
+
+        Args:
+            ax: Matplotlib axis
+            mesh: Trimesh object
+            view_axis: 0=X, 1=Y, 2=Z — the direction the view looks along
+            projection_axes: (axis1, axis2) indices to project the edges onto
+            linewidth: Line width for the contour lines
+            alpha: Line opacity
+        """
+        try:
+            from matplotlib.collections import LineCollection
+
+            adjacency = mesh.face_adjacency          # (M, 2) face-index pairs
+            adj_edges = mesh.face_adjacency_edges     # (M, 2) vertex-index pairs
+            if adjacency is None or len(adjacency) == 0:
+                return
+
+            normals = mesh.face_normals
+            n0 = normals[adjacency[:, 0], view_axis]
+            n1 = normals[adjacency[:, 1], view_axis]
+
+            # Fold edges: the two faces look in opposite directions along the
+            # view axis. A small deadband ignores near-tangent noise.
+            eps = 1e-3
+            fold_mask = (((n0 > eps) & (n1 < -eps)) |
+                         ((n0 < -eps) & (n1 > eps)))
+            fold_edges = adj_edges[fold_mask]
+            if len(fold_edges) == 0:
+                return
+
+            proj = list(projection_axes)
+            verts_2d = mesh.vertices[:, proj]
+            segments = verts_2d[fold_edges]
+            lc = LineCollection(segments, colors='black',
+                                linewidths=linewidth, alpha=alpha, zorder=3)
+            ax.add_collection(lc)
+        except Exception as e:
+            print(f"Warning: Could not draw occluding contours ({str(e)})")
+
     def _alpha_shape(self, points, alpha_factor=0.3):
         """
         Compute alpha shape (concave hull) of 2D points.
@@ -381,6 +433,9 @@ class TechnicalDrawingGenerator:
                    'k-', linewidth=0.8, solid_capstyle='round')
             # Internal feature edges from the 3D model (flange ridges, etc.)
             self._draw_feature_edges(ax, mesh, projection_axes=(1, 2))
+            # Fold lines (alette crests, incavo rim) — view looks along X
+            self._draw_occluding_contours(ax, mesh, view_axis=0,
+                                          projection_axes=(1, 2))
             self._add_stippling_shading(ax, mesh, vertices_2d, outline, view='side')
 
         except Exception as e:
@@ -497,6 +552,9 @@ class TechnicalDrawingGenerator:
                    'k-', linewidth=0.8, solid_capstyle='round')
             # Internal feature edges (flange/margin ridges) projected from 3D
             self._draw_feature_edges(ax, mesh, projection_axes=(0, 2))
+            # Fold lines (alette crests, incavo rim) — front view looks along Y
+            self._draw_occluding_contours(ax, mesh, view_axis=1,
+                                          projection_axes=(0, 2))
             self._add_stippling_shading(ax, mesh, vertices_2d, outline, view='front')
 
         except Exception as e:
@@ -542,6 +600,8 @@ class TechnicalDrawingGenerator:
             ax.plot(outline_closed[:, 0], outline_closed[:, 1],
                    'k-', linewidth=0.8, solid_capstyle='round')
             self._draw_feature_edges(ax, flipped, projection_axes=(0, 2))
+            self._draw_occluding_contours(ax, flipped, view_axis=1,
+                                          projection_axes=(0, 2))
             self._add_stippling_shading(ax, flipped, vertices_2d, outline, view='back')
 
         except Exception as e:
@@ -617,6 +677,9 @@ class TechnicalDrawingGenerator:
                     )
                     self._draw_feature_edges(ax, butt_mesh,
                                              projection_axes=(0, 1))
+                    # Rim of the incavo (butt notch) — top view looks along Z
+                    self._draw_occluding_contours(ax, butt_mesh, view_axis=2,
+                                                  projection_axes=(0, 1))
             except Exception as fe:
                 print(f"Warning: tallone feature edges failed ({str(fe)})")
 
@@ -954,14 +1017,13 @@ class TechnicalDrawingGenerator:
         pre-rendered PNGs) so that all views share proportional mm-based
         coordinates and the result looks like a real archaeological plate.
 
-        Layout:
-        - Row 0, col 0: tallone dall'alto (sized to tallone width)
-        - Row 1, col 0: VISTA FRONTALE (main, large)
-        - Row 1, col 1: sezione trasversale (beside front, same row height)
-        - Row 2, col 0: profilo longitudinale + scala
-        - Row 2, col 1: pannello info
+        Layout (orthographic plate, Cataruzza-style):
+        - Row 0, col 0: tallone dall'alto      col 1: sezione trasversale
+        - Row 1, col 0: VISTA FRONTALE         col 1: PROFILO LONGITUDINALE
+                        (front & profile aligned, drawn at the SAME length)
+        - Row 2, col 0: barra di scala (3 cm)  col 1: pannello info
         """
-        fig = plt.figure(figsize=(11, 14), dpi=self.dpi)
+        fig = plt.figure(figsize=(12, 14), dpi=self.dpi)
 
         fig.suptitle(f'Documentazione Tecnica - {artifact_id}',
                     fontsize=14, fontweight='bold', y=0.98)
@@ -970,14 +1032,22 @@ class TechnicalDrawingGenerator:
         x_ext = bounds[1][0] - bounds[0][0]
         y_ext = bounds[1][1] - bounds[0][1]
         z_ext = bounds[1][2] - bounds[0][2]
+        z_min, z_max = bounds[0][2], bounds[1][2]
+
+        # Shared vertical limits so the front view and the longitudinal
+        # profile print at exactly the SAME length, side by side. Extra room
+        # below leaves space for the scale bar inside the front axis.
+        pad = z_ext * 0.03
+        bar_room = z_ext * 0.12
+        y_lo, y_hi = z_min - pad - bar_room, z_max + pad
 
         # Grid ratios from mesh geometry → proportional layout
-        h_tallone = max(y_ext, z_ext * 0.10)
-        h_main = z_ext
-        h_bottom = z_ext * 0.30
+        h_tallone = max(y_ext, z_ext * 0.12)
+        h_main = z_ext + pad + bar_room
+        h_bottom = z_ext * 0.18
 
-        gs = fig.add_gridspec(3, 2, hspace=0.12, wspace=0.10,
-                             left=0.05, right=0.95, top=0.94, bottom=0.05,
+        gs = fig.add_gridspec(3, 2, hspace=0.10, wspace=0.08,
+                             left=0.05, right=0.95, top=0.94, bottom=0.04,
                              height_ratios=[h_tallone, h_main, h_bottom],
                              width_ratios=[1.3, 1.0])
 
@@ -1005,6 +1075,9 @@ class TechnicalDrawingGenerator:
                     bm = _trimesh.Trimesh(vertices=mesh.vertices,
                                           faces=mesh.faces[fm], process=False)
                     self._draw_feature_edges(ax_tallone, bm, (0, 1))
+                    # Rim of the incavo (butt notch) seen from above
+                    self._draw_occluding_contours(ax_tallone, bm, view_axis=2,
+                                                  projection_axes=(0, 1))
             except Exception:
                 pass
             self._add_stippling_shading(ax_tallone, mesh, verts_2d, outline,
@@ -1026,16 +1099,29 @@ class TechnicalDrawingGenerator:
             ax_front.plot(*np.vstack([fout, fout[0]]).T,
                          'k-', linewidth=0.8, solid_capstyle='round')
             self._draw_feature_edges(ax_front, mesh, (0, 2))
+            # Fold lines: alette crests + incavo rim (view looks along Y)
+            self._draw_occluding_contours(ax_front, mesh, view_axis=1,
+                                          projection_axes=(0, 2))
             self._add_stippling_shading(ax_front, mesh, front_2d, fout,
                                         'front')
         except Exception as e:
             print(f"Warning: front view render failed ({e})")
         ax_front.set_title('Vista Frontale', fontsize=10, pad=4)
         ax_front.set_aspect('equal')
+        # Lock the length so the profile beside it matches exactly
+        ax_front.set_ylim(y_lo, y_hi)
+        # 3 cm scale bar below the object (axis is in mm, aspect equal)
+        fb = ax_front.get_xlim()
+        xc = (fb[0] + fb[1]) / 2
+        by = z_min - pad - bar_room * 0.5
+        ax_front.plot([xc - 15, xc + 15], [by, by], 'k-', linewidth=4,
+                      solid_capstyle='butt')
+        ax_front.text(xc, by - z_ext * 0.025, '3 cm', ha='center', va='top',
+                      fontsize=9)
         ax_front.axis('off')
 
-        # -- ROW 1 COL 1: Sezione Trasversale --
-        ax_sec = fig.add_subplot(gs[1, 1])
+        # -- ROW 0 COL 1: Sezione Trasversale --
+        ax_sec = fig.add_subplot(gs[0, 1])
         try:
             z_pos = bounds[0][2] + z_ext * 0.50
             sec = mesh.section(plane_origin=[0, 0, z_pos],
@@ -1075,8 +1161,8 @@ class TechnicalDrawingGenerator:
         ax_sec.set_aspect('equal')
         ax_sec.axis('off')
 
-        # -- ROW 2 COL 0: Profilo Longitudinale --
-        ax_prof = fig.add_subplot(gs[2, 0])
+        # -- ROW 1 COL 1: Profilo Longitudinale (beside front, same length) --
+        ax_prof = fig.add_subplot(gs[1, 1])
         prof_2d = mesh.vertices[:, [1, 2]]
         try:
             pout = self._get_real_silhouette(mesh, [1, 0, 0], (1, 2))
@@ -1086,13 +1172,21 @@ class TechnicalDrawingGenerator:
             ax_prof.plot(*np.vstack([pout, pout[0]]).T,
                         'k-', linewidth=0.8, solid_capstyle='round')
             self._draw_feature_edges(ax_prof, mesh, (1, 2))
+            # Fold lines (margini/lama) — profile view looks along X
+            self._draw_occluding_contours(ax_prof, mesh, view_axis=0,
+                                          projection_axes=(1, 2))
             self._add_stippling_shading(ax_prof, mesh, prof_2d, pout, 'side')
         except Exception as e:
             print(f"Warning: profile render failed ({e})")
         ax_prof.set_title('Profilo Longitudinale', fontsize=9, pad=4)
         ax_prof.set_aspect('equal')
-        self._add_scale_bar(ax_prof)
+        # Identical Z limits as the front view → printed at the same length
+        ax_prof.set_ylim(y_lo, y_hi)
         ax_prof.axis('off')
+
+        # -- ROW 2 COL 0: empty spacer --
+        ax_empty = fig.add_subplot(gs[2, 0])
+        ax_empty.axis('off')
 
         # -- ROW 2 COL 1: Info panel --
         ax_info = fig.add_subplot(gs[2, 1])
