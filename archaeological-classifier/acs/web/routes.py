@@ -2799,22 +2799,29 @@ def get_technical_drawing(artifact_id):
     try:
         from acs.core.drawing_worker import generate_drawing_safe
 
-        if artifact_id not in mesh_processor.meshes:
+        if not ensure_mesh_loaded(artifact_id):
             return jsonify({'error': 'Artifact not found'}), 404
+
+        output_format = request.args.get('format', 'png')
+        if output_format not in ('png', 'svg'):
+            output_format = 'png'
 
         mesh = mesh_processor.meshes[artifact_id]
         features = mesh_processor._extract_features(mesh, artifact_id)
 
-        # Generate drawing in separate process (safe on macOS)
-        image_data = generate_drawing_safe(mesh, artifact_id, features, 'complete_sheet', timeout=60)
+        image_data = generate_drawing_safe(
+            mesh, artifact_id, features, 'complete_sheet',
+            timeout=60, output_format=output_format
+        )
 
-        # Return image
+        mimetype = 'image/svg+xml' if output_format == 'svg' else 'image/png'
+        ext = output_format
         from flask import send_file
         return send_file(
             io.BytesIO(image_data),
-            mimetype='image/png',
+            mimetype=mimetype,
             as_attachment=True,
-            download_name=f'{artifact_id}_technical_drawing.png'
+            download_name=f'{artifact_id}_technical_drawing.{ext}'
         )
 
     except Exception as e:
@@ -2835,27 +2842,64 @@ def get_technical_drawing_view(artifact_id, view_type):
     try:
         from acs.core.drawing_worker import generate_drawing_safe
 
-        if artifact_id not in mesh_processor.meshes:
+        if not ensure_mesh_loaded(artifact_id):
             return jsonify({'error': 'Artifact not found'}), 404
+
+        output_format = request.args.get('format', 'png')
+        if output_format not in ('png', 'svg'):
+            output_format = 'png'
 
         mesh = mesh_processor.meshes[artifact_id]
         features = mesh_processor._extract_features(mesh, artifact_id)
 
-        # Generate drawing in separate process (safe on macOS)
-        image_data = generate_drawing_safe(mesh, artifact_id, features, view_type, timeout=60)
+        image_data = generate_drawing_safe(
+            mesh, artifact_id, features, view_type,
+            timeout=60, output_format=output_format
+        )
 
-        # Return image
+        mimetype = 'image/svg+xml' if output_format == 'svg' else 'image/png'
+        ext = output_format
         from flask import send_file
         return send_file(
             io.BytesIO(image_data),
-            mimetype='image/png',
+            mimetype=mimetype,
             as_attachment=True,
-            download_name=f'{artifact_id}_{view_type}.png'
+            download_name=f'{artifact_id}_{view_type}.{ext}'
         )
 
     except Exception as e:
         import traceback
         print(f"Error generating technical drawing view: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+
+@web_bp.route('/technical-drawing/<artifact_id>/export/dxf', methods=['GET'])
+def export_technical_drawing_dxf(artifact_id):
+    """Export technical drawing as DXF for CAD import."""
+    try:
+        if not ensure_mesh_loaded(artifact_id):
+            return jsonify({'error': 'Artifact not found'}), 404
+
+        mesh = mesh_processor.meshes[artifact_id]
+
+        from acs.core.vector_export import extract_paths_from_mesh, export_dxf
+        paths = extract_paths_from_mesh(mesh)
+        dxf_data = export_dxf(paths, artifact_id)
+
+        from flask import send_file
+        return send_file(
+            io.BytesIO(dxf_data),
+            mimetype='application/dxf',
+            as_attachment=True,
+            download_name=f'{artifact_id}_drawing.dxf'
+        )
+
+    except ImportError as e:
+        return jsonify({'error': str(e)}), 501
+    except Exception as e:
+        import traceback
+        print(f"Error exporting DXF: {str(e)}")
         print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
@@ -2870,6 +2914,79 @@ def projects_page():
 def drawings_page():
     """Technical drawings page."""
     return render_template('technical_drawings.html')
+
+
+@web_bp.route('/plate-composer')
+def plate_composer_page():
+    """Plate composer page for publication-ready plates."""
+    return render_template('plate_composer.html')
+
+
+@web_bp.route('/compose-plate', methods=['POST'])
+def compose_plate():
+    """
+    Generate a publication plate from configuration.
+
+    Expects JSON body with plate configuration (title, layout, cells with artifact_ids
+    and views, output_format, etc).
+    """
+    try:
+        config = request.get_json()
+        if not config:
+            return jsonify({'error': 'Missing configuration'}), 400
+
+        cells = config.get('cells', [])
+        if not cells:
+            return jsonify({'error': 'No cells configured'}), 400
+
+        from acs.core.drawing_worker import generate_drawing_safe
+        from acs.core.plate_composer import get_plate_composer
+
+        for cell in cells:
+            artifact_id = cell.get('artifact_id', '')
+            view = cell.get('view', 'longitudinal_profile')
+
+            if not artifact_id:
+                continue
+
+            if not ensure_mesh_loaded(artifact_id):
+                return jsonify({'error': f'Artifact {artifact_id} not found'}), 404
+
+            mesh = mesh_processor.meshes[artifact_id]
+            features = mesh_processor._extract_features(mesh, artifact_id)
+
+            try:
+                image_data = generate_drawing_safe(
+                    mesh, artifact_id, features, view, timeout=60
+                )
+                cell['image_data'] = image_data
+            except Exception as e:
+                print(f"Warning: Could not generate view {view} for {artifact_id}: {e}")
+                cell['image_data'] = None
+
+        composer = get_plate_composer()
+        output_format = config.get('output_format', 'png')
+        plate_data = composer.compose_plate(config)
+
+        mimetype_map = {
+            'png': 'image/png',
+            'svg': 'image/svg+xml',
+            'pdf': 'application/pdf',
+        }
+        mimetype = mimetype_map.get(output_format, 'image/png')
+
+        from flask import send_file
+        return send_file(
+            io.BytesIO(plate_data),
+            mimetype=mimetype,
+            as_attachment=False,
+        )
+
+    except Exception as e:
+        import traceback
+        print(f"Error composing plate: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
 
 
 @web_bp.route('/ai-assistant')

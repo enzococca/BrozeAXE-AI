@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+
+{% block title %}Composer Tavole - Archaeological Classifier{% endblock %}
+
+{% block content %}
+<div style="max-width: 1200px; margin: 0 auto; padding: 20px;">
+    <h1>Composer Tavole per Pubblicazione</h1>
+    <p style="color: #718096;">Componi tavole con layout configurabile, scala uniforme e didascalie per pubblicazioni scientifiche.</p>
+
+    <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+        <!-- Configuration Panel -->
+        <div style="flex: 1; min-width: 350px; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.12);">
+            <h3>Configurazione Tavola</h3>
+
+            <div style="margin-bottom: 16px;">
+                <label style="font-weight: bold; display: block; margin-bottom: 4px;">Titolo</label>
+                <input type="text" id="plateTitle" value="Tavola 1" style="width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px;">
+            </div>
+
+            <div style="display: flex; gap: 12px; margin-bottom: 16px;">
+                <div style="flex: 1;">
+                    <label style="font-weight: bold; display: block; margin-bottom: 4px;">Formato</label>
+                    <select id="pageFormat" style="width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px;">
+                        <option value="A4">A4 (210x297 mm)</option>
+                        <option value="A3">A3 (297x420 mm)</option>
+                        <option value="letter">Letter (216x279 mm)</option>
+                        <option value="single_column">Colonna singola (85x200 mm)</option>
+                        <option value="double_column">Doppia colonna (175x200 mm)</option>
+                    </select>
+                </div>
+                <div style="flex: 1;">
+                    <label style="font-weight: bold; display: block; margin-bottom: 4px;">Orientamento</label>
+                    <select id="orientation" style="width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px;">
+                        <option value="portrait">Verticale</option>
+                        <option value="landscape">Orizzontale</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 12px; margin-bottom: 16px;">
+                <div style="flex: 1;">
+                    <label style="font-weight: bold; display: block; margin-bottom: 4px;">Righe</label>
+                    <input type="number" id="rows" value="2" min="1" max="6" style="width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px;">
+                </div>
+                <div style="flex: 1;">
+                    <label style="font-weight: bold; display: block; margin-bottom: 4px;">Colonne</label>
+                    <input type="number" id="cols" value="2" min="1" max="4" style="width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px;">
+                </div>
+            </div>
+
+            <div style="margin-bottom: 16px;">
+                <label style="font-weight: bold; display: block; margin-bottom: 4px;">
+                    <input type="checkbox" id="uniformScale" checked> Scala uniforme
+                </label>
+            </div>
+
+            <div style="margin-bottom: 16px;">
+                <label style="font-weight: bold; display: block; margin-bottom: 4px;">Formato export</label>
+                <select id="outputFormat" style="width: 100%; padding: 8px; border: 1px solid #e2e8f0; border-radius: 4px;">
+                    <option value="png">PNG (300 DPI)</option>
+                    <option value="svg">SVG (vettoriale)</option>
+                    <option value="pdf">PDF</option>
+                </select>
+            </div>
+
+            <hr style="margin: 20px 0;">
+
+            <h3>Celle della tavola</h3>
+            <p style="font-size: 0.9em; color: #718096;">Configura il contenuto di ogni cella della griglia.</p>
+
+            <div id="cellsContainer"></div>
+
+            <button class="btn btn-primary" onclick="updateCellGrid()" style="margin-top: 12px; width: 100%; padding: 10px; background: #4299e1; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                Aggiorna griglia
+            </button>
+
+            <hr style="margin: 20px 0;">
+
+            <button class="btn btn-success" onclick="composePlate()" style="width: 100%; padding: 12px; background: #48bb78; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold;">
+                Genera Tavola
+            </button>
+        </div>
+
+        <!-- Preview Panel -->
+        <div style="flex: 1.5; min-width: 400px; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.12);">
+            <h3>Anteprima</h3>
+            <div id="platePreview" style="text-align: center; min-height: 400px; background: #f7fafc; border: 2px dashed #e2e8f0; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+                <div style="color: #a0aec0;">
+                    <div style="font-size: 48px; margin-bottom: 12px;">&#128196;</div>
+                    <p>Configura la tavola e clicca "Genera Tavola" per vedere l'anteprima</p>
+                </div>
+            </div>
+
+            <div id="plateDownload" style="display: none; margin-top: 16px; text-align: center;">
+                <button class="btn btn-success" onclick="downloadPlate()" style="padding: 10px 20px; background: #48bb78; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                    Scarica Tavola
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let artifacts = [];
+let plateBlob = null;
+
+const VIEWS = [
+    {value: 'longitudinal_profile', label: 'Profilo Longitudinale'},
+    {value: 'front_view', label: 'Vista Frontale'},
+    {value: 'back_view', label: 'Vista Posteriore'},
+    {value: 'cross_section_max', label: 'Sezione Max'},
+    {value: 'cross_section_min', label: 'Sezione Min'},
+    {value: 'cross_section_mid', label: 'Sezione Media'},
+    {value: 'complete_sheet', label: 'Foglio Completo'},
+];
+
+document.addEventListener('DOMContentLoaded', async function() {
+    try {
+        const resp = await fetch('/api/artifacts');
+        if (resp.ok) {
+            const data = await resp.json();
+            artifacts = data.artifacts || data || [];
+        }
+    } catch(e) {
+        console.warn('Could not load artifacts:', e);
+    }
+    updateCellGrid();
+});
+
+function updateCellGrid() {
+    const rows = parseInt(document.getElementById('rows').value) || 2;
+    const cols = parseInt(document.getElementById('cols').value) || 2;
+    const container = document.getElementById('cellsContainer');
+    container.innerHTML = '';
+
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            const cellDiv = document.createElement('div');
+            cellDiv.style.cssText = 'border: 1px solid #e2e8f0; border-radius: 4px; padding: 12px; margin-bottom: 8px; background: #f7fafc;';
+            cellDiv.innerHTML = `
+                <strong>Cella [${r+1}, ${c+1}]</strong>
+                <div style="display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap;">
+                    <select class="cell-artifact" data-row="${r}" data-col="${c}" style="flex:1; padding: 6px; border: 1px solid #e2e8f0; border-radius: 4px; min-width: 120px;">
+                        <option value="">-- Vuoto --</option>
+                        ${artifacts.map(a => {
+                            const id = typeof a === 'string' ? a : (a.id || a.artifact_id || '');
+                            return `<option value="${id}">${id}</option>`;
+                        }).join('')}
+                    </select>
+                    <select class="cell-view" data-row="${r}" data-col="${c}" style="flex:1; padding: 6px; border: 1px solid #e2e8f0; border-radius: 4px; min-width: 120px;">
+                        ${VIEWS.map(v => `<option value="${v.value}">${v.label}</option>`).join('')}
+                    </select>
+                </div>
+                <div style="display: flex; gap: 8px; margin-top: 8px;">
+                    <input type="text" class="cell-fignum" data-row="${r}" data-col="${c}" placeholder="N. Fig. (es. 1a)" style="flex:0.4; padding: 6px; border: 1px solid #e2e8f0; border-radius: 4px;">
+                    <input type="text" class="cell-caption" data-row="${r}" data-col="${c}" placeholder="Didascalia" style="flex:1; padding: 6px; border: 1px solid #e2e8f0; border-radius: 4px;">
+                </div>
+            `;
+            container.appendChild(cellDiv);
+        }
+    }
+}
+
+async function composePlate() {
+    const rows = parseInt(document.getElementById('rows').value) || 2;
+    const cols = parseInt(document.getElementById('cols').value) || 2;
+
+    const cells = [];
+    document.querySelectorAll('.cell-artifact').forEach(el => {
+        const row = parseInt(el.dataset.row);
+        const col = parseInt(el.dataset.col);
+        const artifactId = el.value;
+        if (!artifactId) return;
+
+        const viewEl = document.querySelector(`.cell-view[data-row="${row}"][data-col="${col}"]`);
+        const figEl = document.querySelector(`.cell-fignum[data-row="${row}"][data-col="${col}"]`);
+        const capEl = document.querySelector(`.cell-caption[data-row="${row}"][data-col="${col}"]`);
+
+        cells.push({
+            artifact_id: artifactId,
+            view: viewEl ? viewEl.value : 'longitudinal_profile',
+            figure_number: figEl ? figEl.value : '',
+            caption: capEl ? capEl.value : '',
+            row: row,
+            col: col,
+        });
+    });
+
+    if (cells.length === 0) {
+        alert('Seleziona almeno un reperto');
+        return;
+    }
+
+    const config = {
+        title: document.getElementById('plateTitle').value,
+        page_format: document.getElementById('pageFormat').value,
+        orientation: document.getElementById('orientation').value,
+        rows: rows,
+        cols: cols,
+        uniform_scale: document.getElementById('uniformScale').checked,
+        output_format: document.getElementById('outputFormat').value,
+        cells: cells,
+    };
+
+    const preview = document.getElementById('platePreview');
+    preview.innerHTML = '<div style="padding: 40px;"><div class="loading-spinner" style="border: 4px solid #f3f3f3; border-top: 4px solid #4299e1; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto;"></div><p style="margin-top: 16px; color: #718096;">Generazione tavola in corso...</p></div>';
+    preview.innerHTML += '<style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>';
+
+    try {
+        const resp = await fetch('/web/compose-plate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(config),
+        });
+
+        if (!resp.ok) {
+            const err = await resp.json();
+            throw new Error(err.error || 'Errore nella generazione');
+        }
+
+        plateBlob = await resp.blob();
+        const url = URL.createObjectURL(plateBlob);
+
+        const fmt = config.output_format;
+        if (fmt === 'pdf') {
+            preview.innerHTML = `<iframe src="${url}" style="width:100%; height:600px; border:none;"></iframe>`;
+        } else {
+            preview.innerHTML = `<img src="${url}" style="max-width:100%; max-height:700px; border: 1px solid #e2e8f0;">`;
+        }
+
+        document.getElementById('plateDownload').style.display = 'block';
+
+    } catch(e) {
+        preview.innerHTML = `<div style="padding: 40px; color: #e53e3e;"><p>Errore: ${e.message}</p></div>`;
+    }
+}
+
+function downloadPlate() {
+    if (!plateBlob) return;
+
+    const fmt = document.getElementById('outputFormat').value;
+    const title = document.getElementById('plateTitle').value.replace(/\s+/g, '_');
+    const ext = fmt === 'pdf' ? 'pdf' : (fmt === 'svg' ? 'svg' : 'png');
+
+    const url = URL.createObjectURL(plateBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${title}.${ext}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+}
+</script>
+{% endblock %}

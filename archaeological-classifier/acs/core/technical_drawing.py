@@ -39,9 +39,21 @@ class TechnicalDrawingGenerator:
         self.hatching_spacing = 0.5  # Dense parallel hatching (mm)
         self.hatching_line_width = 0.15  # Very thin hatching lines
         self.scale_bar_length = 30  # 3 cm scale bar
+        self._output_format = 'png'
+
+    def _save_figure(self, fig) -> bytes:
+        """Save figure to bytes in the current output format (png or svg)."""
+        buf = io.BytesIO()
+        fmt = getattr(self, '_output_format', 'png')
+        plt.tight_layout()
+        plt.savefig(buf, format=fmt, dpi=self.dpi, bbox_inches='tight')
+        plt.close(fig)
+        buf.seek(0)
+        return buf.getvalue()
 
     def generate_complete_drawing(self, mesh, artifact_id: str,
-                                  features: Dict = None) -> Dict[str, bytes]:
+                                  features: Dict = None,
+                                  output_format: str = 'png') -> Dict[str, bytes]:
         """
         Generate complete technical drawing sheet with all standard views.
 
@@ -49,11 +61,12 @@ class TechnicalDrawingGenerator:
             mesh: Trimesh object
             artifact_id: Artifact identifier
             features: Optional morphometric features
+            output_format: 'png' or 'svg'
 
         Returns:
             Dictionary with image buffers for each view
         """
-        # Reorient mesh to standard archaeological position
+        self._output_format = output_format if output_format in ('png', 'svg') else 'png'
         oriented_mesh = self._reorient_mesh(mesh)
 
         views = {}
@@ -69,6 +82,13 @@ class TechnicalDrawingGenerator:
 
         # 3. Front view (optional)
         views['front_view'] = self._draw_front_view(oriented_mesh)
+
+        # 4. Back view
+        views['back_view'] = self._draw_back_view(oriented_mesh)
+
+        # 5. Aliases for frontend compatibility
+        views['cross_section_max'] = views['cross_section_high']
+        views['cross_section_min'] = views['cross_section_low']
 
         # Generate complete composite sheet (archaeological layout)
         views['complete_sheet'] = self._create_composite_sheet(
@@ -121,38 +141,142 @@ class TechnicalDrawingGenerator:
 
         return oriented
 
+    def _get_real_silhouette(self, mesh, plane_normal, projection_axes):
+        """
+        Extract real mesh silhouette by projecting all vertices and computing
+        the alpha shape (concave hull) to preserve concavities like incavo,
+        margini, and blade curvature.
+
+        Args:
+            mesh: Trimesh object
+            plane_normal: Normal of the viewing plane (e.g. [0,1,0] for side view)
+            projection_axes: Tuple of (axis1, axis2) indices for 2D projection
+
+        Returns:
+            np.ndarray: Ordered 2D outline points, or None on failure
+        """
+        try:
+            proj_ax = list(projection_axes)
+            points_2d = mesh.vertices[:, proj_ax]
+
+            if len(points_2d) < 10:
+                return None
+
+            return self._alpha_shape(points_2d)
+        except Exception:
+            return None
+
+    def _alpha_shape(self, points, alpha_factor=0.3):
+        """
+        Compute alpha shape (concave hull) of 2D points.
+
+        Uses Delaunay triangulation and removes triangles with circumradius
+        larger than 1/alpha.
+
+        Args:
+            points: Nx2 array of 2D points
+            alpha_factor: Controls concavity (0=convex, higher=more concave).
+                         Specified as fraction of bounding box diagonal.
+
+        Returns:
+            np.ndarray: Ordered boundary points, or None on failure
+        """
+        from scipy.spatial import Delaunay
+        from collections import defaultdict
+
+        points = np.array(points)
+        if len(points) < 4:
+            return None
+
+        bbox_diag = np.linalg.norm(points.max(axis=0) - points.min(axis=0))
+        alpha = alpha_factor / bbox_diag if bbox_diag > 0 else 1.0
+
+        tri = Delaunay(points)
+
+        boundary_edges = defaultdict(int)
+
+        for simplex in tri.simplices:
+            a, b, c = points[simplex[0]], points[simplex[1]], points[simplex[2]]
+
+            ab = np.linalg.norm(b - a)
+            bc = np.linalg.norm(c - b)
+            ca = np.linalg.norm(a - c)
+
+            s = (ab + bc + ca) / 2.0
+            area = max(s * (s - ab) * (s - bc) * (s - ca), 0)
+            area = np.sqrt(area)
+
+            if area > 0:
+                circumradius = (ab * bc * ca) / (4.0 * area)
+            else:
+                circumradius = float('inf')
+
+            if circumradius < 1.0 / alpha:
+                for edge in [(simplex[0], simplex[1]),
+                             (simplex[1], simplex[2]),
+                             (simplex[2], simplex[0])]:
+                    e = tuple(sorted(edge))
+                    boundary_edges[e] += 1
+
+        border = [e for e, count in boundary_edges.items() if count == 1]
+
+        if not border:
+            return None
+
+        adjacency = defaultdict(list)
+        for i, j in border:
+            adjacency[i].append(j)
+            adjacency[j].append(i)
+
+        ordered = [border[0][0]]
+        visited = {border[0][0]}
+        current = border[0][0]
+
+        while True:
+            found_next = False
+            for neighbor in adjacency[current]:
+                if neighbor not in visited:
+                    ordered.append(neighbor)
+                    visited.add(neighbor)
+                    current = neighbor
+                    found_next = True
+                    break
+            if not found_next:
+                break
+
+        if len(ordered) < 3:
+            return None
+
+        return points[ordered]
+
     def _draw_longitudinal_profile(self, mesh, artifact_id: str) -> bytes:
         """
         Draw longitudinal profile (side view) with STIPPLING for shadows.
 
-        Professional archaeological drawing with dots for depth shading.
+        Uses real mesh silhouette (not convex hull) to preserve concavities
+        like incavo, margini, and blade curvature.
         """
         fig, ax = plt.subplots(figsize=(8, 6), dpi=self.dpi)
 
         try:
-            # Project mesh onto YZ plane (side view)
             vertices_3d = mesh.vertices
-
-            # Get silhouette outline from side view
-            from scipy.spatial import ConvexHull
-
-            # Project to 2D (Y=0 view, use X and Z)
             vertices_2d = vertices_3d[:, [0, 2]]  # X and Z coordinates
 
-            # Get convex hull for outer contour
-            hull = ConvexHull(vertices_2d)
-            outline_indices = hull.vertices
-            outline = vertices_2d[outline_indices]
+            outline = self._get_real_silhouette(mesh, plane_normal=[0, 1, 0], projection_axes=(0, 2))
 
-            # Close the outline
-            outline_closed = np.vstack([outline, outline[0]])
-
-            # Draw THICK outline (archaeological style)
-            ax.plot(outline_closed[:, 0], outline_closed[:, 1],
-                   'k-', linewidth=0.8, solid_capstyle='round')
-
-            # Add STIPPLING for depth and form
-            self._add_stippling_shading(ax, mesh, vertices_2d, outline, view='side')
+            if outline is not None and len(outline) > 2:
+                outline_closed = np.vstack([outline, outline[0]])
+                ax.plot(outline_closed[:, 0], outline_closed[:, 1],
+                       'k-', linewidth=0.8, solid_capstyle='round')
+                self._add_stippling_shading(ax, mesh, vertices_2d, outline, view='side')
+            else:
+                from scipy.spatial import ConvexHull
+                hull = ConvexHull(vertices_2d)
+                outline = vertices_2d[hull.vertices]
+                outline_closed = np.vstack([outline, outline[0]])
+                ax.plot(outline_closed[:, 0], outline_closed[:, 1],
+                       'k-', linewidth=0.8, solid_capstyle='round')
+                self._add_stippling_shading(ax, mesh, vertices_2d, outline, view='side')
 
         except Exception as e:
             print(f"Warning: Could not create longitudinal profile ({str(e)})")
@@ -170,112 +294,112 @@ class TechnicalDrawingGenerator:
         ax.set_aspect('equal')
         ax.axis('off')
 
-        # Save to buffer
-        buf = io.BytesIO()
-        plt.tight_layout()
-        plt.savefig(buf, format='png', dpi=self.dpi, bbox_inches='tight')
-        plt.close()
-        buf.seek(0)
+        return self._save_figure(fig)
 
-        return buf.getvalue()
-
-    def _draw_cross_section(self, mesh, section_type: str = 'mid') -> bytes:
+    def _draw_cross_section(self, mesh, section_type: str = 'mid',
+                            position: float = None) -> bytes:
         """
         Draw cross-section at specific height with STIPPLING.
 
         Args:
             mesh: Trimesh object
             section_type: 'high' (70%), 'mid' (50%), or 'low' (30%) along Z axis
+            position: Optional explicit normalized position (0-1) along Z axis
         """
         fig, ax = plt.subplots(figsize=(3.5, 3.5), dpi=self.dpi)
 
-        # Find section position along Z axis (archaeological standard: 3 sections)
         bounds = mesh.bounds
         z_range = bounds[1][2] - bounds[0][2]
 
-        if section_type == 'high':
-            z_pos = bounds[0][2] + z_range * 0.70  # 70% - blade/upper part
+        if position is not None:
+            z_pos = bounds[0][2] + z_range * position
+            title = f"Sez. {position:.0%}"
+        elif section_type == 'high':
+            z_pos = bounds[0][2] + z_range * 0.70
             title = "Sez. Alta"
         elif section_type == 'mid':
-            z_pos = bounds[0][2] + z_range * 0.50  # 50% - middle
+            z_pos = bounds[0][2] + z_range * 0.50
             title = "Sez. Media"
-        else:  # 'low'
-            z_pos = bounds[0][2] + z_range * 0.30  # 30% - shaft/lower part
+        else:
+            z_pos = bounds[0][2] + z_range * 0.30
             title = "Sez. Bassa"
 
         try:
-            # Get vertices at this Z level for depth mapping
-            from scipy.spatial import ConvexHull
+            section = mesh.section(plane_origin=[0, 0, z_pos],
+                                   plane_normal=[0, 0, 1])
 
-            # Get all vertices near this Z position (within a small band)
-            z_band = 5.0  # mm
-            mask = np.abs(mesh.vertices[:, 2] - z_pos) < z_band
-            nearby_vertices = mesh.vertices[mask]
+            if section is not None and len(section.vertices) > 2:
+                planar, _ = section.to_planar()
+                vertices_2d = np.array(planar.vertices)
 
-            if len(nearby_vertices) > 3:
-                # Project to 2D (X, Y coordinates)
-                vertices_2d = nearby_vertices[:, :2]
+                for entity in planar.entities:
+                    pts = vertices_2d[entity.points]
+                    if len(pts) > 1:
+                        pts_closed = np.vstack([pts, pts[0]])
+                        ax.plot(pts_closed[:, 0], pts_closed[:, 1],
+                               'k-', linewidth=0.8, solid_capstyle='round')
 
-                # Get convex hull for outline
+                from scipy.spatial import ConvexHull
                 hull = ConvexHull(vertices_2d)
                 outline = vertices_2d[hull.vertices]
-
-                # Close outline
-                outline_closed = np.vstack([outline, outline[0]])
-
-                # Draw THICK outline
-                ax.plot(outline_closed[:, 0], outline_closed[:, 1],
-                       'k-', linewidth=0.8, solid_capstyle='round')
-
-                # Add STIPPLING for cross-section
-                # For sections, use uniform density (it's a cut, not depth shading)
                 self._add_section_stippling(ax, vertices_2d, outline)
             else:
-                raise ValueError("Not enough vertices at this Z position")
+                raise ValueError("Mesh section returned no geometry")
 
         except Exception as e:
-            print(f"Warning: Could not create cross-section ({str(e)})")
-            ax.text(0.5, 0.5, 'Section unavailable', ha='center', va='center',
-                   transform=ax.transAxes)
+            print(f"Warning: Real section failed ({str(e)}), falling back to vertex band")
+            try:
+                from scipy.spatial import ConvexHull
+                z_band = 5.0
+                mask = np.abs(mesh.vertices[:, 2] - z_pos) < z_band
+                nearby_vertices = mesh.vertices[mask]
+
+                if len(nearby_vertices) > 3:
+                    vertices_2d = nearby_vertices[:, :2]
+                    hull = ConvexHull(vertices_2d)
+                    outline = vertices_2d[hull.vertices]
+                    outline_closed = np.vstack([outline, outline[0]])
+                    ax.plot(outline_closed[:, 0], outline_closed[:, 1],
+                           'k-', linewidth=0.8, solid_capstyle='round')
+                    self._add_section_stippling(ax, vertices_2d, outline)
+                else:
+                    ax.text(0.5, 0.5, 'Section unavailable', ha='center', va='center',
+                           transform=ax.transAxes)
+            except Exception as e2:
+                ax.text(0.5, 0.5, 'Section unavailable', ha='center', va='center',
+                       transform=ax.transAxes)
 
         ax.set_title(title, fontsize=10, pad=10)
         ax.set_aspect('equal')
         ax.axis('off')
 
-        buf = io.BytesIO()
-        plt.tight_layout()
-        plt.savefig(buf, format='png', dpi=self.dpi, bbox_inches='tight')
-        plt.close()
-        buf.seek(0)
-
-        return buf.getvalue()
+        return self._save_figure(fig)
 
     def _draw_front_view(self, mesh) -> bytes:
-        """Draw front view (looking down Z axis) with STIPPLING."""
+        """Draw front view (looking down Y axis) with STIPPLING."""
         fig, ax = plt.subplots(figsize=(4, 8), dpi=self.dpi)
 
-        # Project onto XY plane
-        vertices_2d = mesh.vertices[:, :2]  # X, Y coordinates
+        vertices_2d = mesh.vertices[:, [0, 2]]  # X, Z coordinates
 
-        # Get convex hull for outline
         try:
-            from scipy.spatial import ConvexHull
-            hull = ConvexHull(vertices_2d)
-            outline = vertices_2d[hull.vertices]
+            outline = self._get_real_silhouette(mesh, plane_normal=[0, 1, 0], projection_axes=(0, 2))
 
-            # Close outline
-            outline_closed = np.vstack([outline, outline[0]])
-
-            # Draw THICK outline
-            ax.plot(outline_closed[:, 0], outline_closed[:, 1],
-                   'k-', linewidth=0.8, solid_capstyle='round')
-
-            # Add STIPPLING for depth
-            self._add_stippling_shading(ax, mesh, vertices_2d, outline, view='front')
+            if outline is not None and len(outline) > 2:
+                outline_closed = np.vstack([outline, outline[0]])
+                ax.plot(outline_closed[:, 0], outline_closed[:, 1],
+                       'k-', linewidth=0.8, solid_capstyle='round')
+                self._add_stippling_shading(ax, mesh, vertices_2d, outline, view='front')
+            else:
+                from scipy.spatial import ConvexHull
+                hull = ConvexHull(vertices_2d)
+                outline = vertices_2d[hull.vertices]
+                outline_closed = np.vstack([outline, outline[0]])
+                ax.plot(outline_closed[:, 0], outline_closed[:, 1],
+                       'k-', linewidth=0.8, solid_capstyle='round')
+                self._add_stippling_shading(ax, mesh, vertices_2d, outline, view='front')
 
         except Exception as e:
-            # Fallback: use bounding box
-            print(f"Warning: Could not compute convex hull ({str(e)}), using bounding box")
+            print(f"Warning: Could not compute outline ({str(e)}), using bounding box")
             min_x, min_y = vertices_2d.min(axis=0)
             max_x, max_y = vertices_2d.max(axis=0)
             outline = np.array([
@@ -292,39 +416,38 @@ class TechnicalDrawingGenerator:
         ax.set_aspect('equal')
         ax.axis('off')
 
-        buf = io.BytesIO()
-        plt.tight_layout()
-        plt.savefig(buf, format='png', dpi=self.dpi, bbox_inches='tight')
-        plt.close()
-        buf.seek(0)
-
-        return buf.getvalue()
+        return self._save_figure(fig)
 
     def _draw_back_view(self, mesh) -> bytes:
         """Draw back view (opposite of front) with STIPPLING."""
         fig, ax = plt.subplots(figsize=(4, 8), dpi=self.dpi)
 
-        vertices_2d = mesh.vertices[:, :2].copy()  # Make a copy
-        vertices_2d[:, 0] = -vertices_2d[:, 0]  # Flip X
+        import trimesh as _trimesh
+        flipped = mesh.copy()
+        flipped.vertices[:, 0] = -flipped.vertices[:, 0]
+        flipped.invert()
+
+        vertices_2d = flipped.vertices[:, [0, 2]]
 
         try:
-            from scipy.spatial import ConvexHull
-            hull = ConvexHull(vertices_2d)
-            outline = vertices_2d[hull.vertices]
+            outline = self._get_real_silhouette(flipped, plane_normal=[0, 1, 0], projection_axes=(0, 2))
 
-            # Close outline
-            outline_closed = np.vstack([outline, outline[0]])
-
-            # Draw THICK outline
-            ax.plot(outline_closed[:, 0], outline_closed[:, 1],
-                   'k-', linewidth=0.8, solid_capstyle='round')
-
-            # Add STIPPLING for depth
-            self._add_stippling_shading(ax, mesh, vertices_2d, outline, view='back')
+            if outline is not None and len(outline) > 2:
+                outline_closed = np.vstack([outline, outline[0]])
+                ax.plot(outline_closed[:, 0], outline_closed[:, 1],
+                       'k-', linewidth=0.8, solid_capstyle='round')
+                self._add_stippling_shading(ax, flipped, vertices_2d, outline, view='back')
+            else:
+                from scipy.spatial import ConvexHull
+                hull = ConvexHull(vertices_2d)
+                outline = vertices_2d[hull.vertices]
+                outline_closed = np.vstack([outline, outline[0]])
+                ax.plot(outline_closed[:, 0], outline_closed[:, 1],
+                       'k-', linewidth=0.8, solid_capstyle='round')
+                self._add_stippling_shading(ax, flipped, vertices_2d, outline, view='back')
 
         except Exception as e:
-            # Fallback: use bounding box
-            print(f"Warning: Could not compute convex hull ({str(e)}), using bounding box")
+            print(f"Warning: Could not compute outline ({str(e)}), using bounding box")
             min_x, min_y = vertices_2d.min(axis=0)
             max_x, max_y = vertices_2d.max(axis=0)
             outline = np.array([
@@ -341,13 +464,7 @@ class TechnicalDrawingGenerator:
         ax.set_aspect('equal')
         ax.axis('off')
 
-        buf = io.BytesIO()
-        plt.tight_layout()
-        plt.savefig(buf, format='png', dpi=self.dpi, bbox_inches='tight')
-        plt.close()
-        buf.seek(0)
-
-        return buf.getvalue()
+        return self._save_figure(fig)
 
     def _add_section_stippling(self, ax, vertices_2d: np.ndarray, outline: np.ndarray):
         """
@@ -636,13 +753,7 @@ class TechnicalDrawingGenerator:
         ax_info.axis('off')
         self._add_info_panel(ax_info, artifact_id, features)
 
-        # Save composite
-        buf = io.BytesIO()
-        plt.savefig(buf, format='png', dpi=self.dpi, bbox_inches='tight')
-        plt.close()
-        buf.seek(0)
-
-        return buf.getvalue()
+        return self._save_figure(fig)
 
     def _plot_image_in_axis(self, ax, image_bytes: bytes):
         """Plot image from bytes in axis."""

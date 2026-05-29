@@ -225,7 +225,13 @@
 
         <div class="download-section" id="downloadSection" style="display: none;">
             <button class="btn btn-success" onclick="downloadDrawing()">
-                💾 Scarica Disegno
+                Scarica PNG
+            </button>
+            <button class="btn btn-success" onclick="downloadDrawing('svg')" style="margin-left: 8px;">
+                Scarica SVG
+            </button>
+            <button class="btn btn-success" onclick="downloadDXF()" style="margin-left: 8px;">
+                Scarica DXF
             </button>
         </div>
     </div>
@@ -363,16 +369,32 @@ async function loadView(viewType) {
     }
 }
 
-function downloadDrawing() {
+function downloadDrawing(format) {
     if (!currentArtifact || !currentView) {
         alert('Nessun disegno da scaricare');
         return;
     }
 
-    const url = `/web/technical-drawing/${currentArtifact}/${currentView}`;
+    format = format || 'png';
+    const url = `/web/technical-drawing/${currentArtifact}/${currentView}?format=${format}`;
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${currentArtifact}_${currentView}.png`;
+    link.download = `${currentArtifact}_${currentView}.${format}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+function downloadDXF() {
+    if (!currentArtifact) {
+        alert('Nessun reperto selezionato');
+        return;
+    }
+
+    const url = `/web/technical-drawing/${currentArtifact}/export/dxf`;
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${currentArtifact}_drawing.dxf`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
