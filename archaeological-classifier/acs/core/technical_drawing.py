@@ -323,48 +323,160 @@ class TechnicalDrawingGenerator:
         except Exception as e:
             print(f"Warning: Could not draw occluding contours ({str(e)})")
 
-    def _draw_depth_contours(self, ax, mesh, view_axis, projection_axes,
-                             n_levels=4, linewidth=0.30, alpha=0.45):
+    def _silhouette_mask(self, mesh, projection_axes, res=700, face_cap=80000):
         """
-        Draw iso-depth contour lines to reveal internal 3D topology.
+        Rasterize the projected mesh triangles into a coverage mask.
 
-        For an orthographic view along *view_axis*, computes a depth map
-        (max depth toward the viewer) on a regular grid, then draws a few
-        contour lines.  On a real 3D scan these reliably trace the crests
-        of the margini rialzati (alette) and any surface undulation that a
-        pure silhouette hides.
+        Returns (mask, xs, ys) where ``mask`` is an HxW float array (1 inside
+        the projected object, 0 outside) and ``xs``/``ys`` are the mm
+        coordinates of the columns/rows.  Because it fills the actual
+        triangles, the mask faithfully captures concavities (the incavo /
+        butt notch), holes and broken parts — features a convex/alpha hull
+        smooths away.
         """
         try:
-            from scipy.interpolate import griddata
+            from PIL import Image, ImageDraw
+
+            faces = mesh.faces
+            if len(faces) > face_cap:
+                idx = np.random.default_rng(0).choice(
+                    len(faces), face_cap, replace=False)
+                faces = faces[idx]
 
             proj = list(projection_axes)
-            verts = mesh.vertices
-            # Subsample for performance on dense scans (>30k verts)
-            if len(verts) > 30000:
-                idx = np.random.default_rng(42).choice(
-                    len(verts), 30000, replace=False)
-                verts = verts[idx]
-            pts_2d = verts[:, proj]
-            depth = verts[:, view_axis]
+            tris = mesh.vertices[faces][:, :, proj]
+            flat = tris.reshape(-1, 2)
+            mn = flat.min(axis=0)
+            mx = flat.max(axis=0)
+            span = mx - mn
+            span[span == 0] = 1.0
 
-            x_min, y_min = pts_2d.min(axis=0)
-            x_max, y_max = pts_2d.max(axis=0)
-            nx, ny = 200, 200
-            xi = np.linspace(x_min, x_max, nx)
-            yi = np.linspace(y_min, y_max, ny)
-            Xi, Yi = np.meshgrid(xi, yi)
+            if span[0] >= span[1]:
+                W = res
+                H = max(10, int(res * span[1] / span[0]))
+            else:
+                H = res
+                W = max(10, int(res * span[0] / span[1]))
+            sx = (W - 1) / span[0]
+            sy = (H - 1) / span[1]
 
-            Zi = griddata(pts_2d, depth, (Xi, Yi), method='linear')
+            img = Image.new('1', (W, H), 0)
+            draw = ImageDraw.Draw(img)
+            P = (tris - mn) * np.array([sx, sy])
+            for tri in P:
+                draw.polygon([tuple(p) for p in tri], fill=1)
 
-            d_min = np.nanmin(Zi)
-            d_max = np.nanmax(Zi)
-            if d_max - d_min < 1e-6:
-                return
-            levels = np.linspace(d_min, d_max, n_levels + 2)[1:-1]
-            ax.contour(Xi, Yi, Zi, levels=levels, colors='black',
-                       linewidths=linewidth, alpha=alpha, zorder=2)
+            mask = np.asarray(img, dtype=float)
+            xs = mn[0] + np.arange(W) / sx
+            ys = mn[1] + np.arange(H) / sy
+            return mask, xs, ys
         except Exception as e:
-            print(f"Warning: Could not draw depth contours ({str(e)})")
+            print(f"Warning: silhouette raster failed ({e})")
+            return None, None, None
+
+    def _draw_real_outline(self, ax, mesh, projection_axes, res=700,
+                           linewidth=0.9):
+        """
+        Draw the faithful projected outline straight from the 3D mesh.
+
+        Rasterizes the triangles (``_silhouette_mask``) and contours the
+        coverage at 0.5, so the drawn outline reflects the REAL shape —
+        including the incavo concavity, holes and any broken parts — instead
+        of a smoothed hull. Returns the largest outline polygon (for use as
+        the stippling boundary), or None on failure.
+        """
+        try:
+            from scipy.ndimage import gaussian_filter
+
+            mask, xs, ys = self._silhouette_mask(mesh, projection_axes, res)
+            if mask is None:
+                return None
+            Xg, Yg = np.meshgrid(xs, ys)
+            cs = ax.contour(Xg, Yg, gaussian_filter(mask, 1.2), levels=[0.5],
+                            colors='black', linewidths=linewidth, zorder=4)
+            segs = cs.allsegs[0] if cs.allsegs else []
+            if not segs:
+                return None
+            return max(segs, key=len)
+        except Exception as e:
+            print(f"Warning: real outline failed ({e})")
+            return None
+
+    def _draw_alette_lines(self, ax, mesh, projection_axes=(0, 2),
+                           depth_axis=1, linewidth=0.6):
+        """
+        Mark the margini rialzati (alette) with clean ridge lines derived
+        from the REAL 3D relief (not a stylistic guess).
+
+        Builds a thickness map over the projection plane (front surface minus
+        back surface), then, row by row, finds the OUTERMOST local thickness
+        peaks on each side — the crest of each raised flange — and connects
+        them into two smooth longitudinal lines. Stays silent if no
+        consistent flanges exist (e.g. a plain flat axe), so it never invents
+        features that are not in the model.
+        """
+        try:
+            from scipy.ndimage import gaussian_filter1d
+            from scipy.signal import find_peaks
+            from scipy.interpolate import griddata
+
+            a0, a1 = list(projection_axes)
+            v = mesh.vertices
+            normals = mesh.vertex_normals
+
+            front = v[normals[:, depth_axis] > 0.2]
+            back = v[normals[:, depth_axis] < -0.2]
+            if len(front) < 50 or len(back) < 50:
+                return
+
+            u_min, u_max = v[:, a0].min(), v[:, a0].max()
+            w_min, w_max = v[:, a1].min(), v[:, a1].max()
+            nu, nw = 90, 220
+            us = np.linspace(u_min, u_max, nu)
+            ws = np.linspace(w_min, w_max, nw)
+            Ug, Wg = np.meshgrid(us, ws)
+
+            fz = griddata(front[:, [a0, a1]], front[:, depth_axis],
+                          (Ug, Wg), method='linear')
+            bz = griddata(back[:, [a0, a1]], back[:, depth_axis],
+                          (Ug, Wg), method='linear')
+            thick = fz - bz
+
+            tmax = np.nanmax(thick)
+            if not np.isfinite(tmax) or tmax <= 0:
+                return
+
+            u_center = 0.5 * (u_min + u_max)
+            crest_l, crest_r = [], []
+            for j in range(nw):
+                row = thick[j]
+                if np.all(np.isnan(row)):
+                    continue
+                r = np.nan_to_num(row, nan=0.0)
+                if r.max() < 0.25 * tmax:
+                    continue
+                rs = gaussian_filter1d(r, 1.5)
+                peaks, _ = find_peaks(rs, prominence=0.08 * tmax)
+                if len(peaks) < 2:
+                    continue
+                up = us[peaks]
+                left = up[up < u_center]
+                right = up[up > u_center]
+                if len(left):
+                    crest_l.append((left.min(), ws[j]))
+                if len(right):
+                    crest_r.append((right.max(), ws[j]))
+
+            min_pts = max(8, int(nw * 0.15))
+            for crest in (crest_l, crest_r):
+                if len(crest) < min_pts:
+                    continue
+                c = np.array(crest)
+                cu = gaussian_filter1d(c[:, 0], 2)
+                ax.plot(cu, c[:, 1], 'k-', linewidth=linewidth,
+                        alpha=0.85, zorder=3)
+        except Exception as e:
+            print(f"Warning: alette lines failed ({e})")
 
     def _alpha_shape(self, points, alpha_factor=0.3):
         """
@@ -464,23 +576,19 @@ class TechnicalDrawingGenerator:
             vertices_3d = mesh.vertices
             vertices_2d = vertices_3d[:, [1, 2]]  # Y (thickness) and Z (length)
 
-            outline = self._get_real_silhouette(mesh, plane_normal=[1, 0, 0], projection_axes=(1, 2))
-
+            # Faithful outline straight from the 3D projection
+            outline = self._draw_real_outline(ax, mesh, (1, 2))
             if outline is None or len(outline) <= 2:
-                from scipy.spatial import ConvexHull
-                hull = ConvexHull(vertices_2d)
-                outline = vertices_2d[hull.vertices]
-
-            outline_closed = np.vstack([outline, outline[0]])
-            ax.plot(outline_closed[:, 0], outline_closed[:, 1],
-                   'k-', linewidth=0.8, solid_capstyle='round')
-            # Internal feature edges from the 3D model (flange ridges, etc.)
-            self._draw_feature_edges(ax, mesh, projection_axes=(1, 2))
-            # Fold lines (alette crests, incavo rim) — view looks along X
-            self._draw_occluding_contours(ax, mesh, view_axis=0,
-                                          projection_axes=(1, 2))
-            self._draw_depth_contours(ax, mesh, view_axis=0,
-                                      projection_axes=(1, 2))
+                outline = self._get_real_silhouette(
+                    mesh, plane_normal=[1, 0, 0], projection_axes=(1, 2))
+                if outline is None or len(outline) <= 2:
+                    from scipy.spatial import ConvexHull
+                    outline = vertices_2d[ConvexHull(vertices_2d).vertices]
+                ax.plot(*np.vstack([outline, outline[0]]).T,
+                       'k-', linewidth=0.8, solid_capstyle='round')
+            # Real sharp creases from the 3D model (flange ridges, etc.)
+            self._draw_feature_edges(ax, mesh, projection_axes=(1, 2),
+                                     angle_threshold=0.5)
             self._add_stippling_shading(ax, mesh, vertices_2d, outline, view='side')
 
         except Exception as e:
@@ -585,24 +693,21 @@ class TechnicalDrawingGenerator:
         vertices_2d = mesh.vertices[:, [0, 2]]  # X, Z coordinates
 
         try:
-            outline = self._get_real_silhouette(mesh, plane_normal=[0, 1, 0], projection_axes=(0, 2))
-
+            # Faithful outline straight from the 3D projection (incavo, holes)
+            outline = self._draw_real_outline(ax, mesh, (0, 2))
             if outline is None or len(outline) <= 2:
-                from scipy.spatial import ConvexHull
-                hull = ConvexHull(vertices_2d)
-                outline = vertices_2d[hull.vertices]
-
-            outline_closed = np.vstack([outline, outline[0]])
-            ax.plot(outline_closed[:, 0], outline_closed[:, 1],
-                   'k-', linewidth=0.8, solid_capstyle='round')
-            # Internal feature edges (flange/margin ridges) projected from 3D
-            self._draw_feature_edges(ax, mesh, projection_axes=(0, 2))
-            # Fold lines (alette crests, incavo rim) — front view looks along Y
-            self._draw_occluding_contours(ax, mesh, view_axis=1,
-                                          projection_axes=(0, 2))
-            # Depth contours reveal alette ridges on smooth scans
-            self._draw_depth_contours(ax, mesh, view_axis=1,
-                                      projection_axes=(0, 2))
+                outline = self._get_real_silhouette(
+                    mesh, plane_normal=[0, 1, 0], projection_axes=(0, 2))
+                if outline is None or len(outline) <= 2:
+                    from scipy.spatial import ConvexHull
+                    outline = vertices_2d[ConvexHull(vertices_2d).vertices]
+                ax.plot(*np.vstack([outline, outline[0]]).T,
+                       'k-', linewidth=0.8, solid_capstyle='round')
+            # Real sharp creases + alette ridge lines from the 3D relief
+            self._draw_feature_edges(ax, mesh, projection_axes=(0, 2),
+                                     angle_threshold=0.5)
+            self._draw_alette_lines(ax, mesh, projection_axes=(0, 2),
+                                    depth_axis=1)
             self._add_stippling_shading(ax, mesh, vertices_2d, outline, view='front')
 
         except Exception as e:
@@ -637,21 +742,19 @@ class TechnicalDrawingGenerator:
         vertices_2d = flipped.vertices[:, [0, 2]]
 
         try:
-            outline = self._get_real_silhouette(flipped, plane_normal=[0, 1, 0], projection_axes=(0, 2))
-
+            outline = self._draw_real_outline(ax, flipped, (0, 2))
             if outline is None or len(outline) <= 2:
-                from scipy.spatial import ConvexHull
-                hull = ConvexHull(vertices_2d)
-                outline = vertices_2d[hull.vertices]
-
-            outline_closed = np.vstack([outline, outline[0]])
-            ax.plot(outline_closed[:, 0], outline_closed[:, 1],
-                   'k-', linewidth=0.8, solid_capstyle='round')
-            self._draw_feature_edges(ax, flipped, projection_axes=(0, 2))
-            self._draw_occluding_contours(ax, flipped, view_axis=1,
-                                          projection_axes=(0, 2))
-            self._draw_depth_contours(ax, flipped, view_axis=1,
-                                      projection_axes=(0, 2))
+                outline = self._get_real_silhouette(
+                    flipped, plane_normal=[0, 1, 0], projection_axes=(0, 2))
+                if outline is None or len(outline) <= 2:
+                    from scipy.spatial import ConvexHull
+                    outline = vertices_2d[ConvexHull(vertices_2d).vertices]
+                ax.plot(*np.vstack([outline, outline[0]]).T,
+                       'k-', linewidth=0.8, solid_capstyle='round')
+            self._draw_feature_edges(ax, flipped, projection_axes=(0, 2),
+                                     angle_threshold=0.5)
+            self._draw_alette_lines(ax, flipped, projection_axes=(0, 2),
+                                    depth_axis=1)
             self._add_stippling_shading(ax, flipped, vertices_2d, outline, view='back')
 
         except Exception as e:
@@ -692,7 +795,7 @@ class TechnicalDrawingGenerator:
 
             section_drawn = False
             # Try real cross-section at several heights near the top
-            for frac in (0.90, 0.85, 0.80):
+            for frac in (0.95, 0.92, 0.88, 0.84):
                 try:
                     z_pos = z_min + z_range * frac
                     sec = mesh.section(plane_origin=[0, 0, z_pos],
@@ -1103,7 +1206,7 @@ class TechnicalDrawingGenerator:
         # -- ROW 0: Tallone dall'alto (real section for incavo) --
         ax_tallone = fig.add_subplot(gs[0, 0])
         tallone_drawn = False
-        for frac in (0.90, 0.85, 0.80):
+        for frac in (0.95, 0.92, 0.88, 0.84):
             try:
                 tz = z_min + z_ext * frac
                 tsec = mesh.section(plane_origin=[0, 0, tz],
@@ -1154,19 +1257,20 @@ class TechnicalDrawingGenerator:
         ax_front = fig.add_subplot(gs[1, 0])
         front_2d = mesh.vertices[:, [0, 2]]
         try:
-            fout = self._get_real_silhouette(mesh, [0, 1, 0], (0, 2))
+            # Faithful outline from the 3D projection (incavo, holes)
+            fout = self._draw_real_outline(ax_front, mesh, (0, 2))
             if fout is None or len(fout) <= 2:
-                from scipy.spatial import ConvexHull
-                fout = front_2d[ConvexHull(front_2d).vertices]
-            ax_front.plot(*np.vstack([fout, fout[0]]).T,
-                         'k-', linewidth=0.8, solid_capstyle='round')
-            self._draw_feature_edges(ax_front, mesh, (0, 2))
-            # Fold lines: alette crests + incavo rim (view looks along Y)
-            self._draw_occluding_contours(ax_front, mesh, view_axis=1,
-                                          projection_axes=(0, 2))
-            # Depth iso-lines reveal alette ridges on smooth scans
-            self._draw_depth_contours(ax_front, mesh, view_axis=1,
-                                      projection_axes=(0, 2))
+                fout = self._get_real_silhouette(mesh, [0, 1, 0], (0, 2))
+                if fout is None or len(fout) <= 2:
+                    from scipy.spatial import ConvexHull
+                    fout = front_2d[ConvexHull(front_2d).vertices]
+                ax_front.plot(*np.vstack([fout, fout[0]]).T,
+                             'k-', linewidth=0.8, solid_capstyle='round')
+            self._draw_feature_edges(ax_front, mesh, (0, 2),
+                                     angle_threshold=0.5)
+            # Alette ridge lines from the real 3D relief
+            self._draw_alette_lines(ax_front, mesh, projection_axes=(0, 2),
+                                    depth_axis=1)
             self._add_stippling_shading(ax_front, mesh, front_2d, fout,
                                         'front')
         except Exception as e:
@@ -1230,18 +1334,16 @@ class TechnicalDrawingGenerator:
         ax_prof = fig.add_subplot(gs[1, 1])
         prof_2d = mesh.vertices[:, [1, 2]]
         try:
-            pout = self._get_real_silhouette(mesh, [1, 0, 0], (1, 2))
+            pout = self._draw_real_outline(ax_prof, mesh, (1, 2))
             if pout is None or len(pout) <= 2:
-                from scipy.spatial import ConvexHull
-                pout = prof_2d[ConvexHull(prof_2d).vertices]
-            ax_prof.plot(*np.vstack([pout, pout[0]]).T,
-                        'k-', linewidth=0.8, solid_capstyle='round')
-            self._draw_feature_edges(ax_prof, mesh, (1, 2))
-            # Fold lines (margini/lama) — profile view looks along X
-            self._draw_occluding_contours(ax_prof, mesh, view_axis=0,
-                                          projection_axes=(1, 2))
-            self._draw_depth_contours(ax_prof, mesh, view_axis=0,
-                                      projection_axes=(1, 2))
+                pout = self._get_real_silhouette(mesh, [1, 0, 0], (1, 2))
+                if pout is None or len(pout) <= 2:
+                    from scipy.spatial import ConvexHull
+                    pout = prof_2d[ConvexHull(prof_2d).vertices]
+                ax_prof.plot(*np.vstack([pout, pout[0]]).T,
+                            'k-', linewidth=0.8, solid_capstyle='round')
+            self._draw_feature_edges(ax_prof, mesh, (1, 2),
+                                     angle_threshold=0.5)
             self._add_stippling_shading(ax_prof, mesh, prof_2d, pout, 'side')
         except Exception as e:
             print(f"Warning: profile render failed ({e})")
