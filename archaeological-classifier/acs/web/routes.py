@@ -3000,7 +3000,15 @@ def drawings_page():
 @web_bp.route('/plate-composer')
 def plate_composer_page():
     """Plate composer page for publication-ready plates."""
-    return render_template('plate_composer.html')
+    from acs.core.database import get_database
+
+    db = get_database()
+    db_artifacts = db.get_all_artifacts()
+    artifacts = [a['artifact_id'] for a in db_artifacts]
+    for aid in mesh_processor.meshes.keys():
+        if aid not in artifacts:
+            artifacts.append(aid)
+    return render_template('plate_composer.html', artifacts=artifacts)
 
 
 def _find_rust_tutorial_dir():
