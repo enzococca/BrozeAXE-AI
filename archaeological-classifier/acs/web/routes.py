@@ -2793,18 +2793,86 @@ def merge_projects():
 
 # ========== TECHNICAL DRAWING ROUTES ==========
 
+def _drawing_cache_dir():
+    """Directory where generated technical drawings are cached."""
+    import tempfile
+    d = os.path.join(tempfile.gettempdir(), 'acs_drawing_cache')
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _drawing_cache_path(artifact_id, view_type, output_format):
+    """Cache file path for a specific drawing view."""
+    safe_id = str(artifact_id).replace('/', '_').replace('\\', '_')
+    fname = f'{safe_id}__{view_type}.{output_format}'
+    return os.path.join(_drawing_cache_dir(), fname)
+
+
+def _get_cached_drawing(artifact_id, view_type, output_format):
+    """Return cached drawing bytes if present, else None."""
+    path = _drawing_cache_path(artifact_id, view_type, output_format)
+    if os.path.exists(path):
+        try:
+            with open(path, 'rb') as f:
+                return f.read()
+        except Exception:
+            return None
+    return None
+
+
+def _store_cached_drawing(artifact_id, view_type, output_format, data):
+    """Persist generated drawing bytes to the cache."""
+    try:
+        path = _drawing_cache_path(artifact_id, view_type, output_format)
+        with open(path, 'wb') as f:
+            f.write(data)
+    except Exception as e:
+        print(f"Warning: could not cache drawing {artifact_id}/{view_type}: {e}")
+
+
+def _clear_drawing_cache(artifact_id):
+    """Remove all cached drawings for an artifact (used on regeneration)."""
+    try:
+        safe_id = str(artifact_id).replace('/', '_').replace('\\', '_')
+        cache_dir = _drawing_cache_dir()
+        for fname in os.listdir(cache_dir):
+            if fname.startswith(f'{safe_id}__'):
+                try:
+                    os.remove(os.path.join(cache_dir, fname))
+                except Exception:
+                    pass
+    except Exception as e:
+        print(f"Warning: could not clear drawing cache for {artifact_id}: {e}")
+
+
 @web_bp.route('/technical-drawing/<artifact_id>', methods=['GET'])
 def get_technical_drawing(artifact_id):
     """Generate complete technical drawing sheet for an artifact."""
     try:
         from acs.core.drawing_worker import generate_drawing_safe
 
-        if not ensure_mesh_loaded(artifact_id):
-            return jsonify({'error': 'Artifact not found'}), 404
-
         output_format = request.args.get('format', 'png')
         if output_format not in ('png', 'svg'):
             output_format = 'png'
+        regenerate = request.args.get('regenerate', '').lower() in ('1', 'true', 'yes')
+
+        mimetype = 'image/svg+xml' if output_format == 'svg' else 'image/png'
+        from flask import send_file
+
+        # Serve from cache unless regeneration is explicitly requested
+        if not regenerate:
+            cached = _get_cached_drawing(artifact_id, 'complete_sheet', output_format)
+            if cached is not None:
+                return send_file(
+                    io.BytesIO(cached), mimetype=mimetype,
+                    as_attachment=True,
+                    download_name=f'{artifact_id}_technical_drawing.{output_format}'
+                )
+        else:
+            _clear_drawing_cache(artifact_id)
+
+        if not ensure_mesh_loaded(artifact_id):
+            return jsonify({'error': 'Artifact not found'}), 404
 
         mesh = mesh_processor.meshes[artifact_id]
         features = mesh_processor._extract_features(mesh, artifact_id)
@@ -2813,15 +2881,13 @@ def get_technical_drawing(artifact_id):
             mesh, artifact_id, features, 'complete_sheet',
             timeout=180, output_format=output_format
         )
+        _store_cached_drawing(artifact_id, 'complete_sheet', output_format, image_data)
 
-        mimetype = 'image/svg+xml' if output_format == 'svg' else 'image/png'
-        ext = output_format
-        from flask import send_file
         return send_file(
             io.BytesIO(image_data),
             mimetype=mimetype,
             as_attachment=True,
-            download_name=f'{artifact_id}_technical_drawing.{ext}'
+            download_name=f'{artifact_id}_technical_drawing.{output_format}'
         )
 
     except Exception as e:
@@ -2842,12 +2908,28 @@ def get_technical_drawing_view(artifact_id, view_type):
     try:
         from acs.core.drawing_worker import generate_drawing_safe
 
-        if not ensure_mesh_loaded(artifact_id):
-            return jsonify({'error': 'Artifact not found'}), 404
-
         output_format = request.args.get('format', 'png')
         if output_format not in ('png', 'svg'):
             output_format = 'png'
+        regenerate = request.args.get('regenerate', '').lower() in ('1', 'true', 'yes')
+
+        mimetype = 'image/svg+xml' if output_format == 'svg' else 'image/png'
+        from flask import send_file
+
+        # Serve from cache unless regeneration is explicitly requested
+        if not regenerate:
+            cached = _get_cached_drawing(artifact_id, view_type, output_format)
+            if cached is not None:
+                return send_file(
+                    io.BytesIO(cached), mimetype=mimetype,
+                    as_attachment=True,
+                    download_name=f'{artifact_id}_{view_type}.{output_format}'
+                )
+        else:
+            _clear_drawing_cache(artifact_id)
+
+        if not ensure_mesh_loaded(artifact_id):
+            return jsonify({'error': 'Artifact not found'}), 404
 
         mesh = mesh_processor.meshes[artifact_id]
         features = mesh_processor._extract_features(mesh, artifact_id)
@@ -2857,15 +2939,13 @@ def get_technical_drawing_view(artifact_id, view_type):
             mesh, artifact_id, features, view_type,
             timeout=view_timeout, output_format=output_format
         )
+        _store_cached_drawing(artifact_id, view_type, output_format, image_data)
 
-        mimetype = 'image/svg+xml' if output_format == 'svg' else 'image/png'
-        ext = output_format
-        from flask import send_file
         return send_file(
             io.BytesIO(image_data),
             mimetype=mimetype,
             as_attachment=True,
-            download_name=f'{artifact_id}_{view_type}.{ext}'
+            download_name=f'{artifact_id}_{view_type}.{output_format}'
         )
 
     except Exception as e:

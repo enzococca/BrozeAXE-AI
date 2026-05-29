@@ -185,8 +185,10 @@
                     <option value="">-- Seleziona un reperto --</option>
                 </select>
             </div>
-            <button class="btn btn-primary" onclick="generateDrawing()">🎨 Genera Disegno Completo</button>
+            <button class="btn btn-primary" onclick="generateDrawing()">🎨 Visualizza Disegno</button>
+            <button class="btn" style="background:#ed8936;color:white;" onclick="regenerateDrawing()" title="Rigenera il disegno dal modello 3D (ignora la cache)">🔄 Rigenera</button>
         </div>
+        <p style="font-size:12px;color:#a0aec0;margin-top:8px;">Se il disegno è già stato generato viene mostrato dalla cache. Usa "Rigenera" per ricalcolarlo dal 3D.</p>
     </div>
 
     <!-- View Selector -->
@@ -315,9 +317,25 @@ async function generateDrawing() {
     }
 }
 
+async function regenerateDrawing() {
+    const artifactId = document.getElementById('artifactSelect').value;
+    if (!artifactId) {
+        alert('Seleziona un reperto');
+        return;
+    }
+    currentArtifact = artifactId;
+    document.getElementById('viewSelector').style.display = 'block';
+    try {
+        await loadView(currentView, true);
+    } catch (error) {
+        document.getElementById('drawingContent').innerHTML =
+            `<div style="padding:40px;color:#e53e3e;"><p>❌ Errore: ${error.message}</p></div>`;
+    }
+}
+
 async function selectView(viewType) {
     if (!currentArtifact) {
-        alert('Prima genera un disegno completo');
+        alert('Prima visualizza un disegno');
         return;
     }
 
@@ -332,17 +350,19 @@ async function selectView(viewType) {
     await loadView(viewType);
 }
 
-async function loadView(viewType) {
+async function loadView(viewType, regenerate) {
     // Show loading
+    const msg = regenerate ? 'Rigenerazione dal modello 3D in corso...' : 'Caricamento vista...';
     document.getElementById('drawingContent').innerHTML = `
         <div class="loading">
             <div class="loading-spinner"></div>
-            <p style="margin-top: 20px;">Caricamento vista...</p>
+            <p style="margin-top: 20px;">${msg}</p>
         </div>
     `;
 
     try {
-        const url = `/web/technical-drawing/${currentArtifact}/${viewType}`;
+        let url = `/web/technical-drawing/${currentArtifact}/${viewType}`;
+        if (regenerate) url += '?regenerate=1&_=' + Date.now();
 
         // Create image element
         const img = new Image();

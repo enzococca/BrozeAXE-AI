@@ -165,6 +165,16 @@ class TechnicalDrawingGenerator:
                 transform_matrix[:3, :3] = rotation.as_matrix()
 
                 oriented.apply_transform(transform_matrix)
+
+            # Ensure WIDTH is along X and THICKNESS along Y.
+            # After aligning the long axis to Z, the wider of the two remaining
+            # axes must be X (so the front view shows the broad face and the
+            # profile shows the thin edge).
+            ext = oriented.bounds[1] - oriented.bounds[0]
+            if ext[1] > ext[0]:
+                rot_z = np.eye(4)
+                rot_z[:3, :3] = Rotation.from_euler('z', 90, degrees=True).as_matrix()
+                oriented.apply_transform(rot_z)
         except Exception as e:
             print(f"Warning: Could not reorient mesh ({str(e)}), using original orientation")
             # Return copy as-is if reorientation fails
@@ -195,6 +205,47 @@ class TechnicalDrawingGenerator:
             return self._alpha_shape(points_2d)
         except Exception:
             return None
+
+    def _draw_feature_edges(self, ax, mesh, projection_axes, angle_threshold=0.5,
+                            linewidth=0.35):
+        """
+        Draw internal feature edges (sharp creases) projected to 2D.
+
+        These reveal real morphological features from the 3D model that the
+        outer silhouette misses — e.g. the ridges of the margini rialzati
+        (flanges/alette) of a flanged axe.
+
+        Args:
+            ax: Matplotlib axis
+            mesh: Trimesh object
+            projection_axes: (axis1, axis2) indices to project onto
+            angle_threshold: Dihedral angle (radians) above which an edge is
+                             considered a sharp feature edge (~0.5 rad ≈ 29°)
+            linewidth: Line width for feature edges
+        """
+        try:
+            from matplotlib.collections import LineCollection
+
+            proj = list(projection_axes)
+            angles = mesh.face_adjacency_angles
+            edges = mesh.face_adjacency_edges
+
+            if angles is None or len(angles) == 0:
+                return
+
+            sharp_mask = angles > angle_threshold
+            sharp_edges = edges[sharp_mask]
+            if len(sharp_edges) == 0:
+                return
+
+            verts_2d = mesh.vertices[:, proj]
+            segments = verts_2d[sharp_edges]  # (N, 2, 2)
+
+            lc = LineCollection(segments, colors='black', linewidths=linewidth,
+                                alpha=0.85, zorder=2)
+            ax.add_collection(lc)
+        except Exception as e:
+            print(f"Warning: Could not draw feature edges ({str(e)})")
 
     def _alpha_shape(self, points, alpha_factor=0.3):
         """
@@ -286,42 +337,38 @@ class TechnicalDrawingGenerator:
         Uses real mesh silhouette (not convex hull) to preserve concavities
         like incavo, margini, and blade curvature.
         """
-        fig, ax = plt.subplots(figsize=(8, 6), dpi=self.dpi)
+        fig, ax = plt.subplots(figsize=(5, 8), dpi=self.dpi)
 
         try:
+            # Profile = SIDE view: look along X, project onto Y-Z plane
+            # (thickness x length) so the thin edge and the flanges show.
             vertices_3d = mesh.vertices
-            vertices_2d = vertices_3d[:, [0, 2]]  # X and Z coordinates
+            vertices_2d = vertices_3d[:, [1, 2]]  # Y (thickness) and Z (length)
 
-            outline = self._get_real_silhouette(mesh, plane_normal=[0, 1, 0], projection_axes=(0, 2))
+            outline = self._get_real_silhouette(mesh, plane_normal=[1, 0, 0], projection_axes=(1, 2))
 
-            if outline is not None and len(outline) > 2:
-                outline_closed = np.vstack([outline, outline[0]])
-                ax.plot(outline_closed[:, 0], outline_closed[:, 1],
-                       'k-', linewidth=0.8, solid_capstyle='round')
-                self._add_stippling_shading(ax, mesh, vertices_2d, outline, view='side')
-            else:
+            if outline is None or len(outline) <= 2:
                 from scipy.spatial import ConvexHull
                 hull = ConvexHull(vertices_2d)
                 outline = vertices_2d[hull.vertices]
-                outline_closed = np.vstack([outline, outline[0]])
-                ax.plot(outline_closed[:, 0], outline_closed[:, 1],
-                       'k-', linewidth=0.8, solid_capstyle='round')
-                self._add_stippling_shading(ax, mesh, vertices_2d, outline, view='side')
+
+            outline_closed = np.vstack([outline, outline[0]])
+            ax.plot(outline_closed[:, 0], outline_closed[:, 1],
+                   'k-', linewidth=0.8, solid_capstyle='round')
+            # Internal feature edges from the 3D model (flange ridges, etc.)
+            self._draw_feature_edges(ax, mesh, projection_axes=(1, 2))
+            self._add_stippling_shading(ax, mesh, vertices_2d, outline, view='side')
 
         except Exception as e:
             print(f"Warning: Could not create longitudinal profile ({str(e)})")
             ax.text(0.5, 0.5, 'Profile unavailable', ha='center', va='center',
                    transform=ax.transAxes)
 
-        # Add scale bar
-        self._add_scale_bar(ax)
-
-        # Add title
         ax.set_title(f'{artifact_id} - Profilo Longitudinale',
                     fontsize=10, pad=10)
-
-        # Clean axes
         ax.set_aspect('equal')
+        # Scale bar placed BELOW the drawing (no overlap)
+        self._add_scale_bar(ax)
         ax.axis('off')
 
         return self._save_figure(fig)
@@ -362,17 +409,19 @@ class TechnicalDrawingGenerator:
                 planar, _ = section.to_planar()
                 vertices_2d = np.array(planar.vertices)
 
+                # Outline of the cut, then uniform stippling for the solid
+                section_polys = []
                 for entity in planar.entities:
                     pts = vertices_2d[entity.points]
                     if len(pts) > 1:
                         pts_closed = np.vstack([pts, pts[0]])
                         ax.plot(pts_closed[:, 0], pts_closed[:, 1],
                                'k-', linewidth=0.8, solid_capstyle='round')
+                    if len(pts) > 2:
+                        section_polys.append(pts)
 
-                from scipy.spatial import ConvexHull
-                hull = ConvexHull(vertices_2d)
-                outline = vertices_2d[hull.vertices]
-                self._add_section_stippling(ax, vertices_2d, outline)
+                if section_polys:
+                    self._stipple_section(ax, section_polys)
             else:
                 raise ValueError("Mesh section returned no geometry")
 
@@ -391,7 +440,7 @@ class TechnicalDrawingGenerator:
                     outline_closed = np.vstack([outline, outline[0]])
                     ax.plot(outline_closed[:, 0], outline_closed[:, 1],
                            'k-', linewidth=0.8, solid_capstyle='round')
-                    self._add_section_stippling(ax, vertices_2d, outline)
+                    self._stipple_section(ax, [outline])
                 else:
                     ax.text(0.5, 0.5, 'Section unavailable', ha='center', va='center',
                            transform=ax.transAxes)
@@ -414,19 +463,17 @@ class TechnicalDrawingGenerator:
         try:
             outline = self._get_real_silhouette(mesh, plane_normal=[0, 1, 0], projection_axes=(0, 2))
 
-            if outline is not None and len(outline) > 2:
-                outline_closed = np.vstack([outline, outline[0]])
-                ax.plot(outline_closed[:, 0], outline_closed[:, 1],
-                       'k-', linewidth=0.8, solid_capstyle='round')
-                self._add_stippling_shading(ax, mesh, vertices_2d, outline, view='front')
-            else:
+            if outline is None or len(outline) <= 2:
                 from scipy.spatial import ConvexHull
                 hull = ConvexHull(vertices_2d)
                 outline = vertices_2d[hull.vertices]
-                outline_closed = np.vstack([outline, outline[0]])
-                ax.plot(outline_closed[:, 0], outline_closed[:, 1],
-                       'k-', linewidth=0.8, solid_capstyle='round')
-                self._add_stippling_shading(ax, mesh, vertices_2d, outline, view='front')
+
+            outline_closed = np.vstack([outline, outline[0]])
+            ax.plot(outline_closed[:, 0], outline_closed[:, 1],
+                   'k-', linewidth=0.8, solid_capstyle='round')
+            # Internal feature edges (flange/margin ridges) projected from 3D
+            self._draw_feature_edges(ax, mesh, projection_axes=(0, 2))
+            self._add_stippling_shading(ax, mesh, vertices_2d, outline, view='front')
 
         except Exception as e:
             print(f"Warning: Could not compute outline ({str(e)}), using bounding box")
@@ -462,19 +509,16 @@ class TechnicalDrawingGenerator:
         try:
             outline = self._get_real_silhouette(flipped, plane_normal=[0, 1, 0], projection_axes=(0, 2))
 
-            if outline is not None and len(outline) > 2:
-                outline_closed = np.vstack([outline, outline[0]])
-                ax.plot(outline_closed[:, 0], outline_closed[:, 1],
-                       'k-', linewidth=0.8, solid_capstyle='round')
-                self._add_stippling_shading(ax, flipped, vertices_2d, outline, view='back')
-            else:
+            if outline is None or len(outline) <= 2:
                 from scipy.spatial import ConvexHull
                 hull = ConvexHull(vertices_2d)
                 outline = vertices_2d[hull.vertices]
-                outline_closed = np.vstack([outline, outline[0]])
-                ax.plot(outline_closed[:, 0], outline_closed[:, 1],
-                       'k-', linewidth=0.8, solid_capstyle='round')
-                self._add_stippling_shading(ax, flipped, vertices_2d, outline, view='back')
+
+            outline_closed = np.vstack([outline, outline[0]])
+            ax.plot(outline_closed[:, 0], outline_closed[:, 1],
+                   'k-', linewidth=0.8, solid_capstyle='round')
+            self._draw_feature_edges(ax, flipped, projection_axes=(0, 2))
+            self._add_stippling_shading(ax, flipped, vertices_2d, outline, view='back')
 
         except Exception as e:
             print(f"Warning: Could not compute outline ({str(e)}), using bounding box")
@@ -555,103 +599,168 @@ class TechnicalDrawingGenerator:
             ax.scatter(dot_x, dot_y, s=0.6, c='black',
                       marker='.', linewidths=0, alpha=0.85, zorder=1)
 
+    def _stipple_section(self, ax, polygons):
+        """
+        Uniform stippling for a cross-section (the solid cut), handling one or
+        more disjoint polygons. Even coverage = archaeological section convention.
+        """
+        from matplotlib.path import Path
+
+        polys = [np.asarray(p) for p in polygons if p is not None and len(p) >= 3]
+        if not polys:
+            return
+
+        all_pts = np.vstack(polys)
+        min_x, min_y = all_pts.min(axis=0)
+        max_x, max_y = all_pts.max(axis=0)
+        width = max_x - min_x
+        height = max_y - min_y
+        if width <= 0 or height <= 0:
+            return
+
+        verts = []
+        codes = []
+        for p in polys:
+            pc = np.vstack([p, p[0]])
+            verts.extend(pc.tolist())
+            codes.append(Path.MOVETO)
+            codes.extend([Path.LINETO] * (len(pc) - 2))
+            codes.append(Path.CLOSEPOLY)
+        path = Path(verts, codes)
+
+        rng = np.random.default_rng(7)
+        n = int(np.clip(width * height * 8.0, 4000, 80000))
+        cx = rng.uniform(min_x, max_x, n)
+        cy = rng.uniform(min_y, max_y, n)
+        pts = np.column_stack([cx, cy])
+        inside = path.contains_points(pts)
+        pts = pts[inside]
+        if len(pts) == 0:
+            return
+
+        accept = rng.random(len(pts)) < 0.5
+        dots = pts[accept]
+        if len(dots) == 0:
+            return
+        sizes = rng.uniform(0.3, 0.9, len(dots))
+        ax.scatter(dots[:, 0], dots[:, 1], s=sizes, c='black',
+                   marker='.', linewidths=0, alpha=0.9, zorder=1)
+
     def _add_stippling_shading(self, ax, mesh, vertices_2d: np.ndarray,
                               outline: np.ndarray, view: str = 'side'):
         """
-        Add STIPPLING (dots) for professional archaeological shading.
+        Add hand-drawn style STIPPLING (puntinato) to render volume.
 
-        Stippling technique:
-        - More dots in shadowed/deeper areas
-        - Fewer dots in highlighted areas
-        - Dots sized and spaced based on depth/curvature
+        Mimics manual archaeological stippling rather than a digital grid:
+        - Dots placed at irregular (Poisson-like) positions, not on a grid.
+        - Density follows the rounded volume: light from the upper-left, so the
+          lit (left) side stays clean and the shadow (right) side / edges get
+          denser dots. This gives the object a three-dimensional read.
+        - Dot size varies slightly, as with a real pen.
+
+        The whole thing is vectorised, so it is both faster and more organic
+        than the previous per-cell loop.
 
         Args:
             ax: Matplotlib axis
-            mesh: Original 3D mesh
+            mesh: Original 3D mesh (unused now; kept for signature compatibility)
             vertices_2d: 2D projected vertices
-            outline: Outline vertices
+            outline: Ordered outline vertices
             view: 'side', 'front', or 'back'
         """
         from matplotlib.path import Path
-        from scipy.spatial import cKDTree
 
-        if len(outline) < 3:
+        if outline is None or len(outline) < 3:
             return
 
-        # Create polygon path for masking
-        path = Path(outline)
+        outline = np.asarray(outline)
+        path = Path(np.vstack([outline, outline[0]]))
 
-        # Get bounding box
-        min_x, min_y = vertices_2d.min(axis=0)
-        max_x, max_y = vertices_2d.max(axis=0)
-
-        # Calculate depth/curvature for each vertex (for shading)
-        if view == 'side':
-            # Depth is Y coordinate (how far from viewing plane)
-            depth_values = mesh.vertices[:, 1]  # Y depth
-        elif view == 'front':
-            depth_values = mesh.vertices[:, 2]  # Z depth
-        else:  # back
-            depth_values = -mesh.vertices[:, 2]
-
-        # Normalize depth to 0-1
-        if len(depth_values) > 0:
-            depth_min, depth_max = depth_values.min(), depth_values.max()
-            if depth_max > depth_min:
-                depth_normalized = (depth_values - depth_min) / (depth_max - depth_min)
-            else:
-                depth_normalized = np.zeros_like(depth_values)
-        else:
-            depth_normalized = np.zeros(len(vertices_2d))
-
-        # Create KDTree for depth lookup
-        tree = cKDTree(vertices_2d)
-
-        # Generate stippling grid - RIDOTTO per evitare grigio uniforme
-        dot_spacing_base = 2.0  # AUMENTATO da 0.8 a 2.0 mm - meno denso
+        min_x, min_y = outline.min(axis=0)
+        max_x, max_y = outline.max(axis=0)
         width = max_x - min_x
         height = max_y - min_y
+        if width <= 0 or height <= 0:
+            return
 
-        # Create sampling grid (MENO denso)
-        n_x = int(width / dot_spacing_base) * 2  # RIDOTTO da *4 a *2
-        n_y = int(height / dot_spacing_base) * 2  # RIDOTTO da *4 a *2
+        rng = np.random.default_rng(1234)  # reproducible, but irregular
 
-        x_grid = np.linspace(min_x, max_x, n_x)
-        y_grid = np.linspace(min_y, max_y, n_y)
+        # Candidate points scale with area (density ~ a few dots per mm^2)
+        area = width * height
+        n_candidates = int(np.clip(area * 6.0, 4000, 80000))
+        cx = rng.uniform(min_x, max_x, n_candidates)
+        cy = rng.uniform(min_y, max_y, n_candidates)
+        pts = np.column_stack([cx, cy])
 
-        # Stippling dots
-        dot_x = []
-        dot_y = []
-        dot_sizes = []
+        inside = path.contains_points(pts)
+        pts = pts[inside]
+        if len(pts) == 0:
+            return
 
-        for x in x_grid:
-            for y in y_grid:
-                point = np.array([x, y])
+        # Per-row local centre and half-width (to normalise the form across width)
+        nbins = 200
+        rel_y = (pts[:, 1] - min_y) / height
+        bin_idx = np.clip((rel_y * (nbins - 1)).astype(int), 0, nbins - 1)
 
-                # Check if point is inside outline
-                if not path.contains_point(point):
-                    continue
+        left = np.full(nbins, np.nan)
+        right = np.full(nbins, np.nan)
+        order = np.argsort(bin_idx)
+        sb = bin_idx[order]
+        sx = pts[order, 0]
+        # first/last occurrence per bin give min/max x quickly
+        uniq, start = np.unique(sb, return_index=True)
+        for k, b in enumerate(uniq):
+            end = start[k + 1] if k + 1 < len(start) else len(sb)
+            seg = sx[start[k]:end]
+            left[b] = seg.min()
+            right[b] = seg.max()
 
-                # Find nearest mesh vertex to get depth
-                dist, idx = tree.query(point)
+        idx_all = np.arange(nbins)
+        valid = ~np.isnan(left)
+        if valid.sum() < 2:
+            center_arr = np.full(nbins, (min_x + max_x) / 2.0)
+            half_arr = np.full(nbins, width / 2.0)
+        else:
+            center = (left + right) / 2.0
+            half = (right - left) / 2.0
+            center_arr = np.interp(idx_all, idx_all[valid], center[valid])
+            half_arr = np.interp(idx_all, idx_all[valid], half[valid])
+        half_arr = np.maximum(half_arr, width * 0.02)
 
-                if idx < len(depth_normalized):
-                    depth = depth_normalized[idx]
+        # u in [-1, 1]: horizontal position across the local width
+        u = (pts[:, 0] - center_arr[bin_idx]) / half_arr[bin_idx]
+        u = np.clip(u, -1.0, 1.0)
 
-                    # Probability RIDOTTA - solo zone profonde hanno stippling
-                    # Archaeological convention: stippling solo per ombre marcate
-                    probability = 0.05 + (depth * 0.35)  # RIDOTTO da 15-75% a 5-40%
+        # Rounded-volume shading, light from the upper-left:
+        # treat the cross-section as a cylinder; brightness ~ cos(theta - light)
+        theta = np.arcsin(u)
+        light_theta = -0.7  # light comes from the left
+        brightness = np.cos(theta - light_theta)
+        b_min, b_max = brightness.min(), brightness.max()
+        if b_max > b_min:
+            brightness = (brightness - b_min) / (b_max - b_min)
+        shadow = 1.0 - brightness
 
-                    if np.random.random() < probability:
-                        dot_x.append(x)
-                        dot_y.append(y)
-                        # Dot size varies slightly
-                        dot_sizes.append(0.5 + depth * 0.4)  # Puntini leggermente più grandi
+        # Extra darkening along the shadow-side edge only (keeps lit edge clean)
+        edge_shadow = np.where(u > 0, u * u, 0.0)
 
-        # Draw dots (stippling)
-        if len(dot_x) > 0:
-            ax.scatter(dot_x, dot_y, s=dot_sizes, c='black',
-                      marker='.', linewidths=0, alpha=0.9, zorder=1)
+        if view == 'section':
+            # A cut surface: even, uniform stippling (indicates solid metal),
+            # no directional light — archaeological section convention.
+            density = np.full(len(pts), 0.45)
+        else:
+            # Lit rounded face: clean highlight (left), dense shadow (right)
+            density = 0.04 + 0.55 * shadow + 0.18 * edge_shadow
+        density = np.clip(density, 0.0, 0.92)
+
+        accept = rng.random(len(pts)) < density
+        dots = pts[accept]
+        if len(dots) == 0:
+            return
+
+        sizes = rng.uniform(0.3, 1.0, len(dots))
+        ax.scatter(dots[:, 0], dots[:, 1], s=sizes, c='black',
+                   marker='.', linewidths=0, alpha=0.9, zorder=1)
 
     def _add_hatching(self, ax, vertices: np.ndarray, direction: str = 'vertical',
                      density: float = 2.0):
@@ -718,24 +827,28 @@ class TechnicalDrawingGenerator:
         """
         Add scale bar following Italian archaeological standard.
 
-        Simple black bar with "3 cm" label below (standard Italian style).
+        The bar is placed BELOW the drawing (the y-limits are extended to make
+        room) so it never overlaps the object.
         """
-        # Place in bottom center
+        ax.autoscale_view()
         xlim = ax.get_xlim()
         ylim = ax.get_ylim()
 
-        # Center the scale bar
         x_center = (xlim[0] + xlim[1]) / 2
         x_start = x_center - length_mm / 2
         x_end = x_center + length_mm / 2
-        y_pos = ylim[0] + (ylim[1] - ylim[0]) * 0.08
 
-        # Draw thick solid black bar (Italian archaeological style)
-        ax.plot([x_start, x_end], [y_pos, y_pos],
+        span = ylim[1] - ylim[0]
+        drawing_bottom = ylim[0]
+        gap = span * 0.06
+        bar_y = drawing_bottom - gap
+
+        # Extend the axis downward so the bar and label sit in clear space
+        ax.set_ylim(bar_y - span * 0.10, ylim[1])
+
+        ax.plot([x_start, x_end], [bar_y, bar_y],
                'k-', linewidth=4, solid_capstyle='butt')
-
-        # Add label below (simple "3 cm" style)
-        ax.text(x_center, y_pos - 5, '3 cm',
+        ax.text(x_center, bar_y - span * 0.025, '3 cm',
                ha='center', va='top', fontsize=9, fontfamily='sans-serif')
 
     def _create_composite_sheet(self, mesh, artifact_id: str,
