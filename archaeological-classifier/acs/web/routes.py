@@ -3095,8 +3095,11 @@ def compose_plate():
             features = mesh_processor._extract_features(mesh, artifact_id)
 
             try:
+                # complete_sheet renders all sub-views and needs the same
+                # longer budget as the dedicated complete-sheet routes.
+                view_timeout = 180 if view == 'complete_sheet' else 90
                 image_data = generate_drawing_safe(
-                    mesh, artifact_id, features, view, timeout=90
+                    mesh, artifact_id, features, view, timeout=view_timeout
                 )
                 cell['image_data'] = image_data
             except Exception as e:

@@ -14,27 +14,27 @@
             <!-- Template presets -->
             <h3>Template</h3>
             <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;">
-                <button onclick="applyTemplate('single')" class="tpl-btn" title="1 ascia, foglio completo">
+                <button onclick="applyTemplate('single', this)" class="tpl-btn" title="1 ascia, foglio completo">
                     <svg width="32" height="40" viewBox="0 0 32 40"><rect x="1" y="1" width="30" height="38" fill="none" stroke="#4299e1" stroke-width="1.5" rx="2"/><rect x="6" y="6" width="20" height="28" fill="#bee3f8" rx="1"/></svg>
                     <span>Singola</span>
                 </button>
-                <button onclick="applyTemplate('pair')" class="tpl-btn" title="2 asce affiancate">
+                <button onclick="applyTemplate('pair', this)" class="tpl-btn" title="2 asce affiancate">
                     <svg width="32" height="40" viewBox="0 0 32 40"><rect x="1" y="1" width="30" height="38" fill="none" stroke="#4299e1" stroke-width="1.5" rx="2"/><rect x="3" y="6" width="12" height="28" fill="#bee3f8" rx="1"/><rect x="17" y="6" width="12" height="28" fill="#bee3f8" rx="1"/></svg>
                     <span>Coppia</span>
                 </button>
-                <button onclick="applyTemplate('grid4')" class="tpl-btn" title="4 asce, griglia 2x2">
+                <button onclick="applyTemplate('grid4', this)" class="tpl-btn" title="4 asce, griglia 2x2">
                     <svg width="32" height="40" viewBox="0 0 32 40"><rect x="1" y="1" width="30" height="38" fill="none" stroke="#4299e1" stroke-width="1.5" rx="2"/><rect x="3" y="4" width="12" height="14" fill="#bee3f8" rx="1"/><rect x="17" y="4" width="12" height="14" fill="#bee3f8" rx="1"/><rect x="3" y="22" width="12" height="14" fill="#bee3f8" rx="1"/><rect x="17" y="22" width="12" height="14" fill="#bee3f8" rx="1"/></svg>
                     <span>4 (2&times;2)</span>
                 </button>
-                <button onclick="applyTemplate('grid6')" class="tpl-btn" title="6 asce, griglia 3x2">
+                <button onclick="applyTemplate('grid6', this)" class="tpl-btn" title="6 asce, griglia 3x2">
                     <svg width="32" height="40" viewBox="0 0 32 40"><rect x="1" y="1" width="30" height="38" fill="none" stroke="#4299e1" stroke-width="1.5" rx="2"/><rect x="3" y="3" width="12" height="10" fill="#bee3f8" rx="1"/><rect x="17" y="3" width="12" height="10" fill="#bee3f8" rx="1"/><rect x="3" y="15" width="12" height="10" fill="#bee3f8" rx="1"/><rect x="17" y="15" width="12" height="10" fill="#bee3f8" rx="1"/><rect x="3" y="27" width="12" height="10" fill="#bee3f8" rx="1"/><rect x="17" y="27" width="12" height="10" fill="#bee3f8" rx="1"/></svg>
                     <span>6 (3&times;2)</span>
                 </button>
-                <button onclick="applyTemplate('grid10')" class="tpl-btn" title="10 asce, griglia 5x2">
+                <button onclick="applyTemplate('grid10', this)" class="tpl-btn" title="10 asce, griglia 5x2">
                     <svg width="32" height="40" viewBox="0 0 32 40"><rect x="1" y="1" width="30" height="38" fill="none" stroke="#4299e1" stroke-width="1.5" rx="2"/><rect x="3" y="2" width="12" height="6" fill="#bee3f8" rx="1"/><rect x="17" y="2" width="12" height="6" fill="#bee3f8" rx="1"/><rect x="3" y="9.5" width="12" height="6" fill="#bee3f8" rx="1"/><rect x="17" y="9.5" width="12" height="6" fill="#bee3f8" rx="1"/><rect x="3" y="17" width="12" height="6" fill="#bee3f8" rx="1"/><rect x="17" y="17" width="12" height="6" fill="#bee3f8" rx="1"/><rect x="3" y="24.5" width="12" height="6" fill="#bee3f8" rx="1"/><rect x="17" y="24.5" width="12" height="6" fill="#bee3f8" rx="1"/><rect x="3" y="32" width="12" height="6" fill="#bee3f8" rx="1"/><rect x="17" y="32" width="12" height="6" fill="#bee3f8" rx="1"/></svg>
                     <span>10 (5&times;2)</span>
                 </button>
-                <button onclick="applyTemplate('catalog')" class="tpl-btn" title="12 asce, griglia 4x3">
+                <button onclick="applyTemplate('catalog', this)" class="tpl-btn" title="12 asce, griglia 4x3">
                     <svg width="32" height="40" viewBox="0 0 32 40"><rect x="1" y="1" width="30" height="38" fill="none" stroke="#4299e1" stroke-width="1.5" rx="2"/><rect x="2" y="3" width="8" height="7" fill="#bee3f8" rx="1"/><rect x="12" y="3" width="8" height="7" fill="#bee3f8" rx="1"/><rect x="22" y="3" width="8" height="7" fill="#bee3f8" rx="1"/><rect x="2" y="12" width="8" height="7" fill="#bee3f8" rx="1"/><rect x="12" y="12" width="8" height="7" fill="#bee3f8" rx="1"/><rect x="22" y="12" width="8" height="7" fill="#bee3f8" rx="1"/><rect x="2" y="21" width="8" height="7" fill="#bee3f8" rx="1"/><rect x="12" y="21" width="8" height="7" fill="#bee3f8" rx="1"/><rect x="22" y="21" width="8" height="7" fill="#bee3f8" rx="1"/><rect x="2" y="30" width="8" height="7" fill="#bee3f8" rx="1"/><rect x="12" y="30" width="8" height="7" fill="#bee3f8" rx="1"/><rect x="22" y="30" width="8" height="7" fill="#bee3f8" rx="1"/></svg>
                     <span>12 (4&times;3)</span>
                 </button>
@@ -187,7 +187,7 @@ const TEMPLATES = {
     catalog: { rows: 4, cols: 3, format: 'A3', orient: 'portrait', view: 'front_view' },
 };
 
-function applyTemplate(name) {
+function applyTemplate(name, btn) {
     const t = TEMPLATES[name];
     if (!t) return;
     document.getElementById('rows').value = t.rows;
@@ -195,7 +195,7 @@ function applyTemplate(name) {
     document.getElementById('pageFormat').value = t.format;
     document.getElementById('orientation').value = t.orient;
     document.querySelectorAll('.tpl-btn').forEach(b => b.classList.remove('active'));
-    event.currentTarget.classList.add('active');
+    if (btn) btn.classList.add('active');
     updateCellGrid(t.view);
 }
 
