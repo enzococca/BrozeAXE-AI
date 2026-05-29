@@ -2903,7 +2903,7 @@ def get_technical_drawing_view(artifact_id, view_type):
     Get specific technical drawing view.
 
     view_type: 'longitudinal_profile', 'cross_section_max', 'cross_section_min',
-               'front_view', 'back_view', 'complete_sheet'
+               'front_view', 'back_view', 'tallone_top', 'complete_sheet'
     """
     try:
         from acs.core.drawing_worker import generate_drawing_safe
