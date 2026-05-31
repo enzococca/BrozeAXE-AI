@@ -143,27 +143,94 @@ class TechnicalDrawingGenerator:
         else:
             raise ValueError(f"Invalid view type: {view_type}")
 
+    def _render_mesh_view_pil(self, m, view_ax, proj_axes, ppm,
+                              face_colors, base_rgb, light_dir):
+        """Rasterize one orthographic view of the mesh to a PIL image at a
+        fixed scale (``ppm`` pixels-per-mm), with painter's-algorithm depth
+        sorting and per-face Lambertian shading."""
+        from PIL import ImageDraw
+
+        ax0, ax1 = proj_axes
+        tris_2d = m.vertices[m.faces][:, :, [ax0, ax1]]
+        flat = tris_2d.reshape(-1, 2)
+        mn = flat.min(axis=0)
+        span = flat.max(axis=0) - mn
+        span[span == 0] = 1.0
+
+        W = max(8, int(span[0] * ppm))
+        H = max(8, int(span[1] * ppm))
+        img = Image.new('RGB', (W, H), (255, 255, 255))
+        draw = ImageDraw.Draw(img)
+
+        depths = m.vertices[m.faces][:, :, view_ax].mean(axis=1)
+        order = np.argsort(depths)
+        P = (tris_2d - mn) * ppm
+        normals = m.face_normals
+
+        for fi in order:
+            n = normals[fi]
+            brightness = 0.35 + 0.65 * float(abs(np.dot(n, light_dir)))
+            bc = (face_colors[fi].astype(float) if face_colors is not None
+                  else base_rgb.astype(float))
+            c = np.clip(bc * brightness, 0, 255).astype(int)
+            color = (int(c[0]), int(c[1]), int(c[2]))
+            draw.polygon([tuple(p) for p in P[fi]], fill=color, outline=color)
+
+        return img.transpose(Image.FLIP_TOP_BOTTOM)
+
+    def _render_section_pil(self, mesh, ppm, base_rgb):
+        """Render the transverse cross-section (mid length) as a filled
+        bronze PIL image at scale ``ppm``, mirroring the drawing's Sezione
+        Trasversale. Returns None if the section can't be computed."""
+        from PIL import ImageDraw
+        try:
+            b = mesh.bounds
+            z_mid = b[0][2] + (b[1][2] - b[0][2]) * 0.5
+            sec = mesh.section(plane_origin=[0, 0, z_mid],
+                               plane_normal=[0, 0, 1])
+            if sec is None:
+                return None
+            planar, _ = sec.to_planar()
+            sv = np.array(planar.vertices)
+            polys = [sv[e.points] for e in planar.entities
+                     if len(e.points) > 2]
+            if not polys:
+                return None
+            allpts = np.vstack(polys)
+            mn = allpts.min(axis=0)
+            span = allpts.max(axis=0) - mn
+            span[span == 0] = 1.0
+            W = max(8, int(span[0] * ppm))
+            H = max(8, int(span[1] * ppm))
+            img = Image.new('RGB', (W, H), (255, 255, 255))
+            draw = ImageDraw.Draw(img)
+            fill = (int(base_rgb[0]), int(base_rgb[1]), int(base_rgb[2]))
+            for p in polys:
+                pix = (p - mn) * ppm
+                draw.polygon([tuple(q) for q in pix], fill=fill,
+                             outline=(90, 80, 55))
+            return img.transpose(Image.FLIP_TOP_BOTTOM)
+        except Exception as e:
+            print(f"Warning: section render failed ({e})")
+            return None
+
     def _render_3d_layout_pil(self, mesh):
         """
-        Fast rasterized 3D render laid out to mirror the drawing plate.
+        Fast rasterized 3D render laid out to MIRROR the drawing plate, at the
+        SAME scale across panels:
 
-        Uses PIL polygon rasterization (C-speed) with per-face Lambertian
-        shading — renders even 200k-face scan meshes in < 2 seconds total
-        (three views), unlike matplotlib Poly3DCollection which is O(faces)
-        in pure Python and times out on Railway for real scans.
-
-        Layout:
-            Row 0: Tallone (dall'alto) — looking down Z
+            Row 0: Sezione Trasversale (cross-section, like the drawing)
             Row 1: Vista Frontale (along Y) | Profilo Longitudinale (along X)
 
-        If vertex colors / texture are present they are used for base colour;
-        otherwise a bronze default (#C8B88A).
+        All panels share one pixels-per-mm scale, so Vista Frontale and Profilo
+        print at exactly the same length (as in the drawing) and the section is
+        proportionate. Uses PIL polygon rasterization (C-speed) so even 200k-
+        face scans render in < 2 s. Vertex colours/texture are used when
+        present; otherwise a bronze default.
         """
         try:
-            from PIL import ImageDraw
+            from PIL import ImageDraw, ImageFont
 
-            # Decimate for rendering speed — visual quality at 10k faces is
-            # indistinguishable from 200k, and the loop drops from 20s to <1s.
             m = mesh
             if len(m.faces) > 12000:
                 try:
@@ -171,101 +238,79 @@ class TechnicalDrawingGenerator:
                 except Exception:
                     pass
 
-            # Each panel: (title, view_axis, proj_axes, flip_x)
-            # view_axis = axis along which the camera looks (orthographic)
-            # proj_axes = which mesh axes map to (screen_x, screen_y)
-            panels = [
-                ("Tallone (dall'alto)", 2, (0, 1), False),
-                ('Vista Frontale',      1, (0, 2), False),
-                ('Profilo Longitudinale', 0, (1, 2), False),
-            ]
-
-            panel_imgs = []
-            res = 800
-
-            # Try to get per-face base colour from the mesh
             base_rgb = np.array([200, 184, 138], dtype=np.uint8)  # bronze
             face_colors = None
             try:
                 vc = m.visual.vertex_colors
-                if vc is not None and len(vc) == len(m.vertices):
+                # Only use vertex colours if they carry a REAL texture: trimesh
+                # hands back a uniform default grey for untextured meshes, which
+                # we'd rather replace with bronze. Real scans vary across the
+                # surface, so require some colour variance.
+                if (vc is not None and len(vc) == len(m.vertices)
+                        and vc[:, :3].astype(float).std() > 6.0):
                     face_colors = vc[m.faces].mean(axis=1)[:, :3].astype(np.uint8)
             except Exception:
                 pass
 
-            normals = m.face_normals
+            ext = m.bounds[1] - m.bounds[0]
+            z_ext = max(ext[2], 1e-6)
+            ppm = 640.0 / z_ext  # length (Z) -> ~640 px in front & profile
 
-            # Per-panel light direction: mostly along the view axis (so the
-            # visible surface is well-lit), plus a slight offset from the
-            # upper-left for volume.
-            view_lights = {
-                2: np.array([0.3, -0.3,  1.0]),  # tallone: along +Z
-                1: np.array([0.3,  1.0,  0.3]),  # front:   along +Y
-                0: np.array([1.0, -0.3,  0.3]),  # profile: along +X
-            }
+            def light(v):
+                v = np.asarray(v, float)
+                return v / np.linalg.norm(v)
 
-            for title, view_ax, (ax0, ax1), flip_x in panels:
-                light_dir = view_lights[view_ax].copy()
-                light_dir /= np.linalg.norm(light_dir)
+            front_img = self._render_mesh_view_pil(
+                m, 1, (0, 2), ppm, face_colors, base_rgb,
+                light([0.3, 1.0, 0.3]))
+            prof_img = self._render_mesh_view_pil(
+                m, 0, (1, 2), ppm, face_colors, base_rgb,
+                light([1.0, -0.3, 0.3]))
+            sec_img = self._render_section_pil(m, ppm, base_rgb)
 
-                tris_2d = m.vertices[m.faces][:, :, [ax0, ax1]]
-                flat = tris_2d.reshape(-1, 2)
-                mn = flat.min(axis=0)
-                mx = flat.max(axis=0)
-                span = mx - mn
-                span[span == 0] = 1.0
+            # Compose in PIL so the true relative sizes are preserved.
+            margin, gap_col, title_h, gap_row = 40, 100, 32, 60
+            try:
+                font = ImageFont.truetype("DejaVuSans.ttf", 22)
+            except Exception:
+                font = ImageFont.load_default()
 
-                W = res if span[0] >= span[1] else max(200, int(res * span[0] / span[1]))
-                H = res if span[1] >= span[0] else max(200, int(res * span[1] / span[0]))
-                sx = (W - 1) / span[0]
-                sy = (H - 1) / span[1]
+            scratch = ImageDraw.Draw(Image.new('RGB', (1, 1)))
 
-                img = Image.new('RGB', (W, H), (255, 255, 255))
-                draw = ImageDraw.Draw(img)
+            def text_w(s):
+                tb = scratch.textbbox((0, 0), s, font=font)
+                return tb[2] - tb[0]
 
-                # z-buffer sort: painter's algorithm — draw back faces first
-                depths = m.vertices[m.faces][:, :, view_ax].mean(axis=1)
-                order = np.argsort(depths)
+            left_x = margin
+            right_x = margin + front_img.width + gap_col
+            sec_y = margin + title_h
+            sec_h = sec_img.height if sec_img is not None else 0
+            row_y = sec_y + sec_h + gap_row
+            front_y = row_y + title_h
 
-                P = (tris_2d - mn) * np.array([sx, sy])
+            # Canvas must fit each panel AND its (possibly wider) title.
+            prof_block = max(prof_img.width, text_w('Profilo Longitudinale'))
+            front_block = max(front_img.width, text_w('Vista Frontale'),
+                              sec_img.width if sec_img is not None else 0,
+                              text_w('Sezione Trasversale'))
+            right_x = margin + front_block + gap_col
+            canvas_w = right_x + prof_block + margin
+            canvas_h = front_y + front_img.height + margin
+            canvas = Image.new('RGB', (canvas_w, canvas_h), (255, 255, 255))
+            draw = ImageDraw.Draw(canvas)
 
-                for fi in order:
-                    tri = P[fi]
-                    n = normals[fi]
-                    shade = float(abs(np.dot(n, light_dir)))
-                    brightness = 0.35 + 0.65 * shade
+            def titled(title, img, x, y, title_y):
+                cx = x + img.width // 2 - text_w(title) // 2
+                draw.text((max(2, cx), title_y), title, fill=(0, 0, 0),
+                          font=font)
+                canvas.paste(img, (x, y))
 
-                    if face_colors is not None:
-                        bc = face_colors[fi].astype(float)
-                    else:
-                        bc = base_rgb.astype(float)
-                    c = np.clip(bc * brightness, 0, 255).astype(int)
-                    color = (int(c[0]), int(c[1]), int(c[2]))
-                    pts = [tuple(p) for p in tri]
-                    draw.polygon(pts, fill=color, outline=color)
+            if sec_img is not None:
+                titled('Sezione Trasversale', sec_img, left_x, sec_y, margin)
+            titled('Vista Frontale', front_img, left_x, front_y, row_y)
+            titled('Profilo Longitudinale', prof_img, right_x, front_y, row_y)
 
-                # Flip vertically so Y-up (mesh) maps to screen correctly
-                img = img.transpose(Image.FLIP_TOP_BOTTOM)
-                panel_imgs.append((title, img))
-
-            # Compose panels into the plate layout using matplotlib
-            fig = plt.figure(figsize=(8, 10), dpi=100)
-            gs = fig.add_gridspec(2, 2, hspace=0.08, wspace=0.04,
-                                  left=0.02, right=0.98, top=0.95, bottom=0.02)
-
-            for i, (title, pimg) in enumerate(panel_imgs):
-                r, c = [(0, 0), (1, 0), (1, 1)][i]
-                ax = fig.add_subplot(gs[r, c])
-                ax.imshow(pimg)
-                ax.set_title(title, fontsize=9, pad=3)
-                ax.axis('off')
-
-            buf = io.BytesIO()
-            fig.savefig(buf, format='png', dpi=100, bbox_inches='tight',
-                        facecolor='white')
-            plt.close(fig)
-            buf.seek(0)
-            return Image.open(buf).convert('RGB')
+            return canvas
         except Exception as e:
             import traceback
             traceback.print_exc()
@@ -947,9 +992,8 @@ class TechnicalDrawingGenerator:
                     outline = vertices_2d[ConvexHull(vertices_2d).vertices]
                 ax.plot(*np.vstack([outline, outline[0]]).T,
                        'k-', linewidth=0.8, solid_capstyle='round')
-            # Alette ridge lines from the 3D relief
-            self._draw_alette_lines(ax, mesh, projection_axes=(0, 2),
-                                    depth_axis=1)
+            # Relief-driven stippling renders the alette faithfully — no
+            # stylised ridge lines (they misrepresented the real margins).
             self._add_stippling_shading(ax, mesh, vertices_2d, outline, view='front')
 
         except Exception as e:
@@ -993,8 +1037,6 @@ class TechnicalDrawingGenerator:
                     outline = vertices_2d[ConvexHull(vertices_2d).vertices]
                 ax.plot(*np.vstack([outline, outline[0]]).T,
                        'k-', linewidth=0.8, solid_capstyle='round')
-            self._draw_alette_lines(ax, flipped, projection_axes=(0, 2),
-                                    depth_axis=1)
             self._add_stippling_shading(ax, flipped, vertices_2d, outline, view='back')
 
         except Exception as e:
@@ -1195,8 +1237,72 @@ class TechnicalDrawingGenerator:
         ax.scatter(dots[:, 0], dots[:, 1], s=sizes, c='black',
                    marker='.', linewidths=0, alpha=0.9, zorder=1)
 
+    def _relief_brightness(self, mesh, projection_axes, depth_axis,
+                           pts, nu=140, nw=360):
+        """
+        Compute per-point surface brightness from the REAL 3D relief.
+
+        Builds the front-surface height map H(u, w) (the depth_axis value of
+        the front-facing vertices) over the projection plane, derives the
+        surface normal from its gradient, and lights it from the upper-left.
+        Crests of the margini rialzati (alette) come out bright; the central
+        groove between them and the slopes down to the edges come out dark —
+        so the stippling that follows reads the true relief instead of a
+        generic cylinder. Returns a brightness value in [0, 1] for every
+        point in ``pts`` (1 = lit crest, 0 = shadow), or None if no usable
+        relief exists (flat axe).
+        """
+        try:
+            from scipy.interpolate import griddata
+            from scipy.ndimage import gaussian_filter
+
+            a0, a1 = list(projection_axes)
+            v = mesh.vertices
+            n = mesh.vertex_normals
+            front = v[n[:, depth_axis] > 0.1]
+            if len(front) < 80:
+                return None
+
+            u_min, u_max = v[:, a0].min(), v[:, a0].max()
+            w_min, w_max = v[:, a1].min(), v[:, a1].max()
+            us = np.linspace(u_min, u_max, nu)
+            ws = np.linspace(w_min, w_max, nw)
+            Ug, Wg = np.meshgrid(us, ws)
+
+            H = griddata(front[:, [a0, a1]], front[:, depth_axis],
+                         (Ug, Wg), method='linear')
+            if not np.isfinite(np.nanmax(H)):
+                return None
+            fill = np.nanmin(H)
+            H = np.nan_to_num(H, nan=fill)
+            H = gaussian_filter(H, 1.2)
+
+            # Surface normal from the height gradient, normalised in mm units.
+            du = (u_max - u_min) / max(nu - 1, 1)
+            dw = (w_max - w_min) / max(nw - 1, 1)
+            dHdw, dHdu = np.gradient(H, dw, du)
+            # depth scale: emphasise relief a bit so margins read clearly
+            nz = np.ones_like(H)
+            norm = np.sqrt(dHdu ** 2 + dHdw ** 2 + 1.0)
+            # Light from upper-left-front: u<0 (left), w>0 (top), +depth.
+            lu, lw, ld = -0.45, 0.35, 1.0
+            ln = np.sqrt(lu * lu + lw * lw + ld * ld)
+            bright = (-dHdu * lu - dHdw * lw + nz * ld) / (norm * ln)
+            bright = np.clip(bright, 0.0, 1.0)
+
+            # Sample brightness at each point (nearest grid cell).
+            ui = np.clip(((pts[:, 0] - u_min) / max(u_max - u_min, 1e-6)
+                          * (nu - 1)).astype(int), 0, nu - 1)
+            wi = np.clip(((pts[:, 1] - w_min) / max(w_max - w_min, 1e-6)
+                          * (nw - 1)).astype(int), 0, nw - 1)
+            return bright[wi, ui]
+        except Exception as e:
+            print(f"Warning: relief brightness failed ({e})")
+            return None
+
     def _add_stippling_shading(self, ax, mesh, vertices_2d: np.ndarray,
-                              outline: np.ndarray, view: str = 'side'):
+                              outline: np.ndarray, view: str = 'side',
+                              projection_axes=None, depth_axis=None):
         """
         Add hand-drawn style STIPPLING (puntinato) to render volume.
 
@@ -1293,14 +1399,32 @@ class TechnicalDrawingGenerator:
         # Extra darkening along the shadow-side edge only (keeps lit edge clean)
         edge_shadow = np.where(u > 0, u * u, 0.0)
 
+        # Resolve projection/depth axes from the view if not given explicitly.
+        if projection_axes is None or depth_axis is None:
+            if view in ('front', 'back'):
+                projection_axes, depth_axis = (0, 2), 1
+            elif view == 'side':
+                projection_axes, depth_axis = (1, 2), 0
+
+        relief = None
+        if view in ('front', 'back', 'side') and projection_axes is not None:
+            relief = self._relief_brightness(mesh, projection_axes, depth_axis, pts)
+
         if view == 'section':
             # A cut surface: even, uniform stippling (indicates solid metal),
             # no directional light — archaeological section convention.
             density = np.full(len(pts), 0.45)
+        elif relief is not None:
+            # Drive the stippling from the REAL 3D relief: dense in the
+            # grooves / slopes (shadow), sparse on the lit crests of the
+            # alette. This makes the raised margins legible and gives true
+            # depth instead of a generic cylinder gradient.
+            shadow_r = 1.0 - relief
+            density = 0.05 + 0.75 * shadow_r + 0.10 * edge_shadow
         else:
-            # Lit rounded face: clean highlight (left), dense shadow (right)
+            # Fallback: lit rounded face (clean highlight left, dense shadow right)
             density = 0.04 + 0.55 * shadow + 0.18 * edge_shadow
-        density = np.clip(density, 0.0, 0.92)
+        density = np.clip(density, 0.0, 0.95)
 
         accept = rng.random(len(pts)) < density
         dots = pts[accept]
@@ -1498,9 +1622,8 @@ class TechnicalDrawingGenerator:
                     fout = front_2d[ConvexHull(front_2d).vertices]
                 ax_front.plot(*np.vstack([fout, fout[0]]).T,
                              'k-', linewidth=0.8, solid_capstyle='round')
-            # Alette ridge lines from the real 3D relief
-            self._draw_alette_lines(ax_front, mesh, projection_axes=(0, 2),
-                                    depth_axis=1)
+            # Relief-driven stippling renders the alette faithfully from the
+            # real 3D surface (no stylised ridge lines).
             self._add_stippling_shading(ax_front, mesh, front_2d, fout,
                                         'front')
         except Exception as e:
