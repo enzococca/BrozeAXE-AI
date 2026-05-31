@@ -119,6 +119,16 @@ class TechnicalDrawingGenerator:
                 oriented_mesh, artifact_id, features, {}
             )
 
+        if resolved == 'render_3d':
+            # Only the 3D mesh rendered as a raster image (multi-view).
+            return self._render_3d_only(oriented_mesh, artifact_id)
+
+        if resolved == 'complete_sheet_3d':
+            # The technical drawing plate WITH the 3D render attached below it.
+            return self._create_composite_sheet_with_3d(
+                oriented_mesh, artifact_id, features
+            )
+
         if resolved == 'longitudinal_profile':
             return self._draw_longitudinal_profile(oriented_mesh, artifact_id)
         elif resolved in ('cross_section_high', 'cross_section_mid', 'cross_section_low'):
@@ -132,6 +142,101 @@ class TechnicalDrawingGenerator:
             return self._draw_tallone_top_view(oriented_mesh)
         else:
             raise ValueError(f"Invalid view type: {view_type}")
+
+    def _render_3d_pil(self, mesh, artifact_id: str):
+        """
+        Render the 3D mesh to a multi-view raster image (front / side / top /
+        3-quarter) using the project's MeshRenderer (pyrender, with a
+        matplotlib fallback). Returns a PIL.Image (RGB) or None on failure.
+        """
+        try:
+            import tempfile
+            from acs.core.mesh_renderer import render_artifact_image
+            path = render_artifact_image(
+                mesh, artifact_id, output_dir=tempfile.gettempdir())
+            if path:
+                return Image.open(path).convert('RGB')
+        except Exception as e:
+            print(f"Warning: 3D render failed ({e})")
+        return None
+
+    def _placeholder_png(self, message: str) -> bytes:
+        """Render a simple 'not available' placeholder as PNG bytes."""
+        fig, ax = plt.subplots(figsize=(6, 4), dpi=self.dpi)
+        ax.text(0.5, 0.5, message, ha='center', va='center',
+                transform=ax.transAxes, fontsize=12, color='gray')
+        ax.axis('off')
+        prev = self._output_format
+        self._output_format = 'png'
+        try:
+            return self._save_figure(fig)
+        finally:
+            self._output_format = prev
+
+    def _render_3d_only(self, mesh, artifact_id: str) -> bytes:
+        """Return just the 3D render as PNG bytes (or a placeholder)."""
+        img = self._render_3d_pil(mesh, artifact_id)
+        if img is None:
+            return self._placeholder_png(
+                'Render 3D non disponibile\n(pyrender non installato)')
+        buf = io.BytesIO()
+        img.save(buf, format='PNG')
+        buf.seek(0)
+        return buf.getvalue()
+
+    def _create_composite_sheet_with_3d(self, mesh, artifact_id: str,
+                                        features: Dict) -> bytes:
+        """
+        Build the technical drawing plate and stack the 3D render below it,
+        returned as a single PNG. If the 3D render is unavailable, the plain
+        drawing plate is returned so the request never fails.
+        """
+        # The drawing plate is always raster-combined, so force PNG here.
+        prev = self._output_format
+        self._output_format = 'png'
+        try:
+            drawing_png = self._create_composite_sheet(
+                mesh, artifact_id, features, {})
+        finally:
+            self._output_format = prev
+
+        render_img = self._render_3d_pil(mesh, artifact_id)
+        if render_img is None:
+            return drawing_png
+
+        try:
+            drawing_img = Image.open(io.BytesIO(drawing_png)).convert('RGB')
+
+            # Scale the 3D render to the drawing width, add a small header band.
+            target_w = drawing_img.width
+            scale = target_w / render_img.width
+            render_resized = render_img.resize(
+                (target_w, max(1, int(render_img.height * scale))))
+
+            from PIL import ImageDraw, ImageFont
+            band_h = max(40, int(target_w * 0.04))
+            combined = Image.new(
+                'RGB',
+                (target_w, drawing_img.height + band_h + render_resized.height),
+                'white')
+            combined.paste(drawing_img, (0, 0))
+            draw = ImageDraw.Draw(combined)
+            try:
+                font = ImageFont.truetype(
+                    "DejaVuSans-Bold.ttf", int(band_h * 0.5))
+            except Exception:
+                font = ImageFont.load_default()
+            draw.text((int(target_w * 0.05), drawing_img.height + band_h // 4),
+                      'Render 3D', fill='black', font=font)
+            combined.paste(render_resized, (0, drawing_img.height + band_h))
+
+            buf = io.BytesIO()
+            combined.save(buf, format='PNG')
+            buf.seek(0)
+            return buf.getvalue()
+        except Exception as e:
+            print(f"Warning: could not combine drawing with 3D render ({e})")
+            return drawing_png
 
     def _reorient_mesh(self, mesh):
         """
