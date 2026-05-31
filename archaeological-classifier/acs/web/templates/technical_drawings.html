@@ -198,6 +198,12 @@
             <button class="view-btn active" onclick="selectView('complete_sheet')">
                 📄 Foglio Completo
             </button>
+            <button class="view-btn" onclick="selectView('complete_sheet_3d')">
+                📄🧊 Disegno + 3D
+            </button>
+            <button class="view-btn" onclick="selectView('render_3d')">
+                🧊 Solo Render 3D
+            </button>
             <button class="view-btn" onclick="selectView('longitudinal_profile')">
                 ↔️ Profilo Longitudinale
             </button>
@@ -232,10 +238,10 @@
             <button class="btn btn-success" onclick="downloadDrawing()">
                 Scarica PNG
             </button>
-            <button class="btn btn-success" onclick="downloadDrawing('svg')" style="margin-left: 8px;">
+            <button id="btnDownloadSvg" class="btn btn-success" onclick="downloadDrawing('svg')" style="margin-left: 8px;">
                 Scarica SVG
             </button>
-            <button class="btn btn-success" onclick="downloadDXF()" style="margin-left: 8px;">
+            <button id="btnDownloadDxf" class="btn btn-success" onclick="downloadDXF()" style="margin-left: 8px;">
                 Scarica DXF
             </button>
         </div>
@@ -375,6 +381,10 @@ async function loadView(viewType, regenerate) {
             document.getElementById('drawingContent').innerHTML = '';
             document.getElementById('drawingContent').appendChild(img);
             document.getElementById('downloadSection').style.display = 'block';
+            // The 3D modes produce raster-only output: SVG/DXF don't apply.
+            const rasterOnly = (viewType === 'render_3d' || viewType === 'complete_sheet_3d');
+            document.getElementById('btnDownloadSvg').style.display = rasterOnly ? 'none' : '';
+            document.getElementById('btnDownloadDxf').style.display = rasterOnly ? 'none' : '';
         };
 
         img.onerror = function() {

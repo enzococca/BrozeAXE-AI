@@ -2934,7 +2934,14 @@ def get_technical_drawing_view(artifact_id, view_type):
         mesh = mesh_processor.meshes[artifact_id]
         features = mesh_processor._extract_features(mesh, artifact_id)
 
-        view_timeout = 180 if view_type == 'complete_sheet' else 90
+        # complete_sheet_3d renders the full plate AND a 3D render, so it gets
+        # the most time; render_3d is moderate; plain complete_sheet 180s.
+        if view_type in ('complete_sheet', 'complete_sheet_3d'):
+            view_timeout = 240 if view_type == 'complete_sheet_3d' else 180
+        elif view_type == 'render_3d':
+            view_timeout = 150
+        else:
+            view_timeout = 90
         image_data = generate_drawing_safe(
             mesh, artifact_id, features, view_type,
             timeout=view_timeout, output_format=output_format
@@ -3095,9 +3102,14 @@ def compose_plate():
             features = mesh_processor._extract_features(mesh, artifact_id)
 
             try:
-                # complete_sheet renders all sub-views and needs the same
-                # longer budget as the dedicated complete-sheet routes.
-                view_timeout = 180 if view == 'complete_sheet' else 90
+                # The heavy composite/3D views need a longer budget, matching
+                # the dedicated technical-drawing route.
+                if view in ('complete_sheet', 'complete_sheet_3d'):
+                    view_timeout = 240 if view == 'complete_sheet_3d' else 180
+                elif view == 'render_3d':
+                    view_timeout = 150
+                else:
+                    view_timeout = 90
                 image_data = generate_drawing_safe(
                     mesh, artifact_id, features, view, timeout=view_timeout
                 )
