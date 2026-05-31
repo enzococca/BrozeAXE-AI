@@ -143,22 +143,73 @@ class TechnicalDrawingGenerator:
         else:
             raise ValueError(f"Invalid view type: {view_type}")
 
-    def _render_3d_pil(self, mesh, artifact_id: str):
+    def _render_3d_layout_pil(self, mesh):
         """
-        Render the 3D mesh to a multi-view raster image (front / side / top /
-        3-quarter) using the project's MeshRenderer (pyrender, with a
-        matplotlib fallback). Returns a PIL.Image (RGB) or None on failure.
+        Render the 3D mesh as shaded views laid out to MIRROR the technical
+        drawing plate:
+            - Tallone (dall'alto)  on top   (view down the length, Z)
+            - Vista Frontale (left) + Profilo Longitudinale (right) below
+
+        The oriented mesh has width=X, thickness=Y, length=Z, so:
+            - Vista Frontale  = broad face, looked along Y  -> azim=-90, elev=0
+            - Profilo         = thin edge, looked along X   -> azim=0,   elev=0
+            - Tallone         = butt from above, along Z    -> azim=-90, elev=90
+
+        Returns a PIL.Image (RGB) or None on failure.
         """
         try:
-            import tempfile
-            from acs.core.mesh_renderer import render_artifact_image
-            path = render_artifact_image(
-                mesh, artifact_id, output_dir=tempfile.gettempdir())
-            if path:
-                return Image.open(path).convert('RGB')
+            from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+            m = mesh
+            if len(m.faces) > 8000:
+                try:
+                    m = m.simplify_quadric_decimation(4000)
+                except Exception:
+                    pass
+
+            verts = m.vertices
+            faces = m.faces
+            center = (m.bounds[0] + m.bounds[1]) / 2.0
+            ext = m.bounds[1] - m.bounds[0]
+            half = np.maximum(ext / 2.0, 1e-6)
+
+            panels = [
+                ("Tallone (dall'alto)", 90, -90, (0, 0)),
+                ('Vista Frontale',       0, -90, (1, 0)),
+                ('Profilo Longitudinale', 0, 0,  (1, 1)),
+            ]
+
+            fig = plt.figure(figsize=(8, 10), dpi=self.dpi)
+            gs = fig.add_gridspec(2, 2, hspace=0.05, wspace=0.05)
+
+            for title, elev, azim, (r, c) in panels:
+                ax = fig.add_subplot(gs[r, c], projection='3d')
+                coll = Poly3DCollection(verts[faces], alpha=1.0,
+                                        facecolor='#C8B88A',
+                                        edgecolor='none', linewidths=0)
+                # Simple top-left shading via face brightness
+                coll.set_facecolor('#C8B88A')
+                ax.add_collection3d(coll)
+                ax.set_xlim(center[0] - half[0], center[0] + half[0])
+                ax.set_ylim(center[1] - half[1], center[1] + half[1])
+                ax.set_zlim(center[2] - half[2], center[2] + half[2])
+                try:
+                    ax.set_box_aspect((ext[0], ext[1], ext[2]))
+                except Exception:
+                    pass
+                ax.view_init(elev=elev, azim=azim)
+                ax.set_title(title, fontsize=9, pad=2)
+                ax.set_axis_off()
+
+            buf = io.BytesIO()
+            fig.savefig(buf, format='png', dpi=self.dpi, bbox_inches='tight',
+                        facecolor='white')
+            plt.close(fig)
+            buf.seek(0)
+            return Image.open(buf).convert('RGB')
         except Exception as e:
-            print(f"Warning: 3D render failed ({e})")
-        return None
+            print(f"Warning: 3D layout render failed ({e})")
+            return None
 
     def _placeholder_png(self, message: str) -> bytes:
         """Render a simple 'not available' placeholder as PNG bytes."""
@@ -174,11 +225,10 @@ class TechnicalDrawingGenerator:
             self._output_format = prev
 
     def _render_3d_only(self, mesh, artifact_id: str) -> bytes:
-        """Return just the 3D render as PNG bytes (or a placeholder)."""
-        img = self._render_3d_pil(mesh, artifact_id)
+        """Return just the 3D render (drawing-style layout) as PNG bytes."""
+        img = self._render_3d_layout_pil(mesh)
         if img is None:
-            return self._placeholder_png(
-                'Render 3D non disponibile\n(pyrender non installato)')
+            return self._placeholder_png('Render 3D non disponibile')
         buf = io.BytesIO()
         img.save(buf, format='PNG')
         buf.seek(0)
@@ -200,7 +250,7 @@ class TechnicalDrawingGenerator:
         finally:
             self._output_format = prev
 
-        render_img = self._render_3d_pil(mesh, artifact_id)
+        render_img = self._render_3d_layout_pil(mesh)
         if render_img is None:
             return drawing_png
 
