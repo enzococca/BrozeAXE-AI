@@ -5,7 +5,7 @@
 {% block content %}
 <div class="page-header">
     <h1>🤖 AI Classification Assistant</h1>
-    <p>AI-powered analysis using Claude 4.5 Sonnet + Machine Learning</p>
+    <p>AI-powered analysis using Claude 4.6 Sonnet + Machine Learning</p>
 </div>
 
 <!-- Help Section -->
@@ -20,7 +20,7 @@
     <div id="help-content" style="display: none; line-height: 1.8; margin-top: 15px;">
         <p><strong>Overview:</strong> This system combines AI intelligence with machine learning to assist with archaeological artifact classification.</p>
 
-        <h4>🧠 AI Classification (Claude 4.5)</h4>
+        <h4>🧠 AI Classification (Claude 4.6)</h4>
         <ul>
             <li><strong>What it does:</strong> Analyzes artifact features and provides intelligent classification suggestions with archaeological context</li>
             <li><strong>Requires:</strong> Anthropic API key (configured server-side on Railway)</li>
@@ -56,7 +56,7 @@
 <div class="ai-status card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
     <h3 style="color: white;">🔑 AI Configuration</h3>
     <p style="margin: 10px 0; font-size: 14px;">
-        ✅ Claude 4.5 Sonnet API configured server-side<br>
+        ✅ Claude 4.6 Sonnet API configured server-side<br>
         🚀 AI analysis ready - no manual configuration needed<br>
         🔒 API key managed securely via Railway environment variables
     </p>
@@ -65,7 +65,7 @@
 <div class="ai-status card" id="ai-status">
     <h3>System Status</h3>
     <div id="status-indicators">
-        <p><strong>AI (Claude 4.5):</strong> <span id="ai-status-badge">Checking...</span></p>
+        <p><strong>AI (Claude 4.6):</strong> <span id="ai-status-badge">Checking...</span></p>
         <p><strong>ML Model:</strong> <span id="ml-status-badge">Checking...</span></p>
         <p><strong>Database:</strong> <span id="db-status-badge">Checking...</span></p>
     </div>
@@ -75,7 +75,7 @@
     <!-- AI Classification Section -->
     <div class="ai-section card">
         <h2>🧠 AI Classification</h2>
-        <p>Use Claude 4.5 to analyze artifacts and suggest classifications</p>
+        <p>Use Claude 4.6 to analyze artifacts and suggest classifications</p>
 
         <div class="form-group">
             <label for="ai-artifact-select">Select Artifact:</label>
@@ -191,7 +191,7 @@
             <ul style="color: rgba(255,255,255,0.9); line-height: 1.8;">
                 <li><strong>Morphometric Analysis:</strong> Extracts shape and dimensional features</li>
                 <li><strong>Stylistic Analysis:</strong> Evaluates symmetry, proportions, surface quality</li>
-                <li><strong>AI Classification:</strong> Uses Claude 4.5 Sonnet for intelligent suggestions</li>
+                <li><strong>AI Classification:</strong> Uses Claude 4.6 Sonnet for intelligent suggestions</li>
                 <li><strong>ML Prediction:</strong> Applies trained model (if available)</li>
                 <li><strong>Confidence Threshold:</strong> Auto-saves classifications with >80% confidence</li>
             </ul>
@@ -382,7 +382,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <div style="background: #f0f9ff; border-left: 4px solid #3b82f6; padding: 15px; margin-bottom: 15px;">
                 <strong>🤖 AI Analysis for ${artifactId}</strong>
                 <div style="margin-top: 10px; color: #666;">
-                    <em>Streaming response from Claude 4.5 Sonnet...</em>
+                    <em>Streaming response from Claude 4.6 Sonnet...</em>
                 </div>
             </div>
             <div id="ai-stream-content" style="white-space: pre-wrap; line-height: 1.6; font-size: 14px;"></div>
@@ -648,7 +648,7 @@ async function checkSystemStatus() {
         const data = await response.json();
 
         document.getElementById('ai-status-badge').innerHTML =
-            '<span class="status-badge status-active">✓ Configured (Claude 4.5 Sonnet)</span>';
+            '<span class="status-badge status-active">✓ Configured (Claude 4.6 Sonnet)</span>';
 
         document.getElementById('db-status-badge').innerHTML =
             `<span class="status-badge status-active">✓ Active (${data.meshes?.loaded || 0} artifacts)</span>`;

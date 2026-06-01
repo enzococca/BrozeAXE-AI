@@ -1638,9 +1638,35 @@ def generate_comprehensive_report_stream(artifact_id: str):
             yield f"data: {json.dumps({'type': 'log', 'message': '  Analisi PCA e clustering', 'level': 'info'})}\n\n"
             yield f"data: {json.dumps({'type': 'log', 'message': '  Analisi comparativa', 'level': 'info'})}\n\n"
 
-            # Now generate the complete PDF
+            # Now generate the complete PDF. This is a long, blocking call
+            # (AI analysis + mesh rendering), so run it in a background thread
+            # and emit periodic heartbeats — otherwise the SSE connection sits
+            # idle for minutes and the proxy drops it ("connessione persa").
+            import threading
+            import time as _time
+
             pdf_path = output_dir / f"{artifact_id}_comprehensive_report_{language}.pdf"
-            results = generator.generate_complete_report(str(pdf_path))
+            holder = {}
+
+            def _run_report():
+                try:
+                    holder['results'] = generator.generate_complete_report(str(pdf_path))
+                except Exception as exc:  # noqa: BLE001
+                    holder['error'] = exc
+
+            worker = threading.Thread(target=_run_report, daemon=True)
+            worker.start()
+
+            elapsed = 0
+            while worker.is_alive():
+                worker.join(timeout=8)
+                if worker.is_alive():
+                    elapsed += 8
+                    yield f"data: {json.dumps({'type': 'log', 'message': f'  ...generazione PDF in corso ({elapsed}s)', 'level': 'info'})}\n\n"
+
+            if 'error' in holder:
+                raise holder['error']
+            results = holder.get('results', {})
 
             # Save AI-generated analyses to cache for reuse and dashboard visualization
             yield f"data: {json.dumps({'type': 'log', 'message': '  Salvataggio analisi in cache...', 'level': 'info'})}\n\n"

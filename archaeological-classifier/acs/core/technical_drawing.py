@@ -479,6 +479,25 @@ class TechnicalDrawingGenerator:
                 rot_z = np.eye(4)
                 rot_z[:3, :3] = Rotation.from_euler('z', 90, degrees=True).as_matrix()
                 oriented.apply_transform(rot_z)
+
+            # Ensure TALLONE up, TAGLIENTE down. The cutting edge (tagliente)
+            # is the wider, flared end; the butt (tallone) is narrower. Compare
+            # the X-width near each end and, if the wider end is at the top,
+            # flip 180° about X so the blade points DOWN — the standard
+            # archaeological orientation used in the plate.
+            v = oriented.vertices
+            z = v[:, 2]
+            z_min, z_max = z.min(), z.max()
+            z_rng = max(z_max - z_min, 1e-9)
+            top = v[z > z_max - 0.18 * z_rng]
+            bot = v[z < z_min + 0.18 * z_rng]
+            if len(top) >= 3 and len(bot) >= 3:
+                top_w = top[:, 0].max() - top[:, 0].min()
+                bot_w = bot[:, 0].max() - bot[:, 0].min()
+                if top_w > bot_w:  # wide blade is up -> flip it down
+                    flip = np.eye(4)
+                    flip[:3, :3] = Rotation.from_euler('x', 180, degrees=True).as_matrix()
+                    oriented.apply_transform(flip)
         except Exception as e:
             print(f"Warning: Could not reorient mesh ({str(e)}), using original orientation")
             # Return copy as-is if reorientation fails

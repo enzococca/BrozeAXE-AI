@@ -46,7 +46,7 @@ async def handle_list_tools() -> list[types.Tool]:
     return [
         types.Tool(
             name="ai_classify_artifact",
-            description="Use AI (Claude 4.5) to analyze and suggest classification for an artifact",
+            description="Use AI (Claude 4.6) to analyze and suggest classification for an artifact",
             inputSchema={
                 "type": "object",
                 "properties": {

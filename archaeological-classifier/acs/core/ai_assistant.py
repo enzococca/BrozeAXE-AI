@@ -2,7 +2,7 @@
 AI Classification Assistant
 ============================
 
-Uses Claude 4.5 Sonnet to assist with archaeological artifact classification.
+Uses Claude 4.6 Sonnet to assist with archaeological artifact classification.
 Features connection resilience with automatic retry on network errors.
 """
 
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 class AIClassificationAssistant:
     """
-    AI assistant for archaeological classification using Claude 4.5.
+    AI assistant for archaeological classification using Claude 4.6.
 
     Features:
     - Automatic retry on connection errors
@@ -62,7 +62,7 @@ class AIClassificationAssistant:
 
         # Also keep raw client for compatibility
         self.client = self.resilient_client.client
-        self.model = "claude-sonnet-4-5-20250929"  # Latest Claude Sonnet 4.5 model
+        self.model = "claude-sonnet-4-6"  # Latest Claude Sonnet 4.6 model
 
         # Progress callback for UI updates
         self._progress_callback: Optional[Callable[[str, int, int], None]] = None
