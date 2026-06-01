@@ -479,6 +479,41 @@ class SavignanoComprehensiveReport:
         return (x_range, y_range, z_range)
 
     def _create_3d_visualization_page(self, pdf):
+        """Technical drawings page.
+
+        Uses the SAME real technical drawing the web app's drawing form
+        produces (TechnicalDrawingGenerator 'complete_sheet'): the real mesh
+        silhouette with section, front view + relief stippling and profile —
+        so the report shows the actual axe, not an idealised shape. Falls back
+        to the legacy synthetic plate if rendering fails.
+        """
+        try:
+            import io as _io
+            from PIL import Image as _PILImage
+            from acs.core.technical_drawing import TechnicalDrawingGenerator
+
+            gen = TechnicalDrawingGenerator(dpi=200)
+            feats = self.features if isinstance(self.features, dict) else {}
+            png = gen.generate_single_view(
+                self.mesh, self.artifact_id, 'complete_sheet', feats, 'png')
+            img = _PILImage.open(_io.BytesIO(png))
+
+            fig = plt.figure(figsize=(8.27, 11.69))  # A4 portrait
+            fig.suptitle(f"Disegni Tecnici Archeologici - {self.artifact_id}",
+                         fontsize=13, fontweight='bold', y=0.98)
+            ax = fig.add_axes([0.04, 0.03, 0.92, 0.9])
+            ax.imshow(img)
+            ax.axis('off')
+            fig.patch.set_facecolor('white')
+            pdf.savefig(fig, facecolor='white')
+            plt.close(fig)
+            return
+        except Exception as e:
+            print(f"Warning: real technical drawing failed ({e}); "
+                  f"falling back to synthetic plate")
+            self._create_3d_visualization_page_synthetic(pdf)
+
+    def _create_3d_visualization_page_synthetic(self, pdf):
         """Create technical drawings page following archaeological standards.
 
         CRITICAL LAYOUT (Professional Publication Standard):
