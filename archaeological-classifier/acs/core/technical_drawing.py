@@ -804,10 +804,9 @@ class TechnicalDrawingGenerator:
                 rs = gaussian_filter1d(np.nan_to_num(row, nan=0.0), 2.0)
                 center_t = np.median(rs[c0:c1]) if c1 > c0 else rs[mid]
                 mt = rs.max()
-                # Need a clear raised margin above the central face.
-                if mt - center_t < 0.18 * tmax:
+                if mt - center_t < 0.12 * tmax:
                     continue
-                thr = center_t + 0.5 * (mt - center_t)
+                thr = center_t + 0.45 * (mt - center_t)
                 # Inner edge = first crossing of the threshold scanning OUTWARD
                 # from the centre on each side.
                 li = next((i for i in range(mid, -1, -1) if rs[i] >= thr), None)
@@ -817,21 +816,18 @@ class TechnicalDrawingGenerator:
                 if ri is not None and us[ri] > (u_min + 0.5 * u_span):
                     crest_r.append((us[ri], ws[j]))
 
-            min_pts = max(12, int(nw * 0.20))
+            min_pts = max(12, int(nw * 0.15))
             for crest in (crest_l, crest_r):
                 if len(crest) < min_pts:
                     continue
                 c = np.array(crest)
-                # Guard: a real margin line is roughly vertical — reject if the
-                # u positions scatter too much (that would be a wrong diagonal).
-                if c[:, 0].std() > 0.22 * u_span:
+                if c[:, 0].std() > 0.25 * u_span:
                     continue
-                # Guard: must span a decent length.
-                if (c[:, 1].max() - c[:, 1].min()) < 0.30 * w_span:
+                if (c[:, 1].max() - c[:, 1].min()) < 0.25 * w_span:
                     continue
-                cu = gaussian_filter1d(c[:, 0], 3)
-                ax.plot(cu, c[:, 1], 'k-', linewidth=linewidth,
-                        alpha=0.85, zorder=3)
+                cu = gaussian_filter1d(c[:, 0], 5)
+                ax.plot(cu, c[:, 1], 'k-', linewidth=max(linewidth, 0.7),
+                        alpha=0.90, zorder=3)
         except Exception as e:
             print(f"Warning: alette lines failed ({e})")
 
@@ -1347,20 +1343,18 @@ class TechnicalDrawingGenerator:
                 return None
             snorm = gaussian_filter(np.clip(slope / ref, 0.0, 1.0), 1.0)
 
-            # Directional shadow: light from upper-left-front.
-            # Left-facing slopes (toward light) stay CLEAN / white;
-            # right-facing slopes (away from light, inner side of each
-            # margin) get DENSE stippling — archaeological convention.
+            # Directional shadow: light purely from the LEFT.
+            # Left-facing slopes → lit → clean white.
+            # Right-facing slopes → shadow → dense stippling.
             norm = np.sqrt(dHdu ** 2 + dHdw ** 2 + 1.0)
-            lu, lw, ld = -0.70, 0.30, 0.65
+            lu, lw, ld = -0.92, 0.0, 0.25
             ln = np.sqrt(lu * lu + lw * lw + ld * ld)
             bright = np.clip((-dHdu * lu - dHdw * lw + ld) / (norm * ln), 0, 1)
             shadow = 1.0 - bright
 
-            # Gate stippling on shadow direction: only where slope AND
-            # shadow are both present.  The lit side of each ridge stays
-            # nearly white, the shadowed side gets dense dots.
-            density = 0.02 + 0.12 * snorm + 0.80 * snorm * shadow
+            # Hard gate: lit side (shadow < 0.35) gets zero stippling.
+            shadow_gate = np.where(shadow > 0.35, shadow, 0.0)
+            density = 0.01 + 0.90 * snorm * shadow_gate
 
             ui = np.clip(((pts[:, 0] - u_min) / max(u_max - u_min, 1e-6)
                           * (nu - 1)).astype(int), 0, nu - 1)
