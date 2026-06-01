@@ -755,105 +755,141 @@ class TechnicalDrawingGenerator:
     def _draw_alette_lines(self, ax, mesh, projection_axes=(0, 2),
                            depth_axis=1, linewidth=0.6):
         """
-        Mark the inner edge of each margine rialzato (aletta) — Cataruzza
-        style.
+        Mark the inner edge of each aletta by OFFSETTING the silhouette
+        inward by the actual aletta width measured from real cross-sections.
 
-        Uses a THICKNESS MAP (front − back depth) which isolates the alette
-        from the overall convex body shape.  For each row, finds the
-        thickness peak in the outer portion of each half (where the thin
-        alette ridges are), then walks inward to the foot where the
-        thickness drops back to the flat-centre level.
+        1. Sample the silhouette (left/right edges) at many Z heights.
+        2. Take real cross-sections at several Z heights and measure
+           the aletta width (where Y-extent exceeds the central baseline).
+        3. Offset the silhouette inward by the measured width.
+        4. Smooth and draw.
         """
         try:
             from scipy.ndimage import gaussian_filter1d
-            from scipy.interpolate import griddata
 
             a0, a1 = list(projection_axes)
             v = mesh.vertices
-            normals = mesh.vertex_normals
-
-            front = v[normals[:, depth_axis] > 0.2]
-            back = v[normals[:, depth_axis] < -0.2]
-            if len(front) < 50 or len(back) < 50:
+            bounds = mesh.bounds
+            z_min, z_max = bounds[0][2], bounds[1][2]
+            z_range = z_max - z_min
+            if z_range < 1:
                 return
 
-            u_min, u_max = v[:, a0].min(), v[:, a0].max()
-            w_min, w_max = v[:, a1].min(), v[:, a1].max()
-            u_span = u_max - u_min
-            w_span = w_max - w_min
-            nu, nw = 140, 360
-            us = np.linspace(u_min, u_max, nu)
-            ws = np.linspace(w_min, w_max, nw)
-            Ug, Wg = np.meshgrid(us, ws)
+            # --- Step 1: silhouette (left/right X at each Z) ---
+            n_rows = 200
+            z_vals = np.linspace(z_min + z_range * 0.02,
+                                 z_max - z_range * 0.02, n_rows)
+            band = z_range / n_rows * 1.5
+            left_x = np.full(n_rows, np.nan)
+            right_x = np.full(n_rows, np.nan)
+            for k, z in enumerate(z_vals):
+                mask = np.abs(v[:, a1] - z) < band
+                if mask.sum() < 3:
+                    continue
+                xs = v[mask, a0]
+                left_x[k] = xs.min()
+                right_x[k] = xs.max()
 
-            fz = griddata(front[:, [a0, a1]], front[:, depth_axis],
-                          (Ug, Wg), method='linear')
-            bz = griddata(back[:, [a0, a1]], back[:, depth_axis],
-                          (Ug, Wg), method='linear')
-            thick = fz - bz
-            if not np.isfinite(np.nanmax(thick)):
+            valid = ~np.isnan(left_x) & ~np.isnan(right_x)
+            if valid.sum() < 20:
                 return
-            thick = np.nan_to_num(thick, nan=0.0)
-            for j in range(nw):
-                thick[j] = gaussian_filter1d(thick[j], 2.0)
+            idx = np.arange(n_rows)
+            left_x = np.interp(idx, idx[valid], left_x[valid])
+            right_x = np.interp(idx, idx[valid], right_x[valid])
 
-            mid = nu // 2
-            c0, c1 = int(nu * 0.42), int(nu * 0.58)
-            # Outer search zones: left 0..40% of width, right 60..100%
-            l_end = int(nu * 0.45)
-            r_start = int(nu * 0.55)
+            # --- Step 2: measure aletta width from cross-sections ---
+            offsets = []
+            z_meas = []
+            for frac in np.linspace(0.20, 0.85, 10):
+                z_pos = z_min + frac * z_range
+                try:
+                    sec = mesh.section(
+                        plane_origin=[0, 0, z_pos],
+                        plane_normal=[0, 0, 1])
+                    if sec is None or len(sec.vertices) < 6:
+                        continue
+                    sv = sec.vertices
+                    sx = sv[:, 0]
+                    sy = sv[:, 1]
+                    total_w = sx.max() - sx.min()
+                    if total_w < 1:
+                        continue
 
-            pts_l, pts_r = [], []
-            for j in range(nw):
-                row = thick[j]
-                center_t = np.median(row[c0:c1])
-                tmax = row.max()
-                if tmax <= 0 or (tmax - center_t) < 0.10 * tmax:
-                    continue
+                    # Bin the section and compute Y-extent per X bin
+                    n_bins = 30
+                    xb = np.linspace(sx.min(), sx.max(), n_bins + 1)
+                    y_ext = np.zeros(n_bins)
+                    for b in range(n_bins):
+                        m = (sx >= xb[b]) & (sx < xb[b + 1])
+                        if m.sum() >= 2:
+                            y_ext[b] = sy[m].max() - sy[m].min()
 
-                # Left aletta: find peak in OUTER left zone
-                left_zone = row[:l_end]
-                if len(left_zone) < 3:
-                    continue
-                lpeak_i = np.argmax(left_zone)
-                lpeak_t = row[lpeak_i]
-                relief_l = lpeak_t - center_t
-                if relief_l > 0.08 * tmax:
-                    thr = center_t + 0.40 * relief_l
-                    foot_i = lpeak_i
-                    for i in range(lpeak_i, min(mid + 3, nu)):
-                        if row[i] <= thr:
-                            foot_i = i
+                    # Central zone baseline (middle 30%)
+                    cb = y_ext[n_bins // 3: 2 * n_bins // 3]
+                    cb = cb[cb > 0]
+                    if len(cb) < 2:
+                        continue
+                    center_y = np.median(cb)
+                    max_y = y_ext.max()
+                    if max_y - center_y < 0.3:
+                        continue
+                    thr = center_y + 0.40 * (max_y - center_y)
+
+                    # Left aletta width: from left edge, walk right
+                    # until Y-extent drops below threshold
+                    lw = 0
+                    for b in range(n_bins):
+                        if y_ext[b] > 0 and y_ext[b] < thr:
+                            lw = xb[b] - sx.min()
                             break
-                    pts_l.append((us[foot_i], ws[j]))
-
-                # Right aletta: find peak in OUTER right zone
-                right_zone = row[r_start:]
-                if len(right_zone) < 3:
-                    continue
-                rpeak_i = r_start + np.argmax(right_zone)
-                rpeak_t = row[rpeak_i]
-                relief_r = rpeak_t - center_t
-                if relief_r > 0.08 * tmax:
-                    thr = center_t + 0.40 * relief_r
-                    foot_i = rpeak_i
-                    for i in range(rpeak_i, max(mid - 3, -1), -1):
-                        if row[i] <= thr:
-                            foot_i = i
+                    # Right aletta width: from right edge, walk left
+                    rw = 0
+                    for b in range(n_bins - 1, -1, -1):
+                        if y_ext[b] > 0 and y_ext[b] < thr:
+                            rw = sx.max() - xb[b + 1]
                             break
-                    pts_r.append((us[foot_i], ws[j]))
 
-            min_pts = max(15, int(nw * 0.15))
-            for pts in (pts_l, pts_r):
-                if len(pts) < min_pts:
+                    w = (lw + rw) / 2.0
+                    if 0.5 < w < total_w * 0.35:
+                        offsets.append(w)
+                        z_meas.append(z_pos)
+                except Exception:
                     continue
-                c = np.array(pts)
-                if c[:, 0].std() > 0.22 * u_span:
-                    continue
-                if (c[:, 1].max() - c[:, 1].min()) < 0.20 * w_span:
-                    continue
-                cu = gaussian_filter1d(c[:, 0], sigma=8)
-                ax.plot(cu, c[:, 1], 'k-', linewidth=max(linewidth, 0.7),
+
+            # Fallback: 10% of average width
+            if len(offsets) < 2:
+                avg_width = (right_x - left_x).mean()
+                offset_arr = np.full(n_rows, avg_width * 0.10)
+            else:
+                offset_arr = np.interp(z_vals, z_meas, offsets)
+                offset_arr = gaussian_filter1d(offset_arr, 10)
+
+            # --- Step 3: taper so lines merge into the silhouette
+            #     BEFORE the tallone (top) and BEFORE the tagliente (bottom).
+            z_frac = (z_vals - z_min) / z_range
+            taper = np.ones_like(z_frac)
+            # Bottom: fade offset 0→1 between 12% and 28%
+            bot = z_frac < 0.28
+            taper[bot] = np.clip((z_frac[bot] - 0.12) / 0.16, 0, 1)
+            # Top: fade offset 1→0 between 78% and 92%
+            top = z_frac > 0.78
+            taper[top] = np.clip((0.92 - z_frac[top]) / 0.14, 0, 1)
+            offset_arr *= taper
+
+            # --- Step 4: offset lines ---
+            left_line = left_x + offset_arr
+            right_line = right_x - offset_arr
+
+            left_line = gaussian_filter1d(left_line, 6)
+            right_line = gaussian_filter1d(right_line, 6)
+
+            # Only draw the middle section where offset > 0.5 mm
+            draw_mask = offset_arr > 0.5
+            if draw_mask.sum() < 10:
+                return
+            for line_x in (left_line, right_line):
+                ax.plot(line_x[draw_mask], z_vals[draw_mask], 'k-',
+                        linewidth=max(linewidth, 0.7),
                         alpha=0.90, zorder=3)
         except Exception as e:
             print(f"Warning: alette lines failed ({e})")
