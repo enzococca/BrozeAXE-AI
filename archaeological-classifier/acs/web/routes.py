@@ -158,6 +158,11 @@ def load_textured_mesh(artifact_id: str):
         mtl_path = meta.get('mtl_path')
         texture_paths = meta.get('texture_paths', []) or []
         if not mesh_path or not (mtl_path or texture_paths):
+            logging.warning(
+                f"[textured_mesh] {artifact_id}: no texture data "
+                f"(mtl={bool(mtl_path)}, textures={len(texture_paths)}) "
+                f"-> render will use bronze default")
+            _textured_mesh_cache[artifact_id] = None
             return None  # nothing textured to load
 
         storage = get_default_storage()
@@ -187,6 +192,9 @@ def load_textured_mesh(artifact_id: str):
         mesh = trimesh.load(obj_local, process=False)
         if isinstance(mesh, trimesh.Scene):
             mesh = mesh.dump(concatenate=True)
+        vis_type = type(getattr(mesh, 'visual', None)).__name__
+        logging.info(
+            f"[textured_mesh] {artifact_id}: loaded with visual={vis_type}")
         _textured_mesh_cache[artifact_id] = mesh
         return mesh
     except Exception as e:
@@ -3189,7 +3197,8 @@ def compose_plate():
             features = mesh_processor._extract_features(mesh, artifact_id)
 
             # Textured mesh for 3D views so renders carry the real surface colour.
-            if view in ('render_3d', 'complete_sheet_3d'):
+            if view in ('render_3d', 'complete_sheet_3d',
+                        'complete_sheet_3d_front'):
                 textured = load_textured_mesh(artifact_id)
                 if textured is not None:
                     mesh = textured
@@ -3197,8 +3206,9 @@ def compose_plate():
             try:
                 # The heavy composite/3D views need a longer budget, matching
                 # the dedicated technical-drawing route.
-                if view in ('complete_sheet', 'complete_sheet_3d'):
-                    view_timeout = 240 if view == 'complete_sheet_3d' else 180
+                if view in ('complete_sheet', 'complete_sheet_3d',
+                            'complete_sheet_3d_front'):
+                    view_timeout = 180 if view == 'complete_sheet' else 240
                 elif view == 'render_3d':
                     view_timeout = 150
                 else:
