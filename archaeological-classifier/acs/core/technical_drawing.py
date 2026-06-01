@@ -129,6 +129,13 @@ class TechnicalDrawingGenerator:
                 oriented_mesh, artifact_id, features
             )
 
+        if resolved == 'complete_sheet_3d_front':
+            # Composer variant: drawing plate + 3D showing ONLY the front
+            # view (no 3D profile), so each cell stays compact.
+            return self._create_composite_sheet_with_3d(
+                oriented_mesh, artifact_id, features, front_only=True
+            )
+
         if resolved == 'longitudinal_profile':
             return self._draw_longitudinal_profile(oriented_mesh, artifact_id)
         elif resolved in ('cross_section_high', 'cross_section_mid', 'cross_section_low'):
@@ -245,7 +252,8 @@ class TechnicalDrawingGenerator:
             print(f"Warning: section render failed ({e})")
             return None
 
-    def _render_3d_layout_pil(self, mesh, include_section=True):
+    def _render_3d_layout_pil(self, mesh, include_section=True,
+                              front_only=False):
         """
         Fast rasterized 3D render laid out to MIRROR the drawing plate, at the
         SAME scale across panels:
@@ -305,9 +313,9 @@ class TechnicalDrawingGenerator:
             front_img = self._render_mesh_view_pil(
                 m, 1, (0, 2), ppm, face_colors, base_rgb,
                 light([0.3, 1.0, 0.3]))
-            prof_img = self._render_mesh_view_pil(
+            prof_img = (None if front_only else self._render_mesh_view_pil(
                 m, 0, (1, 2), ppm, face_colors, base_rgb,
-                light([1.0, -0.3, 0.3]))
+                light([1.0, -0.3, 0.3])))
             sec_img = (self._render_section_pil(m, ppm, base_rgb)
                        if include_section else None)
 
@@ -325,7 +333,6 @@ class TechnicalDrawingGenerator:
                 return tb[2] - tb[0]
 
             left_x = margin
-            right_x = margin + front_img.width + gap_col
             if sec_img is not None:
                 sec_y = margin + title_h
                 row_y = sec_y + sec_img.height + gap_row
@@ -335,12 +342,16 @@ class TechnicalDrawingGenerator:
             front_y = row_y + title_h
 
             # Canvas must fit each panel AND its (possibly wider) title.
-            prof_block = max(prof_img.width, text_w('Profilo Longitudinale'))
             front_block = max(front_img.width, text_w('Vista Frontale'),
                               sec_img.width if sec_img is not None else 0,
                               text_w('Sezione Trasversale'))
-            right_x = margin + front_block + gap_col
-            canvas_w = right_x + prof_block + margin
+            if prof_img is not None:
+                prof_block = max(prof_img.width, text_w('Profilo Longitudinale'))
+                right_x = margin + front_block + gap_col
+                canvas_w = right_x + prof_block + margin
+            else:
+                right_x = None
+                canvas_w = margin + front_block + margin
             canvas_h = front_y + front_img.height + margin
             canvas = Image.new('RGB', (canvas_w, canvas_h), (255, 255, 255))
             draw = ImageDraw.Draw(canvas)
@@ -354,7 +365,9 @@ class TechnicalDrawingGenerator:
             if sec_img is not None:
                 titled('Sezione Trasversale', sec_img, left_x, sec_y, margin)
             titled('Vista Frontale', front_img, left_x, front_y, row_y)
-            titled('Profilo Longitudinale', prof_img, right_x, front_y, row_y)
+            if prof_img is not None:
+                titled('Profilo Longitudinale', prof_img, right_x, front_y,
+                       row_y)
 
             return canvas
         except Exception as e:
@@ -386,14 +399,30 @@ class TechnicalDrawingGenerator:
         buf.seek(0)
         return buf.getvalue()
 
+    def _ink_vspan(self, img, x0f, x1f, y0f=0.0, y1f=1.0):
+        """Vertical pixel span (top, bottom) of non-white ink inside the
+        sub-rectangle [x0f,x1f]×[y0f,y1f] (fractions of the image)."""
+        arr = np.asarray(img.convert('L'))
+        H, W = arr.shape
+        x0, x1 = int(W * x0f), int(W * x1f)
+        y0, y1 = int(H * y0f), int(H * y1f)
+        sub = arr[y0:y1, x0:x1]
+        rows = np.where((sub < 250).any(axis=1))[0]
+        if len(rows) == 0:
+            return None
+        return (y0 + rows[0], y0 + rows[-1])
+
     def _create_composite_sheet_with_3d(self, mesh, artifact_id: str,
-                                        features: Dict) -> bytes:
+                                        features: Dict,
+                                        front_only: bool = False) -> bytes:
         """
-        Build the technical drawing plate and the 3D render SIDE BY SIDE, at the
-        same height (proportional), as a single PNG. The 3D render here omits
-        the cross-section (the drawing plate already shows it) — it only carries
-        Vista Frontale + Profilo. Falls back to the plain drawing plate if the
-        3D render is unavailable, so the request never fails.
+        Build the technical drawing plate and the 3D render SIDE BY SIDE, at
+        the SAME real size (the 3D axe is scaled so its front-view height
+        matches the drawing's front-view height in pixels). The 3D render
+        omits the cross-section (the drawing plate already shows it). When
+        ``front_only`` is True the 3D shows only the Vista Frontale (used by
+        the composer to keep cells compact). Falls back to the plain drawing
+        plate if the 3D render is unavailable.
         """
         prev = self._output_format
         self._output_format = 'png'
@@ -403,27 +432,45 @@ class TechnicalDrawingGenerator:
         finally:
             self._output_format = prev
 
-        render_img = self._render_3d_layout_pil(mesh, include_section=False)
+        render_img = self._render_3d_layout_pil(
+            mesh, include_section=False, front_only=front_only)
         if render_img is None:
             return drawing_png
 
         try:
             drawing_img = Image.open(io.BytesIO(drawing_png)).convert('RGB')
 
-            # The drawing plate reserves vertical room for the section, scale
-            # bar, info strip and title, so the axe occupies roughly 55-60%
-            # of the image height. Scale the 3D render down to match.
-            target_h = int(drawing_img.height * 0.58)
-            r_scale = target_h / render_img.height
-            render_resized = render_img.resize(
-                (max(1, int(render_img.width * r_scale)), target_h))
+            # Measure the actual axe height (Vista Frontale) in each image by
+            # the non-white ink span, so we can scale the 3D to the SAME real
+            # size as the drawing.  The front view is in the left ~35% of both
+            # images; exclude the bottom 12% of the drawing (scale bar/info).
+            d_span = self._ink_vspan(drawing_img, 0.04, 0.34, 0.05, 0.86)
+            r_span = self._ink_vspan(render_img, 0.0, 0.55, 0.0, 1.0)
+
+            if d_span and r_span and (r_span[1] - r_span[0]) > 5:
+                target_axe_h = d_span[1] - d_span[0]
+                cur_axe_h = r_span[1] - r_span[0]
+                r_scale = target_axe_h / cur_axe_h
+            else:
+                # Fallback to a fixed fraction if measurement fails.
+                r_scale = (drawing_img.height * 0.58) / render_img.height
+
+            new_w = max(1, int(render_img.width * r_scale))
+            new_h = max(1, int(render_img.height * r_scale))
+            render_resized = render_img.resize((new_w, new_h))
 
             gap = max(20, int(drawing_img.width * 0.03))
             total_w = drawing_img.width + gap + render_resized.width
             combined = Image.new('RGB', (total_w, drawing_img.height), 'white')
             combined.paste(drawing_img, (0, 0))
-            # Top-align the 3D with the drawing so both sit on the same line.
-            combined.paste(render_resized, (drawing_img.width + gap, 0))
+
+            # Align the 3D axe top with the drawing axe top so both sit on
+            # the same line.
+            paste_y = 0
+            if d_span and r_span:
+                r_top_scaled = int(r_span[0] * r_scale)
+                paste_y = max(0, d_span[0] - r_top_scaled)
+            combined.paste(render_resized, (drawing_img.width + gap, paste_y))
 
             buf = io.BytesIO()
             combined.save(buf, format='PNG')
