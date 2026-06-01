@@ -1347,16 +1347,20 @@ class TechnicalDrawingGenerator:
                 return None
             snorm = gaussian_filter(np.clip(slope / ref, 0.0, 1.0), 1.0)
 
-            # Directional shadow (light upper-left-front) so each margin reads
-            # as a rounded ridge.
+            # Directional shadow: light from upper-left-front.
+            # Left-facing slopes (toward light) stay CLEAN / white;
+            # right-facing slopes (away from light, inner side of each
+            # margin) get DENSE stippling — archaeological convention.
             norm = np.sqrt(dHdu ** 2 + dHdw ** 2 + 1.0)
-            lu, lw, ld = -0.45, 0.35, 1.0
+            lu, lw, ld = -0.70, 0.30, 0.65
             ln = np.sqrt(lu * lu + lw * lw + ld * ld)
             bright = np.clip((-dHdu * lu - dHdw * lw + ld) / (norm * ln), 0, 1)
             shadow = 1.0 - bright
 
-            # Dense on slopes (alette/edges), ~0 on the flat face (white).
-            density = 0.06 + 0.70 * snorm + 0.30 * snorm * shadow
+            # Gate stippling on shadow direction: only where slope AND
+            # shadow are both present.  The lit side of each ridge stays
+            # nearly white, the shadowed side gets dense dots.
+            density = 0.02 + 0.12 * snorm + 0.80 * snorm * shadow
 
             ui = np.clip(((pts[:, 0] - u_min) / max(u_max - u_min, 1e-6)
                           * (nu - 1)).astype(int), 0, nu - 1)
