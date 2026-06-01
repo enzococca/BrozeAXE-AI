@@ -276,7 +276,268 @@ class SavignanoComprehensiveReport:
 
     def generate_complete_report(self, output_path: str) -> Dict:
         """
-        Generate complete archaeological report.
+        Generate the complete archaeological report.
+
+        Tries the LaTeX (tectonic) typesetter first for publication-grade
+        output, and falls back to the matplotlib PDF if LaTeX isn't available
+        or fails — so the report is always produced.
+        """
+        try:
+            import shutil
+            if shutil.which('tectonic') or shutil.which('pdflatex'):
+                return self._generate_latex_report(output_path)
+            print("LaTeX engine not found; using matplotlib PDF report.")
+        except Exception as e:
+            print(f"LaTeX report failed ({e}); falling back to matplotlib PDF.")
+        return self._generate_matplotlib_report(output_path)
+
+    # Common non-ASCII glyphs in the analysis texts -> LaTeX-safe equivalents,
+    # so the document compiles under any engine/font without missing glyphs.
+    _UNICODE_MAP = {
+        '°': r'\textdegree{}', 'µ': r'\textmu{}', 'μ': r'\textmu{}',
+        '²': r'\textsuperscript{2}', '³': r'\textsuperscript{3}',
+        '×': r'$\times$', '·': r'$\cdot$', '±': r'$\pm$',
+        '–': '--', '—': '---', '‒': '--',
+        '’': "'", '‘': "'", '“': '``', '”': "''", '…': r'\ldots{}',
+        '€': r'\texteuro{}', '∅': r'$\varnothing$', '≈': r'$\approx$',
+        '≤': r'$\leq$', '≥': r'$\geq$', '→': r'$\rightarrow$', ' ': ' ',
+    }
+
+    @staticmethod
+    def _latex_escape(text) -> str:
+        """Escape text for safe inclusion in a LaTeX document."""
+        if text is None:
+            return ''
+        s = str(text)
+        # 1) Escape LaTeX special characters on the raw text.
+        repl = {
+            '\\': r'\textbackslash{}', '&': r'\&', '%': r'\%', '$': r'\$',
+            '#': r'\#', '_': r'\_', '{': r'\{', '}': r'\}',
+            '~': r'\textasciitilde{}', '^': r'\textasciicircum{}',
+            '<': r'\textless{}', '>': r'\textgreater{}',
+        }
+        s = ''.join(repl.get(ch, ch) for ch in s)
+        # 2) THEN swap Unicode glyphs for LaTeX commands — done after escaping
+        #    so their backslashes/braces are not themselves escaped.
+        for u, r in SavignanoComprehensiveReport._UNICODE_MAP.items():
+            if u in s:
+                s = s.replace(u, r)
+        return s
+
+    def _latex_paragraphs(self, text) -> str:
+        """
+        Convert a plain/markdown-ish analysis string into robust LaTeX: blocks
+        separated by blank lines become paragraphs, bullet blocks become
+        itemize lists, markdown '#' headings become bold lines. Uses blank-line
+        paragraph breaks (not fragile '\\\\') so it can't break the compile.
+        """
+        if not text:
+            return ''
+        raw = str(text).replace('\r', '')
+        blocks = [b for b in raw.split('\n\n')]
+        out = []
+        for block in blocks:
+            lines = [l.strip() for l in block.split('\n') if l.strip()]
+            if not lines:
+                continue
+            is_bullets = all(
+                l[:2] in ('- ', '* ') or l[:1] in ('•', '–') for l in lines)
+            if is_bullets:
+                items = [r'\item ' + self._latex_escape(l.lstrip('-*•– ').strip())
+                         for l in lines]
+                out.append(r'\begin{itemize}[leftmargin=1.4em,itemsep=2pt]'
+                           + '\n' + '\n'.join(items) + '\n' + r'\end{itemize}')
+            elif len(lines) == 1 and lines[0].startswith('#'):
+                out.append(r'\textbf{'
+                           + self._latex_escape(lines[0].lstrip('#').strip()) + '}')
+            else:
+                out.append(' '.join(self._latex_escape(l) for l in lines))
+        return '\n\n'.join(out)
+
+    def _generate_latex_report(self, output_path: str) -> Dict:
+        """
+        Build the report as a LaTeX document and compile it with tectonic
+        (or pdflatex) for publication-grade typography. Figures (technical
+        drawing, 3D render) are produced by the existing renderers and embedded
+        as images. Raises on failure so the caller can fall back.
+        """
+        import os
+        import shutil
+        import subprocess
+        import tempfile
+        import io as _io
+
+        print(f"Generating LaTeX report for {self.artifact_id}...")
+        output_path = Path(output_path)
+        work = Path(tempfile.mkdtemp(prefix='acs_latex_'))
+
+        # --- Figures -------------------------------------------------------
+        fig_drawing = None
+        fig_render = None
+        try:
+            from acs.core.technical_drawing import TechnicalDrawingGenerator
+            from PIL import Image as _PILImage
+            gen = TechnicalDrawingGenerator(dpi=200)
+            feats = self.features if isinstance(self.features, dict) else {}
+            png = gen.generate_single_view(
+                self.mesh, self.artifact_id, 'complete_sheet', feats, 'png')
+            fig_drawing = work / 'drawing.png'
+            _PILImage.open(_io.BytesIO(png)).save(fig_drawing)
+            try:
+                png3d = gen.generate_single_view(
+                    self.mesh, self.artifact_id, 'render_3d', feats, 'png')
+                fig_render = work / 'render3d.png'
+                _PILImage.open(_io.BytesIO(png3d)).save(fig_render)
+            except Exception as e:
+                print(f"  3D render for LaTeX skipped ({e})")
+        except Exception as e:
+            print(f"  technical drawing for LaTeX failed ({e})")
+
+        # --- Content -------------------------------------------------------
+        meas = self._build_measurements_table()
+        try:
+            hammering = self._analyze_hammering()
+        except Exception:
+            hammering = ''
+        try:
+            casting = self._analyze_casting()
+        except Exception:
+            casting = ''
+        try:
+            ai_text = self._generate_ai_interpretation()
+        except Exception:
+            ai_text = ''
+
+        esc = self._latex_escape
+        rows = []
+        for r in meas.get('data', []):
+            r = (list(r) + ['', '', ''])[:3]
+            rows.append(' & '.join(esc(c) for c in r) + r' \\')
+        table_body = '\n'.join(rows)
+
+        date_str = datetime.now().strftime('%Y-%m-%d %H:%M')
+        title = esc(self.t('title') if hasattr(self, 't') else 'Documentazione Tecnica')
+        subtitle = esc(self.artifact_id)
+
+        parts = []
+        parts.append(r'\documentclass[11pt,a4paper]{article}')
+        # Cross-engine: tectonic (XeTeX) uses fontspec, pdflatex uses inputenc.
+        parts.append(r'\usepackage{iftex}')
+        parts.append(r'\ifPDFTeX')
+        parts.append(r'  \usepackage[utf8]{inputenc}')
+        parts.append(r'  \usepackage[T1]{fontenc}')
+        parts.append(r'  \usepackage{lmodern}')
+        parts.append(r'\else')
+        parts.append(r'  \usepackage{fontspec}')
+        parts.append(r'\fi')
+        parts.append(r'\usepackage{textcomp}')
+        parts.append(r'\usepackage[margin=2.2cm]{geometry}')
+        parts.append(r'\usepackage{graphicx}')
+        parts.append(r'\usepackage{booktabs}')
+        parts.append(r'\usepackage{longtable}')
+        parts.append(r'\usepackage{enumitem}')
+        parts.append(r'\usepackage{xcolor}')
+        parts.append(r'\usepackage{titlesec}')
+        parts.append(r'\usepackage{float}')
+        parts.append(r'\definecolor{accent}{HTML}{1F3B57}')
+        parts.append(r'\titleformat{\section}{\Large\bfseries\color{accent}}{}{0pt}{}[\titlerule]')
+        parts.append(r'\titleformat{\subsection}{\large\bfseries\color{accent}}{}{0pt}{}')
+        parts.append(r'\usepackage{fancyhdr}')
+        parts.append(r'\pagestyle{fancy}\fancyhf{}')
+        parts.append(r'\renewcommand{\headrulewidth}{0.4pt}')
+        parts.append(r'\lhead{\small\color{accent}\textbf{' + title + r'}}')
+        parts.append(r'\rhead{\small ' + subtitle + r'}')
+        parts.append(r'\cfoot{\small\thepage}')
+        parts.append(r'\begin{document}')
+
+        # Title block
+        parts.append(r'\begin{titlepage}\centering')
+        parts.append(r'\vspace*{3cm}')
+        parts.append(r'{\Huge\bfseries\color{accent} ' + title + r'\par}')
+        parts.append(r'\vspace{1cm}')
+        parts.append(r'{\Large ' + esc(self.t('subtitle') if hasattr(self, 't') else 'Analisi') + r' \textemdash\ ' + subtitle + r'\par}')
+        parts.append(r'\vspace{2cm}')
+        parts.append(r'{\large ' + esc(date_str) + r'\par}')
+        if fig_drawing is not None:
+            parts.append(r'\vfill')
+            parts.append(r'\includegraphics[width=0.95\linewidth,height=0.45\textheight,keepaspectratio]{' + fig_drawing.name + r'}')
+        parts.append(r'\vfill')
+        parts.append(r'\end{titlepage}')
+
+        # Morphometry
+        parts.append(r'\section{Misure Morfometriche}')
+        parts.append(r'\renewcommand{\arraystretch}{1.25}')
+        parts.append(r'\begin{longtable}{p{0.5\linewidth} r l}')
+        parts.append(r'\toprule')
+        hdr = (list(meas.get('headers', ['Parametro', 'Valore', 'Unità'])) + ['', '', ''])[:3]
+        parts.append(' & '.join(r'\textbf{' + esc(h) + '}' for h in hdr) + r' \\')
+        parts.append(r'\midrule\endhead')
+        parts.append(table_body)
+        parts.append(r'\bottomrule')
+        parts.append(r'\end{longtable}')
+
+        # Technical drawing
+        if fig_drawing is not None:
+            parts.append(r'\section{Disegno Tecnico}')
+            parts.append(r'\begin{figure}[H]\centering')
+            parts.append(r'\includegraphics[width=\linewidth,height=0.82\textheight,keepaspectratio]{' + fig_drawing.name + r'}')
+            parts.append(r'\caption{Tavola tecnica: sezione trasversale, vista frontale (con puntinato del rilievo) e profilo longitudinale.}')
+            parts.append(r'\end{figure}')
+
+        if fig_render is not None:
+            parts.append(r'\begin{figure}[H]\centering')
+            parts.append(r'\includegraphics[width=\linewidth,height=0.5\textheight,keepaspectratio]{' + fig_render.name + r'}')
+            parts.append(r'\caption{Render 3D del modello (texture reale).}')
+            parts.append(r'\end{figure}')
+
+        # AI interpretation
+        if ai_text:
+            parts.append(r'\section{Interpretazione Archeologica}')
+            parts.append(self._latex_paragraphs(ai_text))
+
+        # Hammering / casting analyses
+        if hammering:
+            parts.append(r'\section{Analisi della Martellatura}')
+            parts.append(self._latex_paragraphs(hammering))
+        if casting:
+            parts.append(r'\section{Analisi della Fusione}')
+            parts.append(self._latex_paragraphs(casting))
+
+        parts.append(r'\end{document}')
+
+        tex_path = work / 'report.tex'
+        tex_path.write_text('\n'.join(parts), encoding='utf-8')
+
+        # --- Compile -------------------------------------------------------
+        tectonic = shutil.which('tectonic')
+        if tectonic:
+            engine = tectonic
+            cmd = [engine, '--outdir', str(work), '--keep-logs', str(tex_path)]
+            runs = 1
+        else:
+            engine = shutil.which('pdflatex')
+            if not engine:
+                raise RuntimeError("No LaTeX engine available")
+            cmd = [engine, '-interaction=nonstopmode',
+                   '-output-directory', str(work), str(tex_path)]
+            runs = 2  # pdflatex needs two passes to resolve refs
+        proc = None
+        for _ in range(runs):
+            proc = subprocess.run(cmd, cwd=str(work), capture_output=True,
+                                  text=True, timeout=300)
+        produced = work / 'report.pdf'
+        if not produced.exists():
+            raise RuntimeError(
+                f"LaTeX compile produced no PDF: {proc.stderr[-500:] if proc else ''}")
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(produced, output_path)
+        print(f"✓ LaTeX report generated: {output_path}")
+        return {'pdf': str(output_path)}
+
+    def _generate_matplotlib_report(self, output_path: str) -> Dict:
+        """
+        Generate complete archaeological report as a matplotlib PDF.
 
         Returns:
             Dictionary with paths to generated files
