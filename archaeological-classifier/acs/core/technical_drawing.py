@@ -755,15 +755,17 @@ class TechnicalDrawingGenerator:
     def _draw_alette_lines(self, ax, mesh, projection_axes=(0, 2),
                            depth_axis=1, linewidth=0.6):
         """
-        Mark the margini rialzati (alette) with CLOSED contour lines derived
-        from the real 3D front-surface height map.
+        Mark the inner edge of each margine rialzato (aletta) with a single
+        smooth line, Cataruzza-style.
 
-        Builds H(u, w), extracts iso-contours at a level between the flat
-        centre and the raised margin peaks using marching squares.  Produces
-        naturally closed contours that follow the true 3D shape.
+        For each horizontal slice of the front-surface height map, scans
+        outward from the centre and finds where the slope (dH/du) first
+        exceeds a threshold — the "foot" where the flat central face begins
+        rising into the raised margin.  The resulting left and right point
+        series are smoothed into two clean lines.
         """
         try:
-            from scipy.ndimage import gaussian_filter
+            from scipy.ndimage import gaussian_filter, gaussian_filter1d
             from scipy.interpolate import griddata
 
             a0, a1 = list(projection_axes)
@@ -778,7 +780,7 @@ class TechnicalDrawingGenerator:
             w_min, w_max = v[:, a1].min(), v[:, a1].max()
             u_span = u_max - u_min
             w_span = w_max - w_min
-            nu, nw = 120, 300
+            nu, nw = 140, 360
             us = np.linspace(u_min, u_max, nu)
             ws = np.linspace(w_min, w_max, nw)
             Ug, Wg = np.meshgrid(us, ws)
@@ -788,122 +790,46 @@ class TechnicalDrawingGenerator:
             if not np.isfinite(np.nanmax(H)):
                 return
             H = np.nan_to_num(H, nan=np.nanmin(H))
-            H = gaussian_filter(H, 2.0)
+            H = gaussian_filter(H, 2.5)
 
-            c0, c1 = int(nu * 0.35), int(nu * 0.65)
-            center_h = np.median(H[:, c0:c1])
-            peak_h = np.percentile(H[np.isfinite(H)], 95)
-            if peak_h - center_h < 0.3:
+            du = u_span / max(nu - 1, 1)
+            dHdu = np.gradient(H, du, axis=1)
+
+            mid = nu // 2
+            slope_ref = np.percentile(np.abs(dHdu), 85)
+            if slope_ref < 1e-6:
                 return
+            slope_thr = 0.25 * slope_ref
 
-            level = center_h + 0.45 * (peak_h - center_h)
+            pts_l, pts_r = [], []
+            for j in range(nw):
+                row_slope = np.abs(dHdu[j])
+                # Scan LEFT from centre: find first column where slope
+                # exceeds threshold (start of the left aletta wall).
+                for i in range(mid, 3, -1):
+                    if row_slope[i] > slope_thr:
+                        pts_l.append((us[i], ws[j]))
+                        break
+                # Scan RIGHT from centre.
+                for i in range(mid, nu - 3):
+                    if row_slope[i] > slope_thr:
+                        pts_r.append((us[i], ws[j]))
+                        break
 
-            contours = self._marching_squares(H, level)
-
-            for contour in contours:
-                if len(contour) < 20:
+            min_pts = max(15, int(nw * 0.18))
+            for pts in (pts_l, pts_r):
+                if len(pts) < min_pts:
                     continue
-                cw_idx = contour[:, 0]
-                cu_idx = contour[:, 1]
-                cu_mm = u_min + cu_idx * (u_span / max(nu - 1, 1))
-                cw_mm = w_min + cw_idx * (w_span / max(nw - 1, 1))
-                span_w = cw_mm.max() - cw_mm.min()
-                if span_w < 0.15 * w_span:
+                c = np.array(pts)
+                if c[:, 0].std() > 0.20 * u_span:
                     continue
-                ax.plot(cu_mm, cw_mm, 'k-', linewidth=max(linewidth, 0.7),
+                if (c[:, 1].max() - c[:, 1].min()) < 0.25 * w_span:
+                    continue
+                cu = gaussian_filter1d(c[:, 0], sigma=8)
+                ax.plot(cu, c[:, 1], 'k-', linewidth=max(linewidth, 0.7),
                         alpha=0.90, zorder=3)
         except Exception as e:
             print(f"Warning: alette lines failed ({e})")
-
-    def _marching_squares(self, field, level):
-        """Extract iso-contours from a 2D field at the given level.
-
-        Returns a list of Nx2 arrays (row, col in continuous coords).
-        Uses a simple marching-squares implementation that traces each
-        contour loop by following edges between above/below cells.
-        """
-        nw, nu = field.shape
-        above = field >= level
-
-        # Build a dict of crossing edges.  An edge is identified by
-        # (row, col, orientation) where orientation is 'h' (between
-        # [r,c] and [r,c+1]) or 'v' (between [r,c] and [r+1,c]).
-        edges = {}  # edge_key -> interpolated (row, col) midpoint
-
-        def interp_h(r, c):
-            d = field[r, c + 1] - field[r, c]
-            t = (level - field[r, c]) / d if abs(d) > 1e-12 else 0.5
-            return (float(r), float(c) + t)
-
-        def interp_v(r, c):
-            d = field[r + 1, c] - field[r, c]
-            t = (level - field[r, c]) / d if abs(d) > 1e-12 else 0.5
-            return (float(r) + t, float(c))
-
-        # For each cell, determine which edges the contour crosses and
-        # link them pairwise.
-        cell_edges = {}  # (r, c) -> list of edge_keys crossing this cell
-        for r in range(nw - 1):
-            for c in range(nu - 1):
-                tl, tr = above[r, c], above[r, c + 1]
-                bl, br = above[r + 1, c], above[r + 1, c + 1]
-                idx = (int(tl) << 3) | (int(tr) << 2) | (int(br) << 1) | int(bl)
-                if idx == 0 or idx == 15:
-                    continue
-                crossings = []
-                if tl != tr:
-                    k = ('h', r, c)
-                    edges[k] = interp_h(r, c)
-                    crossings.append(k)
-                if tr != br:
-                    k = ('v', r, c + 1)
-                    edges[k] = interp_v(r, c + 1)
-                    crossings.append(k)
-                if bl != br:
-                    k = ('h', r + 1, c)
-                    edges[k] = interp_h(r + 1, c)
-                    crossings.append(k)
-                if tl != bl:
-                    k = ('v', r, c)
-                    edges[k] = interp_v(r, c)
-                    crossings.append(k)
-                if len(crossings) == 2:
-                    a, b = crossings
-                    cell_edges.setdefault(a, []).append(b)
-                    cell_edges.setdefault(b, []).append(a)
-                elif len(crossings) == 4:
-                    # Saddle — connect by average height
-                    avg = (field[r, c] + field[r, c+1] +
-                           field[r+1, c] + field[r+1, c+1]) / 4.0
-                    if avg >= level:
-                        pairs = [(0, 1), (2, 3)]
-                    else:
-                        pairs = [(0, 3), (1, 2)]
-                    for i, j in pairs:
-                        cell_edges.setdefault(crossings[i], []).append(crossings[j])
-                        cell_edges.setdefault(crossings[j], []).append(crossings[i])
-
-        # Trace contour loops
-        used = set()
-        contours = []
-        for start_key in edges:
-            if start_key in used:
-                continue
-            path = []
-            key = start_key
-            while key is not None and key not in used:
-                used.add(key)
-                path.append(edges[key])
-                neighbors = cell_edges.get(key, [])
-                key = None
-                for nb in neighbors:
-                    if nb not in used:
-                        key = nb
-                        break
-            if len(path) >= 10:
-                contours.append(np.array(path))
-
-        return contours
 
     def _alpha_shape(self, points, alpha_factor=0.3):
         """
