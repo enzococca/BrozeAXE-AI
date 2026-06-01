@@ -420,8 +420,8 @@ class TechnicalDrawingGenerator:
             total_w = drawing_img.width + gap + render_resized.width
             combined = Image.new('RGB', (total_w, drawing_img.height), 'white')
             combined.paste(drawing_img, (0, 0))
-            y3d = (drawing_img.height - render_resized.height) // 2
-            combined.paste(render_resized, (drawing_img.width + gap, y3d))
+            # Top-align the 3D with the drawing so both sit on the same line.
+            combined.paste(render_resized, (drawing_img.width + gap, 0))
 
             buf = io.BytesIO()
             combined.save(buf, format='PNG')
@@ -934,7 +934,7 @@ class TechnicalDrawingGenerator:
                     outline = vertices_2d[ConvexHull(vertices_2d).vertices]
                 ax.plot(*np.vstack([outline, outline[0]]).T,
                        'k-', linewidth=0.8, solid_capstyle='round')
-            self._add_stippling_shading(ax, mesh, vertices_2d, outline, view='side')
+            # No stippling on the profile — only front/back views are stippled.
 
         except Exception as e:
             print(f"Warning: Could not create longitudinal profile ({str(e)})")
@@ -997,8 +997,7 @@ class TechnicalDrawingGenerator:
                     if len(pts) > 2:
                         section_polys.append(pts)
 
-                if section_polys:
-                    self._stipple_section(ax, section_polys)
+                # Sections are not stippled — only front/back views are.
             else:
                 raise ValueError("Mesh section returned no geometry")
 
@@ -1017,7 +1016,6 @@ class TechnicalDrawingGenerator:
                     outline_closed = np.vstack([outline, outline[0]])
                     ax.plot(outline_closed[:, 0], outline_closed[:, 1],
                            'k-', linewidth=0.8, solid_capstyle='round')
-                    self._stipple_section(ax, [outline])
                 else:
                     ax.text(0.5, 0.5, 'Section unavailable', ha='center', va='center',
                            transform=ax.transAxes)
@@ -1150,8 +1148,7 @@ class TechnicalDrawingGenerator:
                                        solid_capstyle='round')
                             if len(pts) > 2:
                                 polys.append(pts)
-                        if polys:
-                            self._stipple_section(ax, polys)
+                        # Tallone/section view is not stippled.
                         section_drawn = True
                         break
                 except Exception:
@@ -1173,8 +1170,7 @@ class TechnicalDrawingGenerator:
                     outline = verts_2d[ConvexHull(verts_2d).vertices]
                 ax.plot(*np.vstack([outline, outline[0]]).T,
                        'k-', linewidth=0.8, solid_capstyle='round')
-                self._add_stippling_shading(ax, mesh, verts_2d, outline,
-                                            'front')
+                # Tallone/section view is not stippled.
 
         except Exception as e:
             print(f"Warning: Could not create tallone top view ({str(e)})")
@@ -1641,8 +1637,7 @@ class TechnicalDrawingGenerator:
                                    'k-', linewidth=0.8, solid_capstyle='round')
                     if len(pts) > 2:
                         polys.append(pts)
-                if polys:
-                    self._stipple_section(ax_sec, polys)
+                # Section is not stippled — only front/back views are.
             else:
                 raise ValueError("Section returned no geometry")
         except Exception as e:
@@ -1658,7 +1653,6 @@ class TechnicalDrawingGenerator:
                     sout = sv2d[hull.vertices]
                     ax_sec.plot(*np.vstack([sout, sout[0]]).T,
                                'k-', linewidth=0.8)
-                    self._stipple_section(ax_sec, [sout])
             except Exception:
                 pass
         ax_sec.set_title('Sezione Trasversale', fontsize=9, pad=4)
@@ -1711,7 +1705,7 @@ class TechnicalDrawingGenerator:
                     pout = prof_2d[ConvexHull(prof_2d).vertices]
                 ax_prof.plot(*np.vstack([pout, pout[0]]).T,
                             'k-', linewidth=0.8, solid_capstyle='round')
-            self._add_stippling_shading(ax_prof, mesh, prof_2d, pout, 'side')
+            # No stippling on the profile — only front/back views are stippled.
         except Exception as e:
             print(f"Warning: profile render failed ({e})")
         ax_prof.set_title('Profilo Longitudinale', fontsize=9, pad=4)
