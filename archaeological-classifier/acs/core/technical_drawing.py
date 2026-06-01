@@ -164,9 +164,12 @@ class TechnicalDrawingGenerator:
                     vc = None
             if vc is None:
                 vc = getattr(vis, 'vertex_colors', None)
-            if (vc is not None and len(vc) == len(m.vertices)
-                    and np.asarray(vc)[:, :3].astype(float).std() > 4.0):
-                return np.asarray(vc)[:, :3].astype(np.uint8)
+            if vc is not None and len(vc) == len(m.vertices):
+                arr = np.asarray(vc)[:, :3].astype(float)
+                var = arr.std()
+                if var > 2.0:
+                    return arr.astype(np.uint8)
+                print(f"[vertex_colors] rejected: std={var:.1f} (uniform)")
         except Exception as e:
             print(f"Warning: vertex-colour extraction failed ({e})")
         return None
@@ -408,10 +411,9 @@ class TechnicalDrawingGenerator:
             drawing_img = Image.open(io.BytesIO(drawing_png)).convert('RGB')
 
             # The drawing plate reserves vertical room for the section, scale
-            # bar and info strip, so its axe occupies only ~62% of the plate
-            # height. Scale the 3D so its axe matches that (shrink the 3D,
-            # leaving the drawing larger) and centre it vertically.
-            target_h = int(drawing_img.height * 0.72)
+            # bar, info strip and title, so the axe occupies roughly 55-60%
+            # of the image height. Scale the 3D render down to match.
+            target_h = int(drawing_img.height * 0.58)
             r_scale = target_h / render_img.height
             render_resized = render_img.resize(
                 (max(1, int(render_img.width * r_scale)), target_h))
@@ -753,83 +755,86 @@ class TechnicalDrawingGenerator:
     def _draw_alette_lines(self, ax, mesh, projection_axes=(0, 2),
                            depth_axis=1, linewidth=0.6):
         """
-        Mark the margini rialzati (alette) with clean ridge lines derived
-        from the REAL 3D relief (not a stylistic guess).
+        Mark the margini rialzati (alette) with CLOSED contour lines derived
+        from the real 3D front-surface height map.
 
-        Builds a thickness map over the projection plane (front minus back),
-        then, row by row, finds the INNER EDGE of each raised margin — the
-        wall where the thickness rises from the central face up to the flange —
-        and connects them into two smooth, roughly-vertical lines (as drawn in
-        published plates). Heavily guarded so it draws nothing rather than a
-        spurious diagonal when no consistent margins exist (plain flat axe).
+        Builds the front-surface depth map H(u, w), then extracts iso-contour
+        lines at a height threshold between the flat central face and the
+        raised margin peaks.  This produces naturally closed contours that
+        follow the true 3D shape — they converge where the margins merge into
+        the body (distal end) and separate at the tallone, exactly as in
+        published Cataruzza-style plates.
         """
         try:
-            from scipy.ndimage import gaussian_filter1d
+            from scipy.ndimage import gaussian_filter
             from scipy.interpolate import griddata
 
             a0, a1 = list(projection_axes)
             v = mesh.vertices
             normals = mesh.vertex_normals
 
-            front = v[normals[:, depth_axis] > 0.2]
-            back = v[normals[:, depth_axis] < -0.2]
-            if len(front) < 50 or len(back) < 50:
+            front = v[normals[:, depth_axis] > 0.1]
+            if len(front) < 50:
                 return
 
             u_min, u_max = v[:, a0].min(), v[:, a0].max()
             w_min, w_max = v[:, a1].min(), v[:, a1].max()
             u_span = u_max - u_min
             w_span = w_max - w_min
-            nu, nw = 100, 240
+            nu, nw = 120, 300
             us = np.linspace(u_min, u_max, nu)
             ws = np.linspace(w_min, w_max, nw)
             Ug, Wg = np.meshgrid(us, ws)
 
-            fz = griddata(front[:, [a0, a1]], front[:, depth_axis],
-                          (Ug, Wg), method='linear')
-            bz = griddata(back[:, [a0, a1]], back[:, depth_axis],
-                          (Ug, Wg), method='linear')
-            thick = fz - bz
-            tmax = np.nanmax(thick)
-            if not np.isfinite(tmax) or tmax <= 0:
+            H = griddata(front[:, [a0, a1]], front[:, depth_axis],
+                         (Ug, Wg), method='linear')
+            if not np.isfinite(np.nanmax(H)):
+                return
+            H = np.nan_to_num(H, nan=np.nanmin(H))
+            H = gaussian_filter(H, 2.0)
+
+            c0, c1 = int(nu * 0.35), int(nu * 0.65)
+            center_h = np.median(H[:, c0:c1])
+            peak_h = np.percentile(H[np.isfinite(H)], 95)
+            if peak_h - center_h < 0.3:
                 return
 
-            c0, c1 = int(nu * 0.40), int(nu * 0.60)
-            mid = nu // 2
-            crest_l, crest_r = [], []
-            for j in range(nw):
-                row = thick[j]
-                if np.all(np.isnan(row)):
-                    continue
-                rs = gaussian_filter1d(np.nan_to_num(row, nan=0.0), 2.0)
-                center_t = np.median(rs[c0:c1]) if c1 > c0 else rs[mid]
-                mt = rs.max()
-                if mt - center_t < 0.12 * tmax:
-                    continue
-                thr = center_t + 0.45 * (mt - center_t)
-                # Inner edge = first crossing of the threshold scanning OUTWARD
-                # from the centre on each side.
-                li = next((i for i in range(mid, -1, -1) if rs[i] >= thr), None)
-                ri = next((i for i in range(mid, nu) if rs[i] >= thr), None)
-                if li is not None and us[li] < (u_min + 0.5 * u_span):
-                    crest_l.append((us[li], ws[j]))
-                if ri is not None and us[ri] > (u_min + 0.5 * u_span):
-                    crest_r.append((us[ri], ws[j]))
+            level = center_h + 0.45 * (peak_h - center_h)
 
-            min_pts = max(12, int(nw * 0.15))
-            for crest in (crest_l, crest_r):
-                if len(crest) < min_pts:
+            try:
+                from skimage.measure import find_contours
+                contours = find_contours(H, level)
+            except ImportError:
+                contours = self._find_contours_simple(H, level)
+
+            mid_u = nu / 2.0
+            for contour in contours:
+                if len(contour) < 15:
                     continue
-                c = np.array(crest)
-                if c[:, 0].std() > 0.25 * u_span:
+                cw_idx = contour[:, 0]
+                cu_idx = contour[:, 1]
+                cu_mm = u_min + cu_idx * (u_span / max(nu - 1, 1))
+                cw_mm = w_min + cw_idx * (w_span / max(nw - 1, 1))
+                mean_u_idx = cu_idx.mean()
+                if abs(mean_u_idx - mid_u) < nu * 0.08:
                     continue
-                if (c[:, 1].max() - c[:, 1].min()) < 0.25 * w_span:
+                span_w = cw_mm.max() - cw_mm.min()
+                if span_w < 0.15 * w_span:
                     continue
-                cu = gaussian_filter1d(c[:, 0], 5)
-                ax.plot(cu, c[:, 1], 'k-', linewidth=max(linewidth, 0.7),
+                ax.plot(cu_mm, cw_mm, 'k-', linewidth=max(linewidth, 0.7),
                         alpha=0.90, zorder=3)
         except Exception as e:
             print(f"Warning: alette lines failed ({e})")
+
+    def _find_contours_simple(self, field, level):
+        """Fallback contour finder when skimage is unavailable."""
+        from scipy.ndimage import binary_dilation
+        mask = field >= level
+        border = binary_dilation(mask) ^ mask
+        rows, cols = np.where(border)
+        if len(rows) < 10:
+            return []
+        return [np.column_stack([rows, cols])]
 
     def _alpha_shape(self, points, alpha_factor=0.3):
         """
