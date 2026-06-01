@@ -481,37 +481,61 @@ class SavignanoComprehensiveReport:
     def _create_3d_visualization_page(self, pdf):
         """Technical drawings page.
 
-        Uses the SAME real technical drawing the web app's drawing form
-        produces (TechnicalDrawingGenerator 'complete_sheet'): the real mesh
-        silhouette with section, front view + relief stippling and profile —
-        so the report shows the actual axe, not an idealised shape. Falls back
-        to the legacy synthetic plate if rendering fails.
+        Keeps the fully annotated archaeological layout (mm axes, grid,
+        dimension annotations, margini markers, section labels) but draws the
+        REAL mesh silhouette (faithful rasterized outline) instead of an
+        idealised one, so the shape is real AND all the references are present.
+        """
+        self._create_3d_visualization_page_synthetic(pdf)
+
+    def _faithful_outline_2d(self, proj_axes, x_off=0.0, y_off=0.0, res=600):
+        """
+        Faithful 2D silhouette outline of the real mesh for the given
+        projection, by rasterizing the triangles and contouring the filled
+        coverage at 0.5 — captures concavities (incavo) the angular-bin method
+        smooths over. Returns the largest outline polygon (offset to the
+        report's normalized origin) or None.
         """
         try:
-            import io as _io
-            from PIL import Image as _PILImage
-            from acs.core.technical_drawing import TechnicalDrawingGenerator
+            import numpy as np
+            from PIL import Image, ImageDraw
+            from scipy.ndimage import gaussian_filter, binary_fill_holes
+            import matplotlib.pyplot as plt
 
-            gen = TechnicalDrawingGenerator(dpi=200)
-            feats = self.features if isinstance(self.features, dict) else {}
-            png = gen.generate_single_view(
-                self.mesh, self.artifact_id, 'complete_sheet', feats, 'png')
-            img = _PILImage.open(_io.BytesIO(png))
-
-            fig = plt.figure(figsize=(8.27, 11.69))  # A4 portrait
-            fig.suptitle(f"Disegni Tecnici Archeologici - {self.artifact_id}",
-                         fontsize=13, fontweight='bold', y=0.98)
-            ax = fig.add_axes([0.04, 0.03, 0.92, 0.9])
-            ax.imshow(img)
-            ax.axis('off')
-            fig.patch.set_facecolor('white')
-            pdf.savefig(fig, facecolor='white')
-            plt.close(fig)
-            return
+            a = list(proj_axes)
+            tris = self.mesh.vertices[self.mesh.faces][:, :, a]
+            flat = tris.reshape(-1, 2)
+            mn = flat.min(0)
+            span = flat.max(0) - mn
+            span[span == 0] = 1.0
+            res_min = 200
+            if span[0] >= span[1]:
+                W = res; H = max(res_min, int(res * span[1] / span[0]))
+            else:
+                H = res; W = max(res_min, int(res * span[0] / span[1]))
+            sx = (W - 1) / span[0]; sy = (H - 1) / span[1]
+            img = Image.new('1', (W, H), 0)
+            draw = ImageDraw.Draw(img)
+            P = (tris - mn) * np.array([sx, sy])
+            for t in P:
+                draw.polygon([tuple(p) for p in t], fill=1)
+            mask = binary_fill_holes(np.asarray(img, float) > 0.5).astype(float)
+            xs = mn[0] + np.arange(W) / sx
+            ys = mn[1] + np.arange(H) / sy
+            tmp = plt.figure()
+            axt = tmp.add_subplot(111)
+            cs = axt.contour(xs, ys, gaussian_filter(mask, 1.2), levels=[0.5])
+            segs = cs.allsegs[0] if cs.allsegs else []
+            plt.close(tmp)
+            if not segs:
+                return None
+            out = np.array(max(segs, key=len), dtype=float)
+            out[:, 0] -= x_off
+            out[:, 1] -= y_off
+            return out
         except Exception as e:
-            print(f"Warning: real technical drawing failed ({e}); "
-                  f"falling back to synthetic plate")
-            self._create_3d_visualization_page_synthetic(pdf)
+            print(f"Warning: faithful outline failed ({e})")
+            return None
 
     def _create_3d_visualization_page_synthetic(self, pdf):
         """Create technical drawings page following archaeological standards.
@@ -722,32 +746,39 @@ class SavignanoComprehensiveReport:
         ax.scatter(projected[:, 0], projected[:, 1],
                   c='lightgray', s=0.2, alpha=0.2, zorder=1, edgecolors='none')
 
-        # Find approximate outline using edge detection on X/Y extremes
-        # Group points by angle and find edge points
-        center = projected.mean(axis=0)
-        angles = np.arctan2(projected[:, 1] - center[1], projected[:, 0] - center[0])
+        # Faithful real-mesh outline (rasterized silhouette) — captures the
+        # true shape and concavities (incavo). Falls back to the angular-bin
+        # estimate if it fails.
+        real_outline = self._faithful_outline_2d((0, 1), x_min, y_min)
+        if real_outline is not None and len(real_outline) > 2:
+            ax.plot(real_outline[:, 0], real_outline[:, 1],
+                    'k-', linewidth=1.5, zorder=2)
+        else:
+            # Find approximate outline using edge detection on X/Y extremes
+            center = projected.mean(axis=0)
+            angles = np.arctan2(projected[:, 1] - center[1], projected[:, 0] - center[0])
 
-        # Divide into angular bins to find edge points
-        n_bins = 360
-        angle_bins = np.linspace(-np.pi, np.pi, n_bins)
-        edge_points = []
+            # Divide into angular bins to find edge points
+            n_bins = 360
+            angle_bins = np.linspace(-np.pi, np.pi, n_bins)
+            edge_points = []
 
-        for i in range(len(angle_bins) - 1):
-            mask = (angles >= angle_bins[i]) & (angles < angle_bins[i+1])
-            if np.any(mask):
-                bin_points = projected[mask]
-                # Find the point furthest from center in this angular bin
-                distances = np.sqrt(np.sum((bin_points - center)**2, axis=1))
-                furthest_idx = np.argmax(distances)
-                edge_points.append(bin_points[furthest_idx])
+            for i in range(len(angle_bins) - 1):
+                mask = (angles >= angle_bins[i]) & (angles < angle_bins[i+1])
+                if np.any(mask):
+                    bin_points = projected[mask]
+                    # Find the point furthest from center in this angular bin
+                    distances = np.sqrt(np.sum((bin_points - center)**2, axis=1))
+                    furthest_idx = np.argmax(distances)
+                    edge_points.append(bin_points[furthest_idx])
 
-        if len(edge_points) > 0:
-            edge_array = np.array(edge_points)
-            # Close the outline
-            edge_closed = np.vstack([edge_array, edge_array[0]])
-            # Draw black outline
-            ax.plot(edge_closed[:, 0], edge_closed[:, 1],
-                   'k-', linewidth=1.5, zorder=2)
+            if len(edge_points) > 0:
+                edge_array = np.array(edge_points)
+                # Close the outline
+                edge_closed = np.vstack([edge_array, edge_array[0]])
+                # Draw black outline
+                ax.plot(edge_closed[:, 0], edge_closed[:, 1],
+                       'k-', linewidth=1.5, zorder=2)
 
         # MARGINI RIALZATI - Highlight raised flanges if present (green thick lines on edges)
         if self.features.get('margini_rialzati_presenti', False):
