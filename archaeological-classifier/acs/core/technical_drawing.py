@@ -143,6 +143,36 @@ class TechnicalDrawingGenerator:
         else:
             raise ValueError(f"Invalid view type: {view_type}")
 
+    def _mesh_face_colors(self, m):
+        """
+        Per-face RGB colour from the mesh's real texture / vertex colours, or
+        None to fall back to bronze.
+
+        Handles both TextureVisuals (UV + image — baked to vertex colours via
+        ``to_color()``) and ColorVisuals. A variance check rejects trimesh's
+        uniform-grey default for untextured meshes, so plain geometry stays
+        bronze while real textured scans keep their colour.
+        """
+        try:
+            vis = getattr(m, 'visual', None)
+            if vis is None:
+                return None
+            vc = None
+            # Bake a UV texture down to per-vertex colours when present.
+            if 'Texture' in type(vis).__name__ and hasattr(vis, 'to_color'):
+                try:
+                    vc = vis.to_color().vertex_colors
+                except Exception:
+                    vc = None
+            if vc is None:
+                vc = getattr(vis, 'vertex_colors', None)
+            if (vc is not None and len(vc) == len(m.vertices)
+                    and np.asarray(vc)[:, :3].astype(float).std() > 6.0):
+                return vc[m.faces].mean(axis=1)[:, :3].astype(np.uint8)
+        except Exception as e:
+            print(f"Warning: face-colour extraction failed ({e})")
+        return None
+
     def _render_mesh_view_pil(self, m, view_ax, proj_axes, ppm,
                               face_colors, base_rgb, light_dir):
         """Rasterize one orthographic view of the mesh to a PIL image at a
@@ -214,19 +244,21 @@ class TechnicalDrawingGenerator:
             print(f"Warning: section render failed ({e})")
             return None
 
-    def _render_3d_layout_pil(self, mesh):
+    def _render_3d_layout_pil(self, mesh, include_section=True):
         """
         Fast rasterized 3D render laid out to MIRROR the drawing plate, at the
         SAME scale across panels:
 
-            Row 0: Sezione Trasversale (cross-section, like the drawing)
+            Row 0: Sezione Trasversale (cross-section)  [if include_section]
             Row 1: Vista Frontale (along Y) | Profilo Longitudinale (along X)
 
         All panels share one pixels-per-mm scale, so Vista Frontale and Profilo
         print at exactly the same length (as in the drawing) and the section is
-        proportionate. Uses PIL polygon rasterization (C-speed) so even 200k-
-        face scans render in < 2 s. Vertex colours/texture are used when
-        present; otherwise a bronze default.
+        proportionate. When ``include_section`` is False the section panel is
+        omitted (used in the drawing+3D combined export, where the drawing plate
+        already shows the section). Uses PIL polygon rasterization (C-speed) so
+        even 200k-face scans render in < 2 s. Vertex colours/texture are used
+        when present; otherwise a bronze default.
         """
         try:
             from PIL import ImageDraw, ImageFont
@@ -239,18 +271,7 @@ class TechnicalDrawingGenerator:
                     pass
 
             base_rgb = np.array([200, 184, 138], dtype=np.uint8)  # bronze
-            face_colors = None
-            try:
-                vc = m.visual.vertex_colors
-                # Only use vertex colours if they carry a REAL texture: trimesh
-                # hands back a uniform default grey for untextured meshes, which
-                # we'd rather replace with bronze. Real scans vary across the
-                # surface, so require some colour variance.
-                if (vc is not None and len(vc) == len(m.vertices)
-                        and vc[:, :3].astype(float).std() > 6.0):
-                    face_colors = vc[m.faces].mean(axis=1)[:, :3].astype(np.uint8)
-            except Exception:
-                pass
+            face_colors = self._mesh_face_colors(m)
 
             ext = m.bounds[1] - m.bounds[0]
             z_ext = max(ext[2], 1e-6)
@@ -266,7 +287,8 @@ class TechnicalDrawingGenerator:
             prof_img = self._render_mesh_view_pil(
                 m, 0, (1, 2), ppm, face_colors, base_rgb,
                 light([1.0, -0.3, 0.3]))
-            sec_img = self._render_section_pil(m, ppm, base_rgb)
+            sec_img = (self._render_section_pil(m, ppm, base_rgb)
+                       if include_section else None)
 
             # Compose in PIL so the true relative sizes are preserved.
             margin, gap_col, title_h, gap_row = 40, 100, 32, 60
@@ -283,9 +305,12 @@ class TechnicalDrawingGenerator:
 
             left_x = margin
             right_x = margin + front_img.width + gap_col
-            sec_y = margin + title_h
-            sec_h = sec_img.height if sec_img is not None else 0
-            row_y = sec_y + sec_h + gap_row
+            if sec_img is not None:
+                sec_y = margin + title_h
+                row_y = sec_y + sec_img.height + gap_row
+            else:
+                sec_y = margin
+                row_y = margin
             front_y = row_y + title_h
 
             # Canvas must fit each panel AND its (possibly wider) title.
@@ -343,11 +368,12 @@ class TechnicalDrawingGenerator:
     def _create_composite_sheet_with_3d(self, mesh, artifact_id: str,
                                         features: Dict) -> bytes:
         """
-        Build the technical drawing plate and stack the 3D render below it,
-        returned as a single PNG. If the 3D render is unavailable, the plain
-        drawing plate is returned so the request never fails.
+        Build the technical drawing plate and the 3D render SIDE BY SIDE, at the
+        same height (proportional), as a single PNG. The 3D render here omits
+        the cross-section (the drawing plate already shows it) — it only carries
+        Vista Frontale + Profilo. Falls back to the plain drawing plate if the
+        3D render is unavailable, so the request never fails.
         """
-        # The drawing plate is always raster-combined, so force PNG here.
         prev = self._output_format
         self._output_format = 'png'
         try:
@@ -356,35 +382,25 @@ class TechnicalDrawingGenerator:
         finally:
             self._output_format = prev
 
-        render_img = self._render_3d_layout_pil(mesh)
+        render_img = self._render_3d_layout_pil(mesh, include_section=False)
         if render_img is None:
             return drawing_png
 
         try:
             drawing_img = Image.open(io.BytesIO(drawing_png)).convert('RGB')
 
-            # Scale the 3D render to the drawing width, add a small header band.
-            target_w = drawing_img.width
-            scale = target_w / render_img.width
+            # Scale both to the SAME height so they sit side by side at equal
+            # size (stesse grandezze), then paste with a gap between them.
+            target_h = drawing_img.height
+            r_scale = target_h / render_img.height
             render_resized = render_img.resize(
-                (target_w, max(1, int(render_img.height * scale))))
+                (max(1, int(render_img.width * r_scale)), target_h))
 
-            from PIL import ImageDraw, ImageFont
-            band_h = max(40, int(target_w * 0.04))
-            combined = Image.new(
-                'RGB',
-                (target_w, drawing_img.height + band_h + render_resized.height),
-                'white')
+            gap = max(20, int(drawing_img.width * 0.03))
+            total_w = drawing_img.width + gap + render_resized.width
+            combined = Image.new('RGB', (total_w, target_h), 'white')
             combined.paste(drawing_img, (0, 0))
-            draw = ImageDraw.Draw(combined)
-            try:
-                font = ImageFont.truetype(
-                    "DejaVuSans-Bold.ttf", int(band_h * 0.5))
-            except Exception:
-                font = ImageFont.load_default()
-            draw.text((int(target_w * 0.05), drawing_img.height + band_h // 4),
-                      'Render 3D', fill='black', font=font)
-            combined.paste(render_resized, (0, drawing_img.height + band_h))
+            combined.paste(render_resized, (drawing_img.width + gap, 0))
 
             buf = io.BytesIO()
             combined.save(buf, format='PNG')

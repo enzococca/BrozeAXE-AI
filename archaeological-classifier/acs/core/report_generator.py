@@ -649,25 +649,37 @@ class ReportGenerator:
         story.append(metadata)
         story.append(Spacer(1, 0.4*inch))
 
-        # === SECTION 1: 3D RENDERS (REAL MESH VISUALIZATION) ===
-        story.append(Paragraph("3D Mesh Visualization", self.styles['SectionHeading']))
+        # === SECTION 1: TECHNICAL DRAWING + 3D RENDER ===
+        story.append(Paragraph("Documentazione Tecnica", self.styles['SectionHeading']))
         story.append(Paragraph(
-            "High-quality renders generated from actual 3D mesh geometry using archaeological lighting standards.",
+            "Tavola tecnica (sezione, vista frontale e profilo) affiancata al render 3D, "
+            "generata direttamente dalla geometria del modello.",
             self.styles['Normal']
         ))
         story.append(Spacer(1, 0.2*inch))
 
-        # Generate real 3D render using mesh_renderer.py
+        # Use the SAME technical-drawing approach as the web app (drawing + 3D
+        # side by side), so the report matches what users see in the composer.
         try:
-            render_path = render_artifact_image(mesh, artifact_id, output_dir=temp_dir)
-            if render_path and os.path.exists(render_path):
-                story.append(Image(render_path, width=6*inch, height=4.5*inch))
+            from acs.core.drawing_worker import generate_drawing_safe
+            draw_features = morphometric_features or tech_features or {}
+            img_data = generate_drawing_safe(
+                mesh, artifact_id, draw_features, 'complete_sheet_3d', timeout=240)
+            img_path = self._save_temp_image(img_data)
+            if img_path and os.path.exists(img_path):
+                story.append(Image(img_path, width=7*inch, height=4.7*inch))
                 story.append(Spacer(1, 0.3*inch))
             else:
-                story.append(Paragraph("<i>3D render generation failed</i>", self.styles['Normal']))
+                story.append(Paragraph("<i>Disegno tecnico non disponibile</i>", self.styles['Normal']))
         except Exception as e:
-            print(f"Error generating 3D render: {e}")
-            story.append(Paragraph(f"<i>3D render unavailable: {str(e)}</i>", self.styles['Normal']))
+            print(f"Error generating technical drawing: {e}")
+            # Fall back to the legacy 3D render so the report still has a figure.
+            try:
+                render_path = render_artifact_image(mesh, artifact_id, output_dir=temp_dir)
+                if render_path and os.path.exists(render_path):
+                    story.append(Image(render_path, width=6*inch, height=4.5*inch))
+            except Exception as e2:
+                story.append(Paragraph(f"<i>Figura non disponibile: {str(e2)}</i>", self.styles['Normal']))
 
         story.append(Spacer(1, 0.2*inch))
 
