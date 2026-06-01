@@ -3,7 +3,9 @@
 providers = ["python"]
 
 [phases.setup]
-nixPkgs = ['python311', 'gcc', 'libstdcxx5']
+# 'tectonic' is a self-contained LaTeX engine used to typeset the
+# comprehensive PDF report (downloads packages on demand; no full TeX Live).
+nixPkgs = ['python311', 'gcc', 'libstdcxx5', 'tectonic']
 
 # Use startup script to install missing dependencies at runtime
 [start]

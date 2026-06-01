@@ -231,9 +231,313 @@ class SavignanoComprehensiveReport:
         pdf.savefig(fig, bbox_inches='tight')
         plt.close(fig)
 
+    # Palette (publication-grade, restrained)
+    COLORS = {
+        'ink': '#1a1a1a',        # main text
+        'muted': '#5b6470',      # secondary text
+        'accent': '#1f3b57',     # headings / rules (deep slate blue)
+        'rule': '#c9ced6',       # thin separators
+        'band': '#eef1f5',       # subtle header band
+    }
+
+    def _apply_pdf_style(self):
+        """
+        Set a consistent, publication-grade matplotlib style for the whole
+        report: clean serif typography, sensible sizes, hairline axes and
+        embedded PDF fonts (Type 42) so the text stays crisp and selectable.
+        """
+        try:
+            plt.rcParams.update({
+                'font.family': 'serif',
+                'font.serif': ['DejaVu Serif', 'Times New Roman', 'Nimbus Roman'],
+                'font.size': 10.5,
+                'axes.titlesize': 12,
+                'axes.titleweight': 'bold',
+                'axes.labelsize': 9.5,
+                'axes.edgecolor': self.COLORS['muted'],
+                'axes.linewidth': 0.7,
+                'axes.titlecolor': self.COLORS['accent'],
+                'text.color': self.COLORS['ink'],
+                'axes.labelcolor': self.COLORS['ink'],
+                'xtick.color': self.COLORS['muted'],
+                'ytick.color': self.COLORS['muted'],
+                'xtick.labelsize': 8,
+                'ytick.labelsize': 8,
+                'figure.facecolor': 'white',
+                'figure.dpi': 200,
+                'savefig.dpi': 200,
+                'pdf.fonttype': 42,   # embed TrueType (crisp, selectable text)
+                'ps.fonttype': 42,
+                'legend.fontsize': 8.5,
+                'legend.frameon': False,
+            })
+        except Exception as e:
+            print(f"Warning: could not apply PDF style ({e})")
+
     def generate_complete_report(self, output_path: str) -> Dict:
         """
-        Generate complete archaeological report.
+        Generate the complete archaeological report.
+
+        Tries the LaTeX (tectonic) typesetter first for publication-grade
+        output, and falls back to the matplotlib PDF if LaTeX isn't available
+        or fails — so the report is always produced.
+        """
+        try:
+            import shutil
+            if shutil.which('tectonic') or shutil.which('pdflatex'):
+                return self._generate_latex_report(output_path)
+            print("LaTeX engine not found; using matplotlib PDF report.")
+        except Exception as e:
+            print(f"LaTeX report failed ({e}); falling back to matplotlib PDF.")
+        return self._generate_matplotlib_report(output_path)
+
+    # Common non-ASCII glyphs in the analysis texts -> LaTeX-safe equivalents,
+    # so the document compiles under any engine/font without missing glyphs.
+    _UNICODE_MAP = {
+        '°': r'\textdegree{}', 'µ': r'\textmu{}', 'μ': r'\textmu{}',
+        '²': r'\textsuperscript{2}', '³': r'\textsuperscript{3}',
+        '×': r'$\times$', '·': r'$\cdot$', '±': r'$\pm$',
+        '–': '--', '—': '---', '‒': '--',
+        '’': "'", '‘': "'", '“': '``', '”': "''", '…': r'\ldots{}',
+        '€': r'\texteuro{}', '∅': r'$\varnothing$', '≈': r'$\approx$',
+        '≤': r'$\leq$', '≥': r'$\geq$', '→': r'$\rightarrow$', ' ': ' ',
+    }
+
+    @staticmethod
+    def _latex_escape(text) -> str:
+        """Escape text for safe inclusion in a LaTeX document."""
+        if text is None:
+            return ''
+        s = str(text)
+        # 1) Escape LaTeX special characters on the raw text.
+        repl = {
+            '\\': r'\textbackslash{}', '&': r'\&', '%': r'\%', '$': r'\$',
+            '#': r'\#', '_': r'\_', '{': r'\{', '}': r'\}',
+            '~': r'\textasciitilde{}', '^': r'\textasciicircum{}',
+            '<': r'\textless{}', '>': r'\textgreater{}',
+        }
+        s = ''.join(repl.get(ch, ch) for ch in s)
+        # 2) THEN swap Unicode glyphs for LaTeX commands — done after escaping
+        #    so their backslashes/braces are not themselves escaped.
+        for u, r in SavignanoComprehensiveReport._UNICODE_MAP.items():
+            if u in s:
+                s = s.replace(u, r)
+        return s
+
+    def _latex_paragraphs(self, text) -> str:
+        """
+        Convert a plain/markdown-ish analysis string into robust LaTeX: blocks
+        separated by blank lines become paragraphs, bullet blocks become
+        itemize lists, markdown '#' headings become bold lines. Uses blank-line
+        paragraph breaks (not fragile '\\\\') so it can't break the compile.
+        """
+        if not text:
+            return ''
+        raw = str(text).replace('\r', '')
+        blocks = [b for b in raw.split('\n\n')]
+        out = []
+        for block in blocks:
+            lines = [l.strip() for l in block.split('\n') if l.strip()]
+            if not lines:
+                continue
+            is_bullets = all(
+                l[:2] in ('- ', '* ') or l[:1] in ('•', '–') for l in lines)
+            if is_bullets:
+                items = [r'\item ' + self._latex_escape(l.lstrip('-*•– ').strip())
+                         for l in lines]
+                out.append(r'\begin{itemize}[leftmargin=1.4em,itemsep=2pt]'
+                           + '\n' + '\n'.join(items) + '\n' + r'\end{itemize}')
+            elif len(lines) == 1 and lines[0].startswith('#'):
+                out.append(r'\textbf{'
+                           + self._latex_escape(lines[0].lstrip('#').strip()) + '}')
+            else:
+                out.append(' '.join(self._latex_escape(l) for l in lines))
+        return '\n\n'.join(out)
+
+    def _generate_latex_report(self, output_path: str) -> Dict:
+        """
+        Build the report as a LaTeX document and compile it with tectonic
+        (or pdflatex) for publication-grade typography. Figures (technical
+        drawing, 3D render) are produced by the existing renderers and embedded
+        as images. Raises on failure so the caller can fall back.
+        """
+        import os
+        import shutil
+        import subprocess
+        import tempfile
+        import io as _io
+
+        print(f"Generating LaTeX report for {self.artifact_id}...")
+        output_path = Path(output_path)
+        work = Path(tempfile.mkdtemp(prefix='acs_latex_'))
+
+        # --- Figures -------------------------------------------------------
+        fig_drawing = None
+        fig_render = None
+        try:
+            from acs.core.technical_drawing import TechnicalDrawingGenerator
+            from PIL import Image as _PILImage
+            gen = TechnicalDrawingGenerator(dpi=200)
+            feats = self.features if isinstance(self.features, dict) else {}
+            png = gen.generate_single_view(
+                self.mesh, self.artifact_id, 'complete_sheet', feats, 'png')
+            fig_drawing = work / 'drawing.png'
+            _PILImage.open(_io.BytesIO(png)).save(fig_drawing)
+            try:
+                png3d = gen.generate_single_view(
+                    self.mesh, self.artifact_id, 'render_3d', feats, 'png')
+                fig_render = work / 'render3d.png'
+                _PILImage.open(_io.BytesIO(png3d)).save(fig_render)
+            except Exception as e:
+                print(f"  3D render for LaTeX skipped ({e})")
+        except Exception as e:
+            print(f"  technical drawing for LaTeX failed ({e})")
+
+        # --- Content -------------------------------------------------------
+        meas = self._build_measurements_table()
+        try:
+            hammering = self._analyze_hammering()
+        except Exception:
+            hammering = ''
+        try:
+            casting = self._analyze_casting()
+        except Exception:
+            casting = ''
+        try:
+            ai_text = self._generate_ai_interpretation()
+        except Exception:
+            ai_text = ''
+
+        esc = self._latex_escape
+        rows = []
+        for r in meas.get('data', []):
+            r = (list(r) + ['', '', ''])[:3]
+            rows.append(' & '.join(esc(c) for c in r) + r' \\')
+        table_body = '\n'.join(rows)
+
+        date_str = datetime.now().strftime('%Y-%m-%d %H:%M')
+        title = esc(self.t('title') if hasattr(self, 't') else 'Documentazione Tecnica')
+        subtitle = esc(self.artifact_id)
+
+        parts = []
+        parts.append(r'\documentclass[11pt,a4paper]{article}')
+        # Cross-engine: tectonic (XeTeX) uses fontspec, pdflatex uses inputenc.
+        parts.append(r'\usepackage{iftex}')
+        parts.append(r'\ifPDFTeX')
+        parts.append(r'  \usepackage[utf8]{inputenc}')
+        parts.append(r'  \usepackage[T1]{fontenc}')
+        parts.append(r'  \usepackage{lmodern}')
+        parts.append(r'\else')
+        parts.append(r'  \usepackage{fontspec}')
+        parts.append(r'\fi')
+        parts.append(r'\usepackage{textcomp}')
+        parts.append(r'\usepackage[margin=2.2cm]{geometry}')
+        parts.append(r'\usepackage{graphicx}')
+        parts.append(r'\usepackage{booktabs}')
+        parts.append(r'\usepackage{longtable}')
+        parts.append(r'\usepackage{enumitem}')
+        parts.append(r'\usepackage{xcolor}')
+        parts.append(r'\usepackage{titlesec}')
+        parts.append(r'\usepackage{float}')
+        parts.append(r'\definecolor{accent}{HTML}{1F3B57}')
+        parts.append(r'\titleformat{\section}{\Large\bfseries\color{accent}}{}{0pt}{}[\titlerule]')
+        parts.append(r'\titleformat{\subsection}{\large\bfseries\color{accent}}{}{0pt}{}')
+        parts.append(r'\usepackage{fancyhdr}')
+        parts.append(r'\pagestyle{fancy}\fancyhf{}')
+        parts.append(r'\renewcommand{\headrulewidth}{0.4pt}')
+        parts.append(r'\lhead{\small\color{accent}\textbf{' + title + r'}}')
+        parts.append(r'\rhead{\small ' + subtitle + r'}')
+        parts.append(r'\cfoot{\small\thepage}')
+        parts.append(r'\begin{document}')
+
+        # Title block
+        parts.append(r'\begin{titlepage}\centering')
+        parts.append(r'\vspace*{3cm}')
+        parts.append(r'{\Huge\bfseries\color{accent} ' + title + r'\par}')
+        parts.append(r'\vspace{1cm}')
+        parts.append(r'{\Large ' + esc(self.t('subtitle') if hasattr(self, 't') else 'Analisi') + r' \textemdash\ ' + subtitle + r'\par}')
+        parts.append(r'\vspace{2cm}')
+        parts.append(r'{\large ' + esc(date_str) + r'\par}')
+        if fig_drawing is not None:
+            parts.append(r'\vfill')
+            parts.append(r'\includegraphics[width=0.95\linewidth,height=0.45\textheight,keepaspectratio]{' + fig_drawing.name + r'}')
+        parts.append(r'\vfill')
+        parts.append(r'\end{titlepage}')
+
+        # Morphometry
+        parts.append(r'\section{Misure Morfometriche}')
+        parts.append(r'\renewcommand{\arraystretch}{1.25}')
+        parts.append(r'\begin{longtable}{p{0.5\linewidth} r l}')
+        parts.append(r'\toprule')
+        hdr = (list(meas.get('headers', ['Parametro', 'Valore', 'Unità'])) + ['', '', ''])[:3]
+        parts.append(' & '.join(r'\textbf{' + esc(h) + '}' for h in hdr) + r' \\')
+        parts.append(r'\midrule\endhead')
+        parts.append(table_body)
+        parts.append(r'\bottomrule')
+        parts.append(r'\end{longtable}')
+
+        # Technical drawing
+        if fig_drawing is not None:
+            parts.append(r'\section{Disegno Tecnico}')
+            parts.append(r'\begin{figure}[H]\centering')
+            parts.append(r'\includegraphics[width=\linewidth,height=0.82\textheight,keepaspectratio]{' + fig_drawing.name + r'}')
+            parts.append(r'\caption{Tavola tecnica: sezione trasversale, vista frontale (con puntinato del rilievo) e profilo longitudinale.}')
+            parts.append(r'\end{figure}')
+
+        if fig_render is not None:
+            parts.append(r'\begin{figure}[H]\centering')
+            parts.append(r'\includegraphics[width=\linewidth,height=0.5\textheight,keepaspectratio]{' + fig_render.name + r'}')
+            parts.append(r'\caption{Render 3D del modello (texture reale).}')
+            parts.append(r'\end{figure}')
+
+        # AI interpretation
+        if ai_text:
+            parts.append(r'\section{Interpretazione Archeologica}')
+            parts.append(self._latex_paragraphs(ai_text))
+
+        # Hammering / casting analyses
+        if hammering:
+            parts.append(r'\section{Analisi della Martellatura}')
+            parts.append(self._latex_paragraphs(hammering))
+        if casting:
+            parts.append(r'\section{Analisi della Fusione}')
+            parts.append(self._latex_paragraphs(casting))
+
+        parts.append(r'\end{document}')
+
+        tex_path = work / 'report.tex'
+        tex_path.write_text('\n'.join(parts), encoding='utf-8')
+
+        # --- Compile -------------------------------------------------------
+        tectonic = shutil.which('tectonic')
+        if tectonic:
+            engine = tectonic
+            cmd = [engine, '--outdir', str(work), '--keep-logs', str(tex_path)]
+            runs = 1
+        else:
+            engine = shutil.which('pdflatex')
+            if not engine:
+                raise RuntimeError("No LaTeX engine available")
+            cmd = [engine, '-interaction=nonstopmode',
+                   '-output-directory', str(work), str(tex_path)]
+            runs = 2  # pdflatex needs two passes to resolve refs
+        proc = None
+        for _ in range(runs):
+            proc = subprocess.run(cmd, cwd=str(work), capture_output=True,
+                                  text=True, timeout=300)
+        produced = work / 'report.pdf'
+        if not produced.exists():
+            raise RuntimeError(
+                f"LaTeX compile produced no PDF: {proc.stderr[-500:] if proc else ''}")
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(produced, output_path)
+        print(f"✓ LaTeX report generated: {output_path}")
+        return {'pdf': str(output_path)}
+
+    def _generate_matplotlib_report(self, output_path: str) -> Dict:
+        """
+        Generate complete archaeological report as a matplotlib PDF.
 
         Returns:
             Dictionary with paths to generated files
@@ -241,6 +545,9 @@ class SavignanoComprehensiveReport:
         output_path = Path(output_path)
 
         print(f"Generating comprehensive archaeological report for {self.artifact_id}...")
+
+        # Apply a consistent, publication-grade typographic style to every page.
+        self._apply_pdf_style()
 
         # VERIFY AND LOG INCAVO MEASUREMENTS WITH VALIDATION
         if self.features.get('incavo_presente', False):
@@ -315,6 +622,17 @@ class SavignanoComprehensiveReport:
             # Page 7: Comparative Analysis
             print("  - Page 7: Comparative Analysis...")
             self._create_comparative_analysis_page(pdf)
+
+            # Embed document metadata for a polished, identifiable PDF.
+            try:
+                meta = pdf.infodict()
+                meta['Title'] = f"Documentazione Tecnica - {self.artifact_id}"
+                meta['Author'] = "Archaeological Classifier"
+                meta['Subject'] = "Analisi morfometrica e tecnologica - ascia a margini rialzati"
+                meta['Keywords'] = "archeologia, eta del bronzo, ascia, morfometria"
+                meta['CreationDate'] = datetime.now()
+            except Exception:
+                pass
 
         results['pdf'] = str(output_path)
 
@@ -481,37 +799,61 @@ class SavignanoComprehensiveReport:
     def _create_3d_visualization_page(self, pdf):
         """Technical drawings page.
 
-        Uses the SAME real technical drawing the web app's drawing form
-        produces (TechnicalDrawingGenerator 'complete_sheet'): the real mesh
-        silhouette with section, front view + relief stippling and profile —
-        so the report shows the actual axe, not an idealised shape. Falls back
-        to the legacy synthetic plate if rendering fails.
+        Keeps the fully annotated archaeological layout (mm axes, grid,
+        dimension annotations, margini markers, section labels) but draws the
+        REAL mesh silhouette (faithful rasterized outline) instead of an
+        idealised one, so the shape is real AND all the references are present.
+        """
+        self._create_3d_visualization_page_synthetic(pdf)
+
+    def _faithful_outline_2d(self, proj_axes, x_off=0.0, y_off=0.0, res=600):
+        """
+        Faithful 2D silhouette outline of the real mesh for the given
+        projection, by rasterizing the triangles and contouring the filled
+        coverage at 0.5 — captures concavities (incavo) the angular-bin method
+        smooths over. Returns the largest outline polygon (offset to the
+        report's normalized origin) or None.
         """
         try:
-            import io as _io
-            from PIL import Image as _PILImage
-            from acs.core.technical_drawing import TechnicalDrawingGenerator
+            import numpy as np
+            from PIL import Image, ImageDraw
+            from scipy.ndimage import gaussian_filter, binary_fill_holes
+            import matplotlib.pyplot as plt
 
-            gen = TechnicalDrawingGenerator(dpi=200)
-            feats = self.features if isinstance(self.features, dict) else {}
-            png = gen.generate_single_view(
-                self.mesh, self.artifact_id, 'complete_sheet', feats, 'png')
-            img = _PILImage.open(_io.BytesIO(png))
-
-            fig = plt.figure(figsize=(8.27, 11.69))  # A4 portrait
-            fig.suptitle(f"Disegni Tecnici Archeologici - {self.artifact_id}",
-                         fontsize=13, fontweight='bold', y=0.98)
-            ax = fig.add_axes([0.04, 0.03, 0.92, 0.9])
-            ax.imshow(img)
-            ax.axis('off')
-            fig.patch.set_facecolor('white')
-            pdf.savefig(fig, facecolor='white')
-            plt.close(fig)
-            return
+            a = list(proj_axes)
+            tris = self.mesh.vertices[self.mesh.faces][:, :, a]
+            flat = tris.reshape(-1, 2)
+            mn = flat.min(0)
+            span = flat.max(0) - mn
+            span[span == 0] = 1.0
+            res_min = 200
+            if span[0] >= span[1]:
+                W = res; H = max(res_min, int(res * span[1] / span[0]))
+            else:
+                H = res; W = max(res_min, int(res * span[0] / span[1]))
+            sx = (W - 1) / span[0]; sy = (H - 1) / span[1]
+            img = Image.new('1', (W, H), 0)
+            draw = ImageDraw.Draw(img)
+            P = (tris - mn) * np.array([sx, sy])
+            for t in P:
+                draw.polygon([tuple(p) for p in t], fill=1)
+            mask = binary_fill_holes(np.asarray(img, float) > 0.5).astype(float)
+            xs = mn[0] + np.arange(W) / sx
+            ys = mn[1] + np.arange(H) / sy
+            tmp = plt.figure()
+            axt = tmp.add_subplot(111)
+            cs = axt.contour(xs, ys, gaussian_filter(mask, 1.2), levels=[0.5])
+            segs = cs.allsegs[0] if cs.allsegs else []
+            plt.close(tmp)
+            if not segs:
+                return None
+            out = np.array(max(segs, key=len), dtype=float)
+            out[:, 0] -= x_off
+            out[:, 1] -= y_off
+            return out
         except Exception as e:
-            print(f"Warning: real technical drawing failed ({e}); "
-                  f"falling back to synthetic plate")
-            self._create_3d_visualization_page_synthetic(pdf)
+            print(f"Warning: faithful outline failed ({e})")
+            return None
 
     def _create_3d_visualization_page_synthetic(self, pdf):
         """Create technical drawings page following archaeological standards.
@@ -722,32 +1064,39 @@ class SavignanoComprehensiveReport:
         ax.scatter(projected[:, 0], projected[:, 1],
                   c='lightgray', s=0.2, alpha=0.2, zorder=1, edgecolors='none')
 
-        # Find approximate outline using edge detection on X/Y extremes
-        # Group points by angle and find edge points
-        center = projected.mean(axis=0)
-        angles = np.arctan2(projected[:, 1] - center[1], projected[:, 0] - center[0])
+        # Faithful real-mesh outline (rasterized silhouette) — captures the
+        # true shape and concavities (incavo). Falls back to the angular-bin
+        # estimate if it fails.
+        real_outline = self._faithful_outline_2d((0, 1), x_min, y_min)
+        if real_outline is not None and len(real_outline) > 2:
+            ax.plot(real_outline[:, 0], real_outline[:, 1],
+                    'k-', linewidth=1.5, zorder=2)
+        else:
+            # Find approximate outline using edge detection on X/Y extremes
+            center = projected.mean(axis=0)
+            angles = np.arctan2(projected[:, 1] - center[1], projected[:, 0] - center[0])
 
-        # Divide into angular bins to find edge points
-        n_bins = 360
-        angle_bins = np.linspace(-np.pi, np.pi, n_bins)
-        edge_points = []
+            # Divide into angular bins to find edge points
+            n_bins = 360
+            angle_bins = np.linspace(-np.pi, np.pi, n_bins)
+            edge_points = []
 
-        for i in range(len(angle_bins) - 1):
-            mask = (angles >= angle_bins[i]) & (angles < angle_bins[i+1])
-            if np.any(mask):
-                bin_points = projected[mask]
-                # Find the point furthest from center in this angular bin
-                distances = np.sqrt(np.sum((bin_points - center)**2, axis=1))
-                furthest_idx = np.argmax(distances)
-                edge_points.append(bin_points[furthest_idx])
+            for i in range(len(angle_bins) - 1):
+                mask = (angles >= angle_bins[i]) & (angles < angle_bins[i+1])
+                if np.any(mask):
+                    bin_points = projected[mask]
+                    # Find the point furthest from center in this angular bin
+                    distances = np.sqrt(np.sum((bin_points - center)**2, axis=1))
+                    furthest_idx = np.argmax(distances)
+                    edge_points.append(bin_points[furthest_idx])
 
-        if len(edge_points) > 0:
-            edge_array = np.array(edge_points)
-            # Close the outline
-            edge_closed = np.vstack([edge_array, edge_array[0]])
-            # Draw black outline
-            ax.plot(edge_closed[:, 0], edge_closed[:, 1],
-                   'k-', linewidth=1.5, zorder=2)
+            if len(edge_points) > 0:
+                edge_array = np.array(edge_points)
+                # Close the outline
+                edge_closed = np.vstack([edge_array, edge_array[0]])
+                # Draw black outline
+                ax.plot(edge_closed[:, 0], edge_closed[:, 1],
+                       'k-', linewidth=1.5, zorder=2)
 
         # MARGINI RIALZATI - Highlight raised flanges if present (green thick lines on edges)
         if self.features.get('margini_rialzati_presenti', False):
