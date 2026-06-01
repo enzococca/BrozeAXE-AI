@@ -3425,7 +3425,8 @@ def technical_drawing_stream(artifact_id, view_type):
                  'Connection': 'keep-alive'})
 
 
-
+@web_bp.route('/ai-assistant')
+def ai_assistant_page():
     """AI Assistant page."""
     artifacts = list(mesh_processor.meshes.keys())
     return render_template('ai_assistant.html', artifacts=artifacts)
