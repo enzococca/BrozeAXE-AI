@@ -231,6 +231,49 @@ class SavignanoComprehensiveReport:
         pdf.savefig(fig, bbox_inches='tight')
         plt.close(fig)
 
+    # Palette (publication-grade, restrained)
+    COLORS = {
+        'ink': '#1a1a1a',        # main text
+        'muted': '#5b6470',      # secondary text
+        'accent': '#1f3b57',     # headings / rules (deep slate blue)
+        'rule': '#c9ced6',       # thin separators
+        'band': '#eef1f5',       # subtle header band
+    }
+
+    def _apply_pdf_style(self):
+        """
+        Set a consistent, publication-grade matplotlib style for the whole
+        report: clean serif typography, sensible sizes, hairline axes and
+        embedded PDF fonts (Type 42) so the text stays crisp and selectable.
+        """
+        try:
+            plt.rcParams.update({
+                'font.family': 'serif',
+                'font.serif': ['DejaVu Serif', 'Times New Roman', 'Nimbus Roman'],
+                'font.size': 10.5,
+                'axes.titlesize': 12,
+                'axes.titleweight': 'bold',
+                'axes.labelsize': 9.5,
+                'axes.edgecolor': self.COLORS['muted'],
+                'axes.linewidth': 0.7,
+                'axes.titlecolor': self.COLORS['accent'],
+                'text.color': self.COLORS['ink'],
+                'axes.labelcolor': self.COLORS['ink'],
+                'xtick.color': self.COLORS['muted'],
+                'ytick.color': self.COLORS['muted'],
+                'xtick.labelsize': 8,
+                'ytick.labelsize': 8,
+                'figure.facecolor': 'white',
+                'figure.dpi': 200,
+                'savefig.dpi': 200,
+                'pdf.fonttype': 42,   # embed TrueType (crisp, selectable text)
+                'ps.fonttype': 42,
+                'legend.fontsize': 8.5,
+                'legend.frameon': False,
+            })
+        except Exception as e:
+            print(f"Warning: could not apply PDF style ({e})")
+
     def generate_complete_report(self, output_path: str) -> Dict:
         """
         Generate complete archaeological report.
@@ -241,6 +284,9 @@ class SavignanoComprehensiveReport:
         output_path = Path(output_path)
 
         print(f"Generating comprehensive archaeological report for {self.artifact_id}...")
+
+        # Apply a consistent, publication-grade typographic style to every page.
+        self._apply_pdf_style()
 
         # VERIFY AND LOG INCAVO MEASUREMENTS WITH VALIDATION
         if self.features.get('incavo_presente', False):
@@ -315,6 +361,17 @@ class SavignanoComprehensiveReport:
             # Page 7: Comparative Analysis
             print("  - Page 7: Comparative Analysis...")
             self._create_comparative_analysis_page(pdf)
+
+            # Embed document metadata for a polished, identifiable PDF.
+            try:
+                meta = pdf.infodict()
+                meta['Title'] = f"Documentazione Tecnica - {self.artifact_id}"
+                meta['Author'] = "Archaeological Classifier"
+                meta['Subject'] = "Analisi morfometrica e tecnologica - ascia a margini rialzati"
+                meta['Keywords'] = "archeologia, eta del bronzo, ascia, morfometria"
+                meta['CreationDate'] = datetime.now()
+            except Exception:
+                pass
 
         results['pdf'] = str(output_path)
 
