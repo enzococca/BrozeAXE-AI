@@ -370,28 +370,53 @@ class SavignanoComprehensiveReport:
         print(f"Generating LaTeX report for {self.artifact_id}...")
         output_path = Path(output_path)
         work = Path(tempfile.mkdtemp(prefix='acs_latex_'))
+        self._apply_pdf_style()
 
         # --- Figures -------------------------------------------------------
-        fig_drawing = None
+        # Capture the existing matplotlib pages as images so the LaTeX report
+        # keeps the SAME annotated technical drawing (with all dimension
+        # references) and the SAME analysis charts (PCA, comparative) as before.
+        class _Grab:
+            def __init__(self, base):
+                self.base = base; self.n = 0; self.paths = []
+            def savefig(self, fig, **kw):
+                p = work / f'{self.base}_{self.n}.png'
+                try:
+                    fig.savefig(str(p), dpi=180, bbox_inches='tight',
+                                facecolor='white')
+                    self.paths.append(p)
+                except Exception as exc:
+                    print(f"  grab {self.base} failed: {exc}")
+                self.n += 1
+
+        def grab(method, base):
+            g = _Grab(base)
+            try:
+                method(g)
+            except Exception as exc:
+                print(f"  page capture '{base}' failed: {exc}")
+            return [p.name for p in g.paths]
+
+        # Annotated technical drawing page(s) — real outline + all references.
+        drawing_imgs = grab(self._create_3d_visualization_page, 'draw')
+        # Analysis charts.
+        pca_imgs = grab(self._create_pca_analysis_page, 'pca')
+        comp_imgs = grab(self._create_comparative_analysis_page, 'comp')
+
+        # Textured 3D render (separate, has the real surface colour).
         fig_render = None
         try:
             from acs.core.technical_drawing import TechnicalDrawingGenerator
             from PIL import Image as _PILImage
             gen = TechnicalDrawingGenerator(dpi=200)
             feats = self.features if isinstance(self.features, dict) else {}
-            png = gen.generate_single_view(
-                self.mesh, self.artifact_id, 'complete_sheet', feats, 'png')
-            fig_drawing = work / 'drawing.png'
-            _PILImage.open(_io.BytesIO(png)).save(fig_drawing)
-            try:
-                png3d = gen.generate_single_view(
-                    self.mesh, self.artifact_id, 'render_3d', feats, 'png')
-                fig_render = work / 'render3d.png'
-                _PILImage.open(_io.BytesIO(png3d)).save(fig_render)
-            except Exception as e:
-                print(f"  3D render for LaTeX skipped ({e})")
+            png3d = gen.generate_single_view(
+                self.mesh, self.artifact_id, 'render_3d', feats, 'png')
+            fig_render = work / 'render3d.png'
+            _PILImage.open(_io.BytesIO(png3d)).save(fig_render)
+            fig_render = fig_render.name
         except Exception as e:
-            print(f"  technical drawing for LaTeX failed ({e})")
+            print(f"  3D render for LaTeX skipped ({e})")
 
         # --- Content -------------------------------------------------------
         meas = self._build_measurements_table()
@@ -458,9 +483,9 @@ class SavignanoComprehensiveReport:
         parts.append(r'{\Large ' + esc(self.t('subtitle') if hasattr(self, 't') else 'Analisi') + r' \textemdash\ ' + subtitle + r'\par}')
         parts.append(r'\vspace{2cm}')
         parts.append(r'{\large ' + esc(date_str) + r'\par}')
-        if fig_drawing is not None:
+        if fig_render is not None:
             parts.append(r'\vfill')
-            parts.append(r'\includegraphics[width=0.95\linewidth,height=0.45\textheight,keepaspectratio]{' + fig_drawing.name + r'}')
+            parts.append(r'\includegraphics[width=0.95\linewidth,height=0.45\textheight,keepaspectratio]{' + fig_render + r'}')
         parts.append(r'\vfill')
         parts.append(r'\end{titlepage}')
 
@@ -476,22 +501,33 @@ class SavignanoComprehensiveReport:
         parts.append(r'\bottomrule')
         parts.append(r'\end{longtable}')
 
-        # Technical drawing
-        if fig_drawing is not None:
-            parts.append(r'\section{Disegno Tecnico}')
-            parts.append(r'\begin{figure}[H]\centering')
-            parts.append(r'\includegraphics[width=\linewidth,height=0.82\textheight,keepaspectratio]{' + fig_drawing.name + r'}')
-            parts.append(r'\caption{Tavola tecnica: sezione trasversale, vista frontale (con puntinato del rilievo) e profilo longitudinale.}')
-            parts.append(r'\end{figure}')
+        def _embed_pages(imgs, section, caption):
+            if not imgs:
+                return
+            parts.append(r'\clearpage')
+            parts.append(r'\section{' + section + '}')
+            for name in imgs:
+                parts.append(r'\begin{figure}[H]\centering')
+                parts.append(r'\includegraphics[width=\linewidth,height=0.86\textheight,keepaspectratio]{' + name + r'}')
+                if caption:
+                    parts.append(r'\caption{' + caption + r'}')
+                parts.append(r'\end{figure}')
 
+        # Technical drawing — the annotated page (real outline + all references).
+        _embed_pages(drawing_imgs, 'Disegno Tecnico',
+                     r'Tavola tecnica: sezione trasversale, prospetto (vista frontale) e profilo longitudinale con quote e riferimenti.')
+
+        # Textured 3D render.
         if fig_render is not None:
+            parts.append(r'\section{Render 3D}')
             parts.append(r'\begin{figure}[H]\centering')
-            parts.append(r'\includegraphics[width=\linewidth,height=0.5\textheight,keepaspectratio]{' + fig_render.name + r'}')
+            parts.append(r'\includegraphics[width=\linewidth,height=0.5\textheight,keepaspectratio]{' + fig_render + r'}')
             parts.append(r'\caption{Render 3D del modello (texture reale).}')
             parts.append(r'\end{figure}')
 
         # AI interpretation
         if ai_text:
+            parts.append(r'\clearpage')
             parts.append(r'\section{Interpretazione Archeologica}')
             parts.append(self._latex_paragraphs(ai_text))
 
@@ -502,6 +538,10 @@ class SavignanoComprehensiveReport:
         if casting:
             parts.append(r'\section{Analisi della Fusione}')
             parts.append(self._latex_paragraphs(casting))
+
+        # Statistical charts (PCA + comparative) — same plots as before.
+        _embed_pages(pca_imgs, 'Analisi Statistica (PCA)', '')
+        _embed_pages(comp_imgs, 'Analisi Comparativa', '')
 
         parts.append(r'\end{document}')
 
