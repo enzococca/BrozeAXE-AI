@@ -304,7 +304,9 @@ class TechnicalDrawingGenerator:
 
             ext = m.bounds[1] - m.bounds[0]
             z_ext = max(ext[2], 1e-6)
-            ppm = 640.0 / z_ext  # length (Z) -> ~640 px in front & profile
+            # High enough that the front view (~2400 px) matches the 300-DPI
+            # drawing plate without being upscaled (which looked grainy).
+            ppm = 2400.0 / z_ext  # length (Z) -> ~2400 px in front & profile
 
             def light(v):
                 v = np.asarray(v, float)
@@ -320,9 +322,15 @@ class TechnicalDrawingGenerator:
                        if include_section else None)
 
             # Compose in PIL so the true relative sizes are preserved.
-            margin, gap_col, title_h, gap_row = 40, 100, 32, 60
+            # Scale layout metrics with the render resolution so titles and
+            # gaps stay proportionate at the higher ppm.
+            s = front_img.height / 640.0
+            margin = int(40 * s)
+            gap_col = int(100 * s)
+            title_h = int(40 * s)
+            gap_row = int(60 * s)
             try:
-                font = ImageFont.truetype("DejaVuSans.ttf", 22)
+                font = ImageFont.truetype("DejaVuSans.ttf", max(22, int(26 * s)))
             except Exception:
                 font = ImageFont.load_default()
 
@@ -400,17 +408,36 @@ class TechnicalDrawingGenerator:
         return buf.getvalue()
 
     def _ink_vspan(self, img, x0f, x1f, y0f=0.0, y1f=1.0):
-        """Vertical pixel span (top, bottom) of non-white ink inside the
-        sub-rectangle [x0f,x1f]×[y0f,y1f] (fractions of the image)."""
+        """Vertical pixel span (top, bottom) of the LARGEST contiguous run of
+        non-white ink rows inside the sub-rectangle [x0f,x1f]×[y0f,y1f].
+
+        Picking the longest contiguous run isolates the axe body and ignores
+        separate title/label text lines (which would otherwise inflate the
+        measured height).
+        """
         arr = np.asarray(img.convert('L'))
         H, W = arr.shape
         x0, x1 = int(W * x0f), int(W * x1f)
         y0, y1 = int(H * y0f), int(H * y1f)
         sub = arr[y0:y1, x0:x1]
-        rows = np.where((sub < 250).any(axis=1))[0]
-        if len(rows) == 0:
+        ink = (sub < 250).any(axis=1)
+        if not ink.any():
             return None
-        return (y0 + rows[0], y0 + rows[-1])
+        # Find contiguous runs of True and return the longest.
+        best_len, best = 0, None
+        run_start = None
+        for i, on in enumerate(ink):
+            if on and run_start is None:
+                run_start = i
+            elif not on and run_start is not None:
+                if i - run_start > best_len:
+                    best_len, best = i - run_start, (run_start, i - 1)
+                run_start = None
+        if run_start is not None and len(ink) - run_start > best_len:
+            best = (run_start, len(ink) - 1)
+        if best is None:
+            return None
+        return (y0 + best[0], y0 + best[1])
 
     def _create_composite_sheet_with_3d(self, mesh, artifact_id: str,
                                         features: Dict,
