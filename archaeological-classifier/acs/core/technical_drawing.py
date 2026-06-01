@@ -758,12 +758,9 @@ class TechnicalDrawingGenerator:
         Mark the margini rialzati (alette) with CLOSED contour lines derived
         from the real 3D front-surface height map.
 
-        Builds the front-surface depth map H(u, w), then extracts iso-contour
-        lines at a height threshold between the flat central face and the
-        raised margin peaks.  This produces naturally closed contours that
-        follow the true 3D shape — they converge where the margins merge into
-        the body (distal end) and separate at the tallone, exactly as in
-        published Cataruzza-style plates.
+        Builds H(u, w), extracts iso-contours at a level between the flat
+        centre and the raised margin peaks using marching squares.  Produces
+        naturally closed contours that follow the true 3D shape.
         """
         try:
             from scipy.ndimage import gaussian_filter
@@ -801,23 +798,15 @@ class TechnicalDrawingGenerator:
 
             level = center_h + 0.45 * (peak_h - center_h)
 
-            try:
-                from skimage.measure import find_contours
-                contours = find_contours(H, level)
-            except ImportError:
-                contours = self._find_contours_simple(H, level)
+            contours = self._marching_squares(H, level)
 
-            mid_u = nu / 2.0
             for contour in contours:
-                if len(contour) < 15:
+                if len(contour) < 20:
                     continue
                 cw_idx = contour[:, 0]
                 cu_idx = contour[:, 1]
                 cu_mm = u_min + cu_idx * (u_span / max(nu - 1, 1))
                 cw_mm = w_min + cw_idx * (w_span / max(nw - 1, 1))
-                mean_u_idx = cu_idx.mean()
-                if abs(mean_u_idx - mid_u) < nu * 0.08:
-                    continue
                 span_w = cw_mm.max() - cw_mm.min()
                 if span_w < 0.15 * w_span:
                     continue
@@ -826,15 +815,95 @@ class TechnicalDrawingGenerator:
         except Exception as e:
             print(f"Warning: alette lines failed ({e})")
 
-    def _find_contours_simple(self, field, level):
-        """Fallback contour finder when skimage is unavailable."""
-        from scipy.ndimage import binary_dilation
-        mask = field >= level
-        border = binary_dilation(mask) ^ mask
-        rows, cols = np.where(border)
-        if len(rows) < 10:
-            return []
-        return [np.column_stack([rows, cols])]
+    def _marching_squares(self, field, level):
+        """Extract iso-contours from a 2D field at the given level.
+
+        Returns a list of Nx2 arrays (row, col in continuous coords).
+        Uses a simple marching-squares implementation that traces each
+        contour loop by following edges between above/below cells.
+        """
+        nw, nu = field.shape
+        above = field >= level
+
+        # Build a dict of crossing edges.  An edge is identified by
+        # (row, col, orientation) where orientation is 'h' (between
+        # [r,c] and [r,c+1]) or 'v' (between [r,c] and [r+1,c]).
+        edges = {}  # edge_key -> interpolated (row, col) midpoint
+
+        def interp_h(r, c):
+            d = field[r, c + 1] - field[r, c]
+            t = (level - field[r, c]) / d if abs(d) > 1e-12 else 0.5
+            return (float(r), float(c) + t)
+
+        def interp_v(r, c):
+            d = field[r + 1, c] - field[r, c]
+            t = (level - field[r, c]) / d if abs(d) > 1e-12 else 0.5
+            return (float(r) + t, float(c))
+
+        # For each cell, determine which edges the contour crosses and
+        # link them pairwise.
+        cell_edges = {}  # (r, c) -> list of edge_keys crossing this cell
+        for r in range(nw - 1):
+            for c in range(nu - 1):
+                tl, tr = above[r, c], above[r, c + 1]
+                bl, br = above[r + 1, c], above[r + 1, c + 1]
+                idx = (int(tl) << 3) | (int(tr) << 2) | (int(br) << 1) | int(bl)
+                if idx == 0 or idx == 15:
+                    continue
+                crossings = []
+                if tl != tr:
+                    k = ('h', r, c)
+                    edges[k] = interp_h(r, c)
+                    crossings.append(k)
+                if tr != br:
+                    k = ('v', r, c + 1)
+                    edges[k] = interp_v(r, c + 1)
+                    crossings.append(k)
+                if bl != br:
+                    k = ('h', r + 1, c)
+                    edges[k] = interp_h(r + 1, c)
+                    crossings.append(k)
+                if tl != bl:
+                    k = ('v', r, c)
+                    edges[k] = interp_v(r, c)
+                    crossings.append(k)
+                if len(crossings) == 2:
+                    a, b = crossings
+                    cell_edges.setdefault(a, []).append(b)
+                    cell_edges.setdefault(b, []).append(a)
+                elif len(crossings) == 4:
+                    # Saddle — connect by average height
+                    avg = (field[r, c] + field[r, c+1] +
+                           field[r+1, c] + field[r+1, c+1]) / 4.0
+                    if avg >= level:
+                        pairs = [(0, 1), (2, 3)]
+                    else:
+                        pairs = [(0, 3), (1, 2)]
+                    for i, j in pairs:
+                        cell_edges.setdefault(crossings[i], []).append(crossings[j])
+                        cell_edges.setdefault(crossings[j], []).append(crossings[i])
+
+        # Trace contour loops
+        used = set()
+        contours = []
+        for start_key in edges:
+            if start_key in used:
+                continue
+            path = []
+            key = start_key
+            while key is not None and key not in used:
+                used.add(key)
+                path.append(edges[key])
+                neighbors = cell_edges.get(key, [])
+                key = None
+                for nb in neighbors:
+                    if nb not in used:
+                        key = nb
+                        break
+            if len(path) >= 10:
+                contours.append(np.array(path))
+
+        return contours
 
     def _alpha_shape(self, points, alpha_factor=0.3):
         """
