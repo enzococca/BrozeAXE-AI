@@ -512,7 +512,7 @@ Rispondi SOLO con il JSON valido, senza altro testo."""
             # Use resilient client if available, otherwise use raw client
             if isinstance(anthropic_client, ResilientAnthropicClient):
                 response = anthropic_client.create_message(
-                    model="claude-sonnet-4-20250514",
+                    model="claude-sonnet-4-6",
                     max_tokens=2000,
                     temperature=0.1,
                     messages=[{"role": "user", "content": prompt}]
@@ -522,7 +522,7 @@ Rispondi SOLO con il JSON valido, senza altro testo."""
                 try:
                     resilient = get_resilient_client()
                     response = resilient.create_message(
-                        model="claude-sonnet-4-20250514",
+                        model="claude-sonnet-4-6",
                         max_tokens=2000,
                         temperature=0.1,
                         messages=[{"role": "user", "content": prompt}]
@@ -530,7 +530,7 @@ Rispondi SOLO con il JSON valido, senza altro testo."""
                 except Exception:
                     # Fallback to raw client if resilient fails
                     response = anthropic_client.messages.create(
-                        model="claude-sonnet-4-20250514",
+                        model="claude-sonnet-4-6",
                         max_tokens=2000,
                         temperature=0.1,
                         messages=[{"role": "user", "content": prompt}]

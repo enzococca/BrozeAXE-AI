@@ -137,6 +137,7 @@ def load_textured_mesh(artifact_id: str):
     try:
         import json
         import logging
+        import tempfile
         import trimesh
         from acs.core.database import get_database
         from acs.core.storage import get_default_storage

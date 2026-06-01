@@ -1243,7 +1243,7 @@ fondatore" tipica del periodo.
         try:
             # Chiamata API Claude
             response = self.claude_client.messages.create(
-                model="claude-sonnet-4-5-20250929",
+                model="claude-sonnet-4-6",
                 max_tokens=6000,
                 temperature=0.1,  # Bassa temperatura per output deterministico
                 system=self._get_archaeological_system_prompt(),
@@ -1261,7 +1261,7 @@ fondatore" tipica del periodo.
             return {
                 'status': 'success',
                 'interpretation': interpretation_text,
-                'model': 'claude-sonnet-4-5-20250929',
+                'model': 'claude-sonnet-4-6',
                 'tokens_used': response.usage.output_tokens
             }
 
