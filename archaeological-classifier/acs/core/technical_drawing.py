@@ -143,22 +143,20 @@ class TechnicalDrawingGenerator:
         else:
             raise ValueError(f"Invalid view type: {view_type}")
 
-    def _mesh_face_colors(self, m):
+    def _vertex_colors(self, m):
         """
-        Per-face RGB colour from the mesh's real texture / vertex colours, or
-        None to fall back to bronze.
+        Per-vertex RGB from the mesh's real texture / vertex colours, or None.
 
-        Handles both TextureVisuals (UV + image — baked to vertex colours via
-        ``to_color()``) and ColorVisuals. A variance check rejects trimesh's
-        uniform-grey default for untextured meshes, so plain geometry stays
-        bronze while real textured scans keep their colour.
+        Bakes a UV texture down to vertex colours via TextureVisuals.to_color()
+        when present, else uses ColorVisuals.vertex_colors. A variance check
+        rejects trimesh's uniform default grey for untextured meshes so plain
+        geometry stays bronze while real textured scans keep their colour.
         """
         try:
             vis = getattr(m, 'visual', None)
             if vis is None:
                 return None
             vc = None
-            # Bake a UV texture down to per-vertex colours when present.
             if 'Texture' in type(vis).__name__ and hasattr(vis, 'to_color'):
                 try:
                     vc = vis.to_color().vertex_colors
@@ -167,10 +165,10 @@ class TechnicalDrawingGenerator:
             if vc is None:
                 vc = getattr(vis, 'vertex_colors', None)
             if (vc is not None and len(vc) == len(m.vertices)
-                    and np.asarray(vc)[:, :3].astype(float).std() > 6.0):
-                return vc[m.faces].mean(axis=1)[:, :3].astype(np.uint8)
+                    and np.asarray(vc)[:, :3].astype(float).std() > 4.0):
+                return np.asarray(vc)[:, :3].astype(np.uint8)
         except Exception as e:
-            print(f"Warning: face-colour extraction failed ({e})")
+            print(f"Warning: vertex-colour extraction failed ({e})")
         return None
 
     def _render_mesh_view_pil(self, m, view_ax, proj_axes, ppm,
@@ -263,6 +261,13 @@ class TechnicalDrawingGenerator:
         try:
             from PIL import ImageDraw, ImageFont
 
+            # Bake real colours from the FULL mesh BEFORE decimating —
+            # simplify_quadric_decimation discards the texture/UV visual, so we
+            # must capture colours first and then remap them onto the decimated
+            # vertices by nearest neighbour. (This is why the texture used to
+            # disappear from the render.)
+            full_colors = self._vertex_colors(mesh)
+
             m = mesh
             if len(m.faces) > 12000:
                 try:
@@ -271,7 +276,20 @@ class TechnicalDrawingGenerator:
                     pass
 
             base_rgb = np.array([200, 184, 138], dtype=np.uint8)  # bronze
-            face_colors = self._mesh_face_colors(m)
+            vert_colors = full_colors
+            if full_colors is not None and len(m.vertices) != len(mesh.vertices):
+                try:
+                    from scipy.spatial import cKDTree
+                    _, idx = cKDTree(mesh.vertices).query(m.vertices)
+                    vert_colors = full_colors[idx]
+                except Exception:
+                    vert_colors = None
+            face_colors = (vert_colors[m.faces].mean(axis=1).astype(np.uint8)
+                           if vert_colors is not None else None)
+            if face_colors is None:
+                print("[3D RENDER] no texture/vertex colours -> bronze")
+            else:
+                print("[3D RENDER] using real surface colour")
 
             ext = m.bounds[1] - m.bounds[0]
             z_ext = max(ext[2], 1e-6)
@@ -389,18 +407,21 @@ class TechnicalDrawingGenerator:
         try:
             drawing_img = Image.open(io.BytesIO(drawing_png)).convert('RGB')
 
-            # Scale both to the SAME height so they sit side by side at equal
-            # size (stesse grandezze), then paste with a gap between them.
-            target_h = drawing_img.height
+            # The drawing plate reserves vertical room for the section, scale
+            # bar and info strip, so its axe occupies only ~62% of the plate
+            # height. Scale the 3D so its axe matches that (shrink the 3D,
+            # leaving the drawing larger) and centre it vertically.
+            target_h = int(drawing_img.height * 0.72)
             r_scale = target_h / render_img.height
             render_resized = render_img.resize(
                 (max(1, int(render_img.width * r_scale)), target_h))
 
             gap = max(20, int(drawing_img.width * 0.03))
             total_w = drawing_img.width + gap + render_resized.width
-            combined = Image.new('RGB', (total_w, target_h), 'white')
+            combined = Image.new('RGB', (total_w, drawing_img.height), 'white')
             combined.paste(drawing_img, (0, 0))
-            combined.paste(render_resized, (drawing_img.width + gap, 0))
+            y3d = (drawing_img.height - render_resized.height) // 2
+            combined.paste(render_resized, (drawing_img.width + gap, y3d))
 
             buf = io.BytesIO()
             combined.save(buf, format='PNG')
