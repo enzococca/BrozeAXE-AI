@@ -1586,11 +1586,13 @@ class TechnicalDrawingGenerator:
         coordinates and the result looks like a real archaeological plate.
 
         Layout (orthographic plate, Cataruzza-style):
-        - Row 0, col 0: sezione trasversale
-        - Row 1, col 0: VISTA FRONTALE         col 1: PROFILO LONGITUDINALE
-                        (front & profile aligned, drawn at the SAME length)
-        - Row 2, col 0: barra di scala (3 cm)  col 1: pannello info
+        - Row 0: VISTA FRONTALE | SEZIONE TRASVERSALE (centered) | PROFILO
+                 (front & profile at the SAME length; section hatched, placed
+                  at mid-height between the two — as in published plates)
+        - Row 1: info strip (scale bar drawn inside the front view)
         """
+        from matplotlib.patches import Polygon as _MplPolygon
+
         fig = plt.figure(figsize=(12, 14), dpi=self.dpi)
 
         fig.suptitle(f'Documentazione Tecnica - {artifact_id}',
@@ -1601,6 +1603,7 @@ class TechnicalDrawingGenerator:
         y_ext = bounds[1][1] - bounds[0][1]
         z_ext = bounds[1][2] - bounds[0][2]
         z_min, z_max = bounds[0][2], bounds[1][2]
+        z_mid = 0.5 * (z_min + z_max)
 
         # Shared vertical limits so the front view and the longitudinal
         # profile print at exactly the SAME length, side by side. Extra room
@@ -1609,58 +1612,17 @@ class TechnicalDrawingGenerator:
         bar_room = z_ext * 0.12
         y_lo, y_hi = z_min - pad - bar_room, z_max + pad
 
-        # Grid ratios from mesh geometry → proportional layout. Row 0 holds
-        # the cross-section (height ≈ object thickness plus flange margins).
-        h_section = max(y_ext, z_ext * 0.12)
         h_main = z_ext + pad + bar_room
-        h_bottom = z_ext * 0.18
+        h_bottom = z_ext * 0.16
 
-        gs = fig.add_gridspec(3, 2, hspace=0.10, wspace=0.08,
+        # 3 columns: front (broad) | section (centered) | profile (thin)
+        gs = fig.add_gridspec(2, 3, hspace=0.06, wspace=0.04,
                              left=0.05, right=0.95, top=0.94, bottom=0.04,
-                             height_ratios=[h_section, h_main, h_bottom],
-                             width_ratios=[1.3, 1.0])
+                             height_ratios=[h_main, h_bottom],
+                             width_ratios=[1.25, 0.85, 0.85])
 
-        # -- ROW 0 COL 0: Sezione Trasversale (cross-section, dog-bone H) --
-        ax_sec = fig.add_subplot(gs[0, 0])
-        try:
-            z_pos = bounds[0][2] + z_ext * 0.50
-            sec = mesh.section(plane_origin=[0, 0, z_pos],
-                               plane_normal=[0, 0, 1])
-            if sec is not None and len(sec.vertices) > 2:
-                planar, _ = sec.to_planar()
-                sv = np.array(planar.vertices)
-                polys = []
-                for ent in planar.entities:
-                    pts = sv[ent.points]
-                    if len(pts) > 1:
-                        ax_sec.plot(*np.vstack([pts, pts[0]]).T,
-                                   'k-', linewidth=0.8, solid_capstyle='round')
-                    if len(pts) > 2:
-                        polys.append(pts)
-                # Section is not stippled — only front/back views are.
-            else:
-                raise ValueError("Section returned no geometry")
-        except Exception as e:
-            print(f"Warning: section render failed ({e})")
-            try:
-                from scipy.spatial import ConvexHull
-                z_pos = bounds[0][2] + z_ext * 0.50
-                mask = np.abs(mesh.vertices[:, 2] - z_pos) < 5.0
-                nearby = mesh.vertices[mask]
-                if len(nearby) > 3:
-                    sv2d = nearby[:, :2]
-                    hull = ConvexHull(sv2d)
-                    sout = sv2d[hull.vertices]
-                    ax_sec.plot(*np.vstack([sout, sout[0]]).T,
-                               'k-', linewidth=0.8)
-            except Exception:
-                pass
-        ax_sec.set_title('Sezione Trasversale', fontsize=9, pad=4)
-        ax_sec.set_aspect('equal')
-        ax_sec.axis('off')
-
-        # -- ROW 1 COL 0: Vista Frontale --
-        ax_front = fig.add_subplot(gs[1, 0])
+        # -- ROW 0 COL 0: Vista Frontale --
+        ax_front = fig.add_subplot(gs[0, 0])
         front_2d = mesh.vertices[:, [0, 2]]
         try:
             # Faithful outline from the 3D projection (incavo, holes)
@@ -1672,15 +1634,17 @@ class TechnicalDrawingGenerator:
                     fout = front_2d[ConvexHull(front_2d).vertices]
                 ax_front.plot(*np.vstack([fout, fout[0]]).T,
                              'k-', linewidth=0.8, solid_capstyle='round')
-            # Relief-driven stippling renders the alette faithfully from the
-            # real 3D surface (no stylised ridge lines).
+            # Mark the margini rialzati (alette) with ridge lines from the real
+            # 3D relief, then relief-driven stippling for depth (as in the
+            # published plates).
+            self._draw_alette_lines(ax_front, mesh, projection_axes=(0, 2),
+                                    depth_axis=1)
             self._add_stippling_shading(ax_front, mesh, front_2d, fout,
                                         'front')
         except Exception as e:
             print(f"Warning: front view render failed ({e})")
         ax_front.set_title('Vista Frontale', fontsize=10, pad=4)
         ax_front.set_aspect('equal')
-        # Lock the length so the profile beside it matches exactly
         ax_front.set_ylim(y_lo, y_hi)
         # 3 cm scale bar below the object (axis is in mm, aspect equal)
         fb = ax_front.get_xlim()
@@ -1692,9 +1656,42 @@ class TechnicalDrawingGenerator:
                       fontsize=9)
         ax_front.axis('off')
 
+        # -- ROW 0 COL 1: Sezione Trasversale (HATCHED, centered at mid-height) --
+        ax_sec = fig.add_subplot(gs[0, 1])
+        try:
+            sec = mesh.section(plane_origin=[0, 0, z_mid],
+                               plane_normal=[0, 0, 1])
+            polys = []
+            if sec is not None and len(sec.vertices) > 2:
+                planar, _ = sec.to_planar()
+                sv = np.array(planar.vertices)
+                for ent in planar.entities:
+                    pts = sv[ent.points]
+                    if len(pts) > 2:
+                        polys.append(pts)
+            if not polys:
+                raise ValueError("Section returned no geometry")
+            # Center horizontally and lift to mid-height so the section sits
+            # between the front view and the profile.
+            allpts = np.vstack(polys)
+            cx = 0.5 * (allpts[:, 0].min() + allpts[:, 0].max())
+            for p in polys:
+                q = p.copy()
+                q[:, 0] -= cx
+                q[:, 1] += z_mid
+                ax_sec.add_patch(_MplPolygon(
+                    q, closed=True, facecolor='none', edgecolor='black',
+                    linewidth=0.9, hatch='////'))
+        except Exception as e:
+            print(f"Warning: section render failed ({e})")
+        ax_sec.set_title('Sezione Trasversale', fontsize=9, pad=4)
+        ax_sec.set_aspect('equal', adjustable='box')
+        ax_sec.set_xlim(-x_ext * 0.85, x_ext * 0.85)
+        ax_sec.set_ylim(y_lo, y_hi)
+        ax_sec.axis('off')
 
-        # -- ROW 1 COL 1: Profilo Longitudinale (beside front, same length) --
-        ax_prof = fig.add_subplot(gs[1, 1])
+        # -- ROW 0 COL 2: Profilo Longitudinale (same length as front) --
+        ax_prof = fig.add_subplot(gs[0, 2])
         prof_2d = mesh.vertices[:, [1, 2]]
         try:
             pout = self._draw_real_outline(ax_prof, mesh, (1, 2))
@@ -1710,12 +1707,11 @@ class TechnicalDrawingGenerator:
             print(f"Warning: profile render failed ({e})")
         ax_prof.set_title('Profilo Longitudinale', fontsize=9, pad=4)
         ax_prof.set_aspect('equal')
-        # Identical Z limits as the front view → printed at the same length
         ax_prof.set_ylim(y_lo, y_hi)
         ax_prof.axis('off')
 
-        # -- ROW 2: Info strip spanning both columns --
-        ax_info = fig.add_subplot(gs[2, :])
+        # -- ROW 1: Info strip spanning all columns --
+        ax_info = fig.add_subplot(gs[1, :])
         ax_info.axis('off')
         self._add_info_strip(ax_info, artifact_id, features)
 
