@@ -117,10 +117,44 @@ class PlateComposer:
             if label:
                 ax.set_title(label, fontsize=9, pad=4, loc='left', style='italic')
 
-        # Scale bar in bottom area
+        # Compute effective scale from the first cell's image.
+        # The individual drawing was rendered at figsize=(12,14) inches at
+        # 300 DPI with a 3cm scale bar. By comparing the original image
+        # size (in mm) to the cell size on the page we get the reduction.
+        scale_text = ''
+        for cell_config in cells:
+            image_data = cell_config.get('image_data')
+            if image_data is None:
+                continue
+            try:
+                img = Image.open(io.BytesIO(image_data))
+                # Original drawing page width in mm (figsize 12 in = 304.8mm)
+                orig_w_mm = (img.width / self.dpi) * 25.4
+                # Cell width on the composed page
+                usable_w = page_w_mm * 0.90  # 5% margin each side
+                cell_w_mm = usable_w / cols
+                ratio = orig_w_mm / cell_w_mm
+                if ratio > 1.05:
+                    # Round to a clean fraction
+                    nice = round(ratio * 2) / 2  # round to nearest 0.5
+                    if abs(nice - round(nice)) < 0.1:
+                        scale_text = f'Scala ~1:{round(nice)}'
+                    else:
+                        scale_text = f'Scala ~1:{nice:.1f}'
+                else:
+                    scale_text = 'Scala ~1:1'
+                break
+            except Exception:
+                pass
+
+        # Bottom info strip (no 5cm bar — each drawing has its own 3cm bar)
         ax_scale = fig.add_subplot(gs[rows, :])
         ax_scale.axis('off')
-        self._add_plate_scale_bar(ax_scale, page_w_mm)
+        if scale_text:
+            ax_scale.text(0.01, 0.5, scale_text,
+                          transform=ax_scale.transAxes,
+                          ha='left', va='center', fontsize=9,
+                          fontfamily='sans-serif')
 
         ax_scale.text(0.99, 0.5, f'{page_format} - {self.dpi} DPI',
                      transform=ax_scale.transAxes,
@@ -133,14 +167,6 @@ class PlateComposer:
         plt.close(fig)
         buf.seek(0)
         return buf.getvalue()
-
-    def _add_plate_scale_bar(self, ax, page_width_mm):
-        """Add a shared scale bar for the plate."""
-        bar_length_mm = 50
-        ax.plot([0.35, 0.65], [0.5, 0.5], 'k-', linewidth=3,
-               transform=ax.transAxes, solid_capstyle='butt')
-        ax.text(0.5, 0.1, '5 cm', transform=ax.transAxes,
-               ha='center', va='top', fontsize=9, fontfamily='sans-serif')
 
     def compose_plate_from_artifacts(self, artifact_views: Dict[str, Dict[str, bytes]],
                                      layout: Dict) -> bytes:
