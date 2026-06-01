@@ -115,6 +115,85 @@ def ensure_mesh_loaded(artifact_id: str) -> bool:
         return False
 
 
+_textured_mesh_cache = {}
+
+
+def load_textured_mesh(artifact_id: str):
+    """
+    Load the mesh WITH its real texture/material (OBJ + MTL + texture images),
+    so 3D renders show the actual surface colour the 3D viewer displays.
+
+    The in-memory ``mesh_processor.meshes[id]`` is geometry-only (a plain OBJ),
+    because the MTL and texture files are stored separately and streamed to the
+    Three.js viewer. Here we download the OBJ, its MTL and all textures into one
+    temp folder (keeping their original basenames so the ``mtllib`` / ``map_Kd``
+    references resolve) and let trimesh load the textured mesh.
+
+    Returns a trimesh object with TextureVisuals, or None if texture data isn't
+    available (caller should fall back to the geometry-only mesh).
+    """
+    if artifact_id in _textured_mesh_cache:
+        return _textured_mesh_cache[artifact_id]
+    try:
+        import json
+        import logging
+        import trimesh
+        from acs.core.database import get_database
+        from acs.core.storage import get_default_storage
+
+        db = get_database()
+        artifact = db.get_artifact(artifact_id)
+        if not artifact:
+            return None
+        meta = artifact.get('metadata')
+        if isinstance(meta, str):
+            try:
+                meta = json.loads(meta)
+            except Exception:
+                meta = {}
+        meta = meta or {}
+
+        mesh_path = artifact.get('mesh_path')
+        mtl_path = meta.get('mtl_path')
+        texture_paths = meta.get('texture_paths', []) or []
+        if not mesh_path or not (mtl_path or texture_paths):
+            return None  # nothing textured to load
+
+        storage = get_default_storage()
+        work = os.path.join(tempfile.gettempdir(), 'acs_textured', artifact_id)
+        os.makedirs(work, exist_ok=True)
+
+        def fetch(remote):
+            if not remote:
+                return None
+            local = os.path.join(work, os.path.basename(remote))
+            if not os.path.exists(local):
+                if os.path.isabs(remote) and os.path.exists(remote):
+                    import shutil
+                    shutil.copy(remote, local)
+                else:
+                    storage.download_file(remote, local)
+            return local
+
+        obj_local = fetch(mesh_path)
+        fetch(mtl_path)
+        for tp in texture_paths:
+            try:
+                fetch(tp)
+            except Exception as te:
+                logging.warning(f"texture fetch failed {tp}: {te}")
+
+        mesh = trimesh.load(obj_local, process=False)
+        if isinstance(mesh, trimesh.Scene):
+            mesh = mesh.dump(concatenate=True)
+        _textured_mesh_cache[artifact_id] = mesh
+        return mesh
+    except Exception as e:
+        import logging
+        logging.warning(f"Could not load textured mesh {artifact_id}: {e}")
+        return None
+
+
 def init_default_taxonomy_classes():
     """Initialize default taxonomy classes for Bronze Age axes if none exist."""
     if len(taxonomy_system.classes) > 0:
@@ -2934,6 +3013,13 @@ def get_technical_drawing_view(artifact_id, view_type):
         mesh = mesh_processor.meshes[artifact_id]
         features = mesh_processor._extract_features(mesh, artifact_id)
 
+        # For the 3D views, prefer the TEXTURED mesh so the render shows the
+        # real surface colour (the geometry-only in-memory mesh has no texture).
+        if view_type in ('render_3d', 'complete_sheet_3d'):
+            textured = load_textured_mesh(artifact_id)
+            if textured is not None:
+                mesh = textured
+
         # complete_sheet_3d renders the full plate AND a 3D render, so it gets
         # the most time; render_3d is moderate; plain complete_sheet 180s.
         if view_type in ('complete_sheet', 'complete_sheet_3d'):
@@ -3100,6 +3186,12 @@ def compose_plate():
 
             mesh = mesh_processor.meshes[artifact_id]
             features = mesh_processor._extract_features(mesh, artifact_id)
+
+            # Textured mesh for 3D views so renders carry the real surface colour.
+            if view in ('render_3d', 'complete_sheet_3d'):
+                textured = load_textured_mesh(artifact_id)
+                if textured is not None:
+                    mesh = textured
 
             try:
                 # The heavy composite/3D views need a longer budget, matching
