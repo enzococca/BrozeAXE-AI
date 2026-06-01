@@ -756,16 +756,15 @@ class TechnicalDrawingGenerator:
         Mark the margini rialzati (alette) with clean ridge lines derived
         from the REAL 3D relief (not a stylistic guess).
 
-        Builds a thickness map over the projection plane (front surface minus
-        back surface), then, row by row, finds the OUTERMOST local thickness
-        peaks on each side — the crest of each raised flange — and connects
-        them into two smooth longitudinal lines. Stays silent if no
-        consistent flanges exist (e.g. a plain flat axe), so it never invents
-        features that are not in the model.
+        Builds a thickness map over the projection plane (front minus back),
+        then, row by row, finds the INNER EDGE of each raised margin — the
+        wall where the thickness rises from the central face up to the flange —
+        and connects them into two smooth, roughly-vertical lines (as drawn in
+        published plates). Heavily guarded so it draws nothing rather than a
+        spurious diagonal when no consistent margins exist (plain flat axe).
         """
         try:
             from scipy.ndimage import gaussian_filter1d
-            from scipy.signal import find_peaks
             from scipy.interpolate import griddata
 
             a0, a1 = list(projection_axes)
@@ -779,7 +778,9 @@ class TechnicalDrawingGenerator:
 
             u_min, u_max = v[:, a0].min(), v[:, a0].max()
             w_min, w_max = v[:, a1].min(), v[:, a1].max()
-            nu, nw = 90, 220
+            u_span = u_max - u_min
+            w_span = w_max - w_min
+            nu, nw = 100, 240
             us = np.linspace(u_min, u_max, nu)
             ws = np.linspace(w_min, w_max, nw)
             Ug, Wg = np.meshgrid(us, ws)
@@ -789,38 +790,46 @@ class TechnicalDrawingGenerator:
             bz = griddata(back[:, [a0, a1]], back[:, depth_axis],
                           (Ug, Wg), method='linear')
             thick = fz - bz
-
             tmax = np.nanmax(thick)
             if not np.isfinite(tmax) or tmax <= 0:
                 return
 
-            u_center = 0.5 * (u_min + u_max)
+            c0, c1 = int(nu * 0.40), int(nu * 0.60)
+            mid = nu // 2
             crest_l, crest_r = [], []
             for j in range(nw):
                 row = thick[j]
                 if np.all(np.isnan(row)):
                     continue
-                r = np.nan_to_num(row, nan=0.0)
-                if r.max() < 0.25 * tmax:
+                rs = gaussian_filter1d(np.nan_to_num(row, nan=0.0), 2.0)
+                center_t = np.median(rs[c0:c1]) if c1 > c0 else rs[mid]
+                mt = rs.max()
+                # Need a clear raised margin above the central face.
+                if mt - center_t < 0.18 * tmax:
                     continue
-                rs = gaussian_filter1d(r, 1.5)
-                peaks, _ = find_peaks(rs, prominence=0.08 * tmax)
-                if len(peaks) < 2:
-                    continue
-                up = us[peaks]
-                left = up[up < u_center]
-                right = up[up > u_center]
-                if len(left):
-                    crest_l.append((left.min(), ws[j]))
-                if len(right):
-                    crest_r.append((right.max(), ws[j]))
+                thr = center_t + 0.5 * (mt - center_t)
+                # Inner edge = first crossing of the threshold scanning OUTWARD
+                # from the centre on each side.
+                li = next((i for i in range(mid, -1, -1) if rs[i] >= thr), None)
+                ri = next((i for i in range(mid, nu) if rs[i] >= thr), None)
+                if li is not None and us[li] < (u_min + 0.5 * u_span):
+                    crest_l.append((us[li], ws[j]))
+                if ri is not None and us[ri] > (u_min + 0.5 * u_span):
+                    crest_r.append((us[ri], ws[j]))
 
-            min_pts = max(8, int(nw * 0.15))
+            min_pts = max(12, int(nw * 0.20))
             for crest in (crest_l, crest_r):
                 if len(crest) < min_pts:
                     continue
                 c = np.array(crest)
-                cu = gaussian_filter1d(c[:, 0], 2)
+                # Guard: a real margin line is roughly vertical — reject if the
+                # u positions scatter too much (that would be a wrong diagonal).
+                if c[:, 0].std() > 0.22 * u_span:
+                    continue
+                # Guard: must span a decent length.
+                if (c[:, 1].max() - c[:, 1].min()) < 0.30 * w_span:
+                    continue
+                cu = gaussian_filter1d(c[:, 0], 3)
                 ax.plot(cu, c[:, 1], 'k-', linewidth=linewidth,
                         alpha=0.85, zorder=3)
         except Exception as e:
@@ -1289,20 +1298,19 @@ class TechnicalDrawingGenerator:
         ax.scatter(dots[:, 0], dots[:, 1], s=sizes, c='black',
                    marker='.', linewidths=0, alpha=0.9, zorder=1)
 
-    def _relief_brightness(self, mesh, projection_axes, depth_axis,
-                           pts, nu=140, nw=360):
+    def _relief_density(self, mesh, projection_axes, depth_axis,
+                        pts, nu=140, nw=360):
         """
-        Compute per-point surface brightness from the REAL 3D relief.
+        Per-point STIPPLE DENSITY from the real 3D relief, following the
+        archaeological convention: stipple the curved/sloped surfaces (the
+        margini rialzati / alette and the rounded edges) for shadow and depth,
+        and leave the flat central face WHITE.
 
-        Builds the front-surface height map H(u, w) (the depth_axis value of
-        the front-facing vertices) over the projection plane, derives the
-        surface normal from its gradient, and lights it from the upper-left.
-        Crests of the margini rialzati (alette) come out bright; the central
-        groove between them and the slopes down to the edges come out dark —
-        so the stippling that follows reads the true relief instead of a
-        generic cylinder. Returns a brightness value in [0, 1] for every
-        point in ``pts`` (1 = lit crest, 0 = shadow), or None if no usable
-        relief exists (flat axe).
+        Builds the front-surface height map H(u, w), takes the gradient slope
+        magnitude (flat = 0, steep = 1 after normalisation) and a directional
+        shadow term, then combines them: dense where the surface slopes (the
+        alette), sparse where it is flat (the centre). Returns a density in
+        [0, 1] for each point, or None if no usable relief exists.
         """
         try:
             from scipy.interpolate import griddata
@@ -1325,31 +1333,38 @@ class TechnicalDrawingGenerator:
                          (Ug, Wg), method='linear')
             if not np.isfinite(np.nanmax(H)):
                 return None
-            fill = np.nanmin(H)
-            H = np.nan_to_num(H, nan=fill)
-            H = gaussian_filter(H, 1.2)
+            H = np.nan_to_num(H, nan=np.nanmin(H))
+            H = gaussian_filter(H, 1.3)
 
-            # Surface normal from the height gradient, normalised in mm units.
             du = (u_max - u_min) / max(nu - 1, 1)
             dw = (w_max - w_min) / max(nw - 1, 1)
             dHdw, dHdu = np.gradient(H, dw, du)
-            # depth scale: emphasise relief a bit so margins read clearly
-            nz = np.ones_like(H)
+            slope = np.sqrt(dHdu ** 2 + dHdw ** 2)
+            # Normalise by a high percentile so steep margin walls saturate and
+            # the flat central face stays near zero (white).
+            ref = np.percentile(slope, 88)
+            if ref <= 1e-6:
+                return None
+            snorm = gaussian_filter(np.clip(slope / ref, 0.0, 1.0), 1.0)
+
+            # Directional shadow (light upper-left-front) so each margin reads
+            # as a rounded ridge.
             norm = np.sqrt(dHdu ** 2 + dHdw ** 2 + 1.0)
-            # Light from upper-left-front: u<0 (left), w>0 (top), +depth.
             lu, lw, ld = -0.45, 0.35, 1.0
             ln = np.sqrt(lu * lu + lw * lw + ld * ld)
-            bright = (-dHdu * lu - dHdw * lw + nz * ld) / (norm * ln)
-            bright = np.clip(bright, 0.0, 1.0)
+            bright = np.clip((-dHdu * lu - dHdw * lw + ld) / (norm * ln), 0, 1)
+            shadow = 1.0 - bright
 
-            # Sample brightness at each point (nearest grid cell).
+            # Dense on slopes (alette/edges), ~0 on the flat face (white).
+            density = 0.06 + 0.70 * snorm + 0.30 * snorm * shadow
+
             ui = np.clip(((pts[:, 0] - u_min) / max(u_max - u_min, 1e-6)
                           * (nu - 1)).astype(int), 0, nu - 1)
             wi = np.clip(((pts[:, 1] - w_min) / max(w_max - w_min, 1e-6)
                           * (nw - 1)).astype(int), 0, nw - 1)
-            return bright[wi, ui]
+            return np.clip(density[wi, ui], 0.0, 0.92)
         except Exception as e:
-            print(f"Warning: relief brightness failed ({e})")
+            print(f"Warning: relief density failed ({e})")
             return None
 
     def _add_stippling_shading(self, ax, mesh, vertices_2d: np.ndarray,
@@ -1458,21 +1473,19 @@ class TechnicalDrawingGenerator:
             elif view == 'side':
                 projection_axes, depth_axis = (1, 2), 0
 
-        relief = None
+        relief_density = None
         if view in ('front', 'back', 'side') and projection_axes is not None:
-            relief = self._relief_brightness(mesh, projection_axes, depth_axis, pts)
+            relief_density = self._relief_density(
+                mesh, projection_axes, depth_axis, pts)
 
         if view == 'section':
             # A cut surface: even, uniform stippling (indicates solid metal),
             # no directional light — archaeological section convention.
             density = np.full(len(pts), 0.45)
-        elif relief is not None:
-            # Drive the stippling from the REAL 3D relief: dense in the
-            # grooves / slopes (shadow), sparse on the lit crests of the
-            # alette. This makes the raised margins legible and gives true
-            # depth instead of a generic cylinder gradient.
-            shadow_r = 1.0 - relief
-            density = 0.05 + 0.75 * shadow_r + 0.10 * edge_shadow
+        elif relief_density is not None:
+            # Drive the stippling from the REAL 3D relief: dense on the curved
+            # margins (alette) and rounded edges, ~white on the flat centre.
+            density = relief_density
         else:
             # Fallback: lit rounded face (clean highlight left, dense shadow right)
             density = 0.04 + 0.55 * shadow + 0.18 * edge_shadow
@@ -1594,7 +1607,6 @@ class TechnicalDrawingGenerator:
         from matplotlib.patches import Polygon as _MplPolygon
 
         fig = plt.figure(figsize=(12, 14), dpi=self.dpi)
-
         fig.suptitle(f'Documentazione Tecnica - {artifact_id}',
                     fontsize=14, fontweight='bold', y=0.98)
 
@@ -1605,59 +1617,46 @@ class TechnicalDrawingGenerator:
         z_min, z_max = bounds[0][2], bounds[1][2]
         z_mid = 0.5 * (z_min + z_max)
 
-        # Shared vertical limits so the front view and the longitudinal
-        # profile print at exactly the SAME length, side by side. Extra room
-        # below leaves space for the scale bar inside the front axis.
         pad = z_ext * 0.03
         bar_room = z_ext * 0.12
         y_lo, y_hi = z_min - pad - bar_room, z_max + pad
-
-        h_main = z_ext + pad + bar_room
+        h_main = y_hi - y_lo
         h_bottom = z_ext * 0.16
 
-        # 3 columns: front (broad) | section (centered) | profile (thin)
-        gs = fig.add_gridspec(2, 3, hspace=0.06, wspace=0.04,
-                             left=0.05, right=0.95, top=0.94, bottom=0.04,
-                             height_ratios=[h_main, h_bottom],
-                             width_ratios=[1.25, 0.85, 0.85])
+        gs = fig.add_gridspec(2, 1, hspace=0.04,
+                             left=0.04, right=0.96, top=0.94, bottom=0.04,
+                             height_ratios=[h_main, h_bottom])
 
-        # -- ROW 0 COL 0: Vista Frontale --
-        ax_front = fig.add_subplot(gs[0, 0])
+        # ALL three views share ONE axis (one coordinate system), so front,
+        # section and profile are guaranteed to be at the SAME mm scale.
+        ax = fig.add_subplot(gs[0, 0])
+        ax.set_aspect('equal')
+        ax.axis('off')
+
+        # -- Vista Frontale (native X-Z coords) --
         front_2d = mesh.vertices[:, [0, 2]]
+        fout = None
         try:
-            # Faithful outline from the 3D projection (incavo, holes)
-            fout = self._draw_real_outline(ax_front, mesh, (0, 2))
+            fout = self._draw_real_outline(ax, mesh, (0, 2))
             if fout is None or len(fout) <= 2:
                 fout = self._get_real_silhouette(mesh, [0, 1, 0], (0, 2))
                 if fout is None or len(fout) <= 2:
                     from scipy.spatial import ConvexHull
                     fout = front_2d[ConvexHull(front_2d).vertices]
-                ax_front.plot(*np.vstack([fout, fout[0]]).T,
-                             'k-', linewidth=0.8, solid_capstyle='round')
-            # Mark the margini rialzati (alette) with ridge lines from the real
-            # 3D relief, then relief-driven stippling for depth (as in the
-            # published plates).
-            self._draw_alette_lines(ax_front, mesh, projection_axes=(0, 2),
+                ax.plot(*np.vstack([fout, fout[0]]).T,
+                        'k-', linewidth=0.8, solid_capstyle='round')
+            self._draw_alette_lines(ax, mesh, projection_axes=(0, 2),
                                     depth_axis=1)
-            self._add_stippling_shading(ax_front, mesh, front_2d, fout,
-                                        'front')
+            self._add_stippling_shading(ax, mesh, front_2d, fout, 'front')
         except Exception as e:
             print(f"Warning: front view render failed ({e})")
-        ax_front.set_title('Vista Frontale', fontsize=10, pad=4)
-        ax_front.set_aspect('equal')
-        ax_front.set_ylim(y_lo, y_hi)
-        # 3 cm scale bar below the object (axis is in mm, aspect equal)
-        fb = ax_front.get_xlim()
-        xc = (fb[0] + fb[1]) / 2
-        by = z_min - pad - bar_room * 0.5
-        ax_front.plot([xc - 15, xc + 15], [by, by], 'k-', linewidth=4,
-                      solid_capstyle='butt')
-        ax_front.text(xc, by - z_ext * 0.025, '3 cm', ha='center', va='top',
-                      fontsize=9)
-        ax_front.axis('off')
+        fout = np.asarray(fout) if fout is not None else front_2d
+        fx_min, fx_max = fout[:, 0].min(), fout[:, 0].max()
+        gap = max(x_ext * 0.5, 18)
 
-        # -- ROW 0 COL 1: Sezione Trasversale (HATCHED, centered at mid-height) --
-        ax_sec = fig.add_subplot(gs[0, 1])
+        # -- Sezione Trasversale (HATCHED), centered at mid-height, to the
+        #    right of the front view, at the SAME scale --
+        sec_right = fx_max + gap
         try:
             sec = mesh.section(plane_origin=[0, 0, z_mid],
                                plane_normal=[0, 0, 1])
@@ -1671,47 +1670,64 @@ class TechnicalDrawingGenerator:
                         polys.append(pts)
             if not polys:
                 raise ValueError("Section returned no geometry")
-            # Center horizontally and lift to mid-height so the section sits
-            # between the front view and the profile.
-            allpts = np.vstack(polys)
-            cx = 0.5 * (allpts[:, 0].min() + allpts[:, 0].max())
+            allp = np.vstack(polys)
+            scx = 0.5 * (allp[:, 0].min() + allp[:, 0].max())
+            secw = allp[:, 0].max() - allp[:, 0].min()
+            sec_center = fx_max + gap + secw / 2
             for p in polys:
                 q = p.copy()
-                q[:, 0] -= cx
+                q[:, 0] += (sec_center - scx)
                 q[:, 1] += z_mid
-                ax_sec.add_patch(_MplPolygon(
+                ax.add_patch(_MplPolygon(
                     q, closed=True, facecolor='none', edgecolor='black',
                     linewidth=0.9, hatch='////'))
+            ax.text(sec_center, z_mid + secw * 0.5 + 6, 'Sezione Trasversale',
+                    ha='center', va='bottom', fontsize=9)
+            sec_right = fx_max + gap + secw
         except Exception as e:
             print(f"Warning: section render failed ({e})")
-        ax_sec.set_title('Sezione Trasversale', fontsize=9, pad=4)
-        ax_sec.set_aspect('equal', adjustable='box')
-        ax_sec.set_xlim(-x_ext * 0.85, x_ext * 0.85)
-        ax_sec.set_ylim(y_lo, y_hi)
-        ax_sec.axis('off')
 
-        # -- ROW 0 COL 2: Profilo Longitudinale (same length as front) --
-        ax_prof = fig.add_subplot(gs[0, 2])
+        # -- Profilo Longitudinale, to the right of the section, same scale --
         prof_2d = mesh.vertices[:, [1, 2]]
         try:
-            pout = self._draw_real_outline(ax_prof, mesh, (1, 2))
+            tmpf = plt.figure()
+            tmpax = tmpf.add_subplot(111)
+            pout = self._draw_real_outline(tmpax, mesh, (1, 2))
+            plt.close(tmpf)
             if pout is None or len(pout) <= 2:
                 pout = self._get_real_silhouette(mesh, [1, 0, 0], (1, 2))
                 if pout is None or len(pout) <= 2:
                     from scipy.spatial import ConvexHull
                     pout = prof_2d[ConvexHull(prof_2d).vertices]
-                ax_prof.plot(*np.vstack([pout, pout[0]]).T,
-                            'k-', linewidth=0.8, solid_capstyle='round')
-            # No stippling on the profile — only front/back views are stippled.
+            pout = np.asarray(pout)
+            prof_off = sec_right + gap - pout[:, 0].min()
+            pp = pout.copy()
+            pp[:, 0] += prof_off
+            ax.plot(*np.vstack([pp, pp[0]]).T, 'k-', linewidth=0.8,
+                    solid_capstyle='round')
+            prof_cx = prof_off + 0.5 * (pout[:, 0].min() + pout[:, 0].max())
         except Exception as e:
             print(f"Warning: profile render failed ({e})")
-        ax_prof.set_title('Profilo Longitudinale', fontsize=9, pad=4)
-        ax_prof.set_aspect('equal')
-        ax_prof.set_ylim(y_lo, y_hi)
-        ax_prof.axis('off')
+            prof_cx = sec_right + gap
 
-        # -- ROW 1: Info strip spanning all columns --
-        ax_info = fig.add_subplot(gs[1, :])
+        # Titles for front & profile (data coords, above the object).
+        ax.text(0.5 * (fx_min + fx_max), z_max + pad * 1.5, 'Vista Frontale',
+                ha='center', va='bottom', fontsize=10)
+        ax.text(prof_cx, z_max + pad * 1.5, 'Profilo Longitudinale',
+                ha='center', va='bottom', fontsize=9)
+
+        # 3 cm scale bar under the front view.
+        xc = 0.5 * (fx_min + fx_max)
+        by = z_min - pad - bar_room * 0.5
+        ax.plot([xc - 15, xc + 15], [by, by], 'k-', linewidth=4,
+                solid_capstyle='butt')
+        ax.text(xc, by - z_ext * 0.025, '3 cm', ha='center', va='top',
+                fontsize=9)
+
+        ax.set_ylim(y_lo, y_hi)
+
+        # -- Info strip --
+        ax_info = fig.add_subplot(gs[1, 0])
         ax_info.axis('off')
         self._add_info_strip(ax_info, artifact_id, features)
 
