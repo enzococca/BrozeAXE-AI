@@ -360,20 +360,73 @@ async function selectView(viewType) {
 }
 
 async function loadView(viewType, regenerate) {
-    // Show loading
-    const msg = regenerate ? 'Rigenerazione dal modello 3D in corso...' : 'Caricamento vista...';
-    document.getElementById('drawingContent').innerHTML = `
-        <div class="loading">
-            <div class="loading-spinner"></div>
-            <p style="margin-top: 20px;">${msg}</p>
-        </div>
-    `;
+    const heavyViews = ['complete_sheet', 'complete_sheet_3d', 'complete_sheet_3d_front', 'render_3d'];
+    const useProgress = regenerate || heavyViews.includes(viewType);
 
+    if (useProgress) {
+        document.getElementById('drawingContent').innerHTML = `
+            <div style="padding: 40px; max-width: 440px; margin: 0 auto;">
+                <div style="background: #e2e8f0; border-radius: 8px; height: 22px; overflow: hidden; margin-bottom: 10px;">
+                    <div id="dwgBar" style="background: linear-gradient(90deg, #4299e1, #667eea); height: 100%; width: 0%; transition: width 0.4s ease; border-radius: 8px;"></div>
+                </div>
+                <p id="dwgStep" style="color: #4a5568; font-size: 14px; margin: 0;">Avvio...</p>
+                <p id="dwgEta" style="color: #a0aec0; font-size: 12px; margin: 4px 0 0 0;"></p>
+            </div>`;
+
+        try {
+            const streamUrl = `/web/technical-drawing-stream/${currentArtifact}/${viewType}`;
+            const resp = await fetch(streamUrl);
+            const reader = resp.body.getReader();
+            const decoder = new TextDecoder();
+            let buf = '';
+            let ok = false;
+
+            while (true) {
+                const {value, done: streamDone} = await reader.read();
+                if (streamDone) break;
+                buf += decoder.decode(value, {stream: true});
+                const lines = buf.split('\n');
+                buf = lines.pop();
+                for (const line of lines) {
+                    if (!line.startsWith('data: ')) continue;
+                    const evt = JSON.parse(line.slice(6));
+                    const bar = document.getElementById('dwgBar');
+                    const step = document.getElementById('dwgStep');
+                    const eta = document.getElementById('dwgEta');
+                    if (!bar) continue;
+                    if (evt.type === 'step') {
+                        bar.style.width = evt.pct + '%';
+                        step.textContent = evt.step;
+                        eta.textContent = evt.eta > 0 ? `~${evt.eta}s rimanenti` : '';
+                    } else if (evt.type === 'done') {
+                        bar.style.width = '100%';
+                        step.textContent = 'Completato!';
+                        eta.textContent = '';
+                        ok = true;
+                    } else if (evt.type === 'error') {
+                        throw new Error(evt.error);
+                    }
+                }
+            }
+            if (!ok) throw new Error('Stream terminato senza completamento');
+        } catch (error) {
+            document.getElementById('drawingContent').innerHTML =
+                `<div style="padding:40px;color:#e53e3e;"><p>Errore: ${error.message}</p></div>`;
+            return;
+        }
+    } else {
+        document.getElementById('drawingContent').innerHTML = `
+            <div class="loading">
+                <div class="loading-spinner"></div>
+                <p style="margin-top: 20px;">Caricamento vista...</p>
+            </div>`;
+    }
+
+    // Now load the (cached) image
     try {
         let url = `/web/technical-drawing/${currentArtifact}/${viewType}`;
         if (regenerate) url += '?regenerate=1&_=' + Date.now();
 
-        // Create image element
         const img = new Image();
         img.className = 'drawing-image';
 
@@ -381,8 +434,8 @@ async function loadView(viewType, regenerate) {
             document.getElementById('drawingContent').innerHTML = '';
             document.getElementById('drawingContent').appendChild(img);
             document.getElementById('downloadSection').style.display = 'block';
-            // The 3D modes produce raster-only output: SVG/DXF don't apply.
-            const rasterOnly = (viewType === 'render_3d' || viewType === 'complete_sheet_3d');
+            const rasterOnly = (viewType === 'render_3d' || viewType === 'complete_sheet_3d'
+                                || viewType === 'complete_sheet_3d_front');
             document.getElementById('btnDownloadSvg').style.display = rasterOnly ? 'none' : '';
             document.getElementById('btnDownloadDxf').style.display = rasterOnly ? 'none' : '';
         };
@@ -390,9 +443,8 @@ async function loadView(viewType, regenerate) {
         img.onerror = function() {
             document.getElementById('drawingContent').innerHTML = `
                 <div style="padding: 40px; color: #e53e3e;">
-                    <p>❌ Errore nel caricamento dell'immagine</p>
-                </div>
-            `;
+                    <p>Errore nel caricamento dell'immagine</p>
+                </div>`;
         };
 
         img.src = url;

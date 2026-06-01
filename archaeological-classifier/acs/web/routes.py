@@ -5,7 +5,7 @@ Web Interface Routes
 Blueprint for web-based user interface.
 """
 
-from flask import Blueprint, render_template, request, jsonify, session, current_app, make_response, send_file, redirect, url_for
+from flask import Blueprint, render_template, request, jsonify, session, current_app, make_response, send_file, redirect, url_for, Response, stream_with_context
 from werkzeug.utils import secure_filename
 import os
 import json
@@ -3246,8 +3246,186 @@ def compose_plate():
         return jsonify({'error': str(e)}), 500
 
 
-@web_bp.route('/ai-assistant')
-def ai_assistant_page():
+@web_bp.route('/compose-plate-stream', methods=['POST'])
+def compose_plate_stream():
+    """SSE endpoint that streams progress while generating a plate.
+
+    Emits JSON events:
+        {type: "progress", cell: 1, total: 4, artifact: "axe980", pct: 25}
+        {type: "composing", pct: 90}
+        {type: "done", url: "/web/compose-plate-result/<token>"}
+        {type: "error", error: "..."}
+    """
+    import uuid, time
+    config = request.get_json(silent=True)
+    if not config:
+        return jsonify({'error': 'Missing configuration'}), 400
+
+    cells = config.get('cells', [])
+    active_cells = [c for c in cells if c.get('artifact_id')]
+    total = len(active_cells)
+    if total == 0:
+        return jsonify({'error': 'No cells configured'}), 400
+
+    # Store result for later download via a token.
+    _plate_results = getattr(web_bp, '_plate_results', {})
+    web_bp._plate_results = _plate_results
+    token = str(uuid.uuid4())[:12]
+
+    def generate():
+        from acs.core.drawing_worker import generate_drawing_safe
+        from acs.core.plate_composer import get_plate_composer
+        try:
+            done = 0
+            t0 = time.time()
+            for cell in cells:
+                artifact_id = cell.get('artifact_id', '')
+                view = cell.get('view', 'longitudinal_profile')
+                if not artifact_id:
+                    continue
+
+                done += 1
+                elapsed = time.time() - t0
+                eta = int(elapsed / done * (total - done)) if done else 0
+                pct = int(done / (total + 1) * 90)
+                yield f"data: {json.dumps({'type': 'progress', 'cell': done, 'total': total, 'artifact': artifact_id, 'pct': pct, 'eta': eta})}\n\n"
+
+                if not ensure_mesh_loaded(artifact_id):
+                    yield f"data: {json.dumps({'type': 'error', 'error': f'Artifact {artifact_id} not found'})}\n\n"
+                    return
+
+                mesh = mesh_processor.meshes[artifact_id]
+                features = mesh_processor._extract_features(mesh, artifact_id)
+                if view in ('render_3d', 'complete_sheet_3d',
+                            'complete_sheet_3d_front'):
+                    textured = load_textured_mesh(artifact_id)
+                    if textured is not None:
+                        mesh = textured
+
+                try:
+                    if view in ('complete_sheet', 'complete_sheet_3d',
+                                'complete_sheet_3d_front'):
+                        vt = 180 if view == 'complete_sheet' else 240
+                    elif view == 'render_3d':
+                        vt = 150
+                    else:
+                        vt = 90
+                    cell['image_data'] = generate_drawing_safe(
+                        mesh, artifact_id, features, view, timeout=vt)
+                except Exception as e:
+                    print(f"Warning: view {view} for {artifact_id}: {e}")
+                    cell['image_data'] = None
+
+            yield f"data: {json.dumps({'type': 'composing', 'pct': 92})}\n\n"
+            composer = get_plate_composer()
+            plate_data = composer.compose_plate(config)
+            fmt = config.get('output_format', 'png')
+            _plate_results[token] = (plate_data, fmt)
+            yield f"data: {json.dumps({'type': 'done', 'token': token, 'pct': 100})}\n\n"
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={'Cache-Control': 'no-cache',
+                 'X-Accel-Buffering': 'no',
+                 'Connection': 'keep-alive'})
+
+
+@web_bp.route('/compose-plate-result/<token>')
+def compose_plate_result(token):
+    """Serve a previously generated plate stored by compose_plate_stream."""
+    results = getattr(web_bp, '_plate_results', {})
+    entry = results.pop(token, None)
+    if entry is None:
+        return jsonify({'error': 'Result expired or not found'}), 404
+    plate_data, fmt = entry
+    mimetype_map = {'png': 'image/png', 'svg': 'image/svg+xml',
+                    'pdf': 'application/pdf'}
+    return send_file(
+        io.BytesIO(plate_data),
+        mimetype=mimetype_map.get(fmt, 'image/png'),
+        as_attachment=False)
+
+
+@web_bp.route('/technical-drawing-stream/<artifact_id>/<view_type>')
+def technical_drawing_stream(artifact_id, view_type):
+    """SSE endpoint streaming progress for a single technical drawing.
+
+    Emits: {type: "step", step: "...", pct: N} ... {type: "done", pct: 100}
+    The actual image is still fetched via the normal GET route after "done".
+    """
+    import time
+
+    steps_map = {
+        'complete_sheet': ['Orientamento mesh', 'Contorno frontale',
+                           'Alette e puntinato', 'Sezione trasversale',
+                           'Profilo longitudinale', 'Scala e info'],
+        'complete_sheet_3d': ['Orientamento mesh', 'Contorno frontale',
+                              'Alette e puntinato', 'Sezione trasversale',
+                              'Profilo longitudinale', 'Render 3D',
+                              'Composizione finale'],
+        'complete_sheet_3d_front': ['Orientamento mesh', 'Contorno frontale',
+                                    'Alette e puntinato', 'Sezione trasversale',
+                                    'Profilo longitudinale', 'Render 3D fronte',
+                                    'Composizione finale'],
+        'render_3d': ['Orientamento mesh', 'Caricamento texture',
+                      'Render vista frontale', 'Render profilo',
+                      'Composizione'],
+    }
+    steps = steps_map.get(view_type, ['Generazione vista'])
+    total = len(steps)
+
+    def generate():
+        from acs.core.drawing_worker import generate_drawing_safe
+        try:
+            t0 = time.time()
+            for i, step in enumerate(steps):
+                pct = int((i / total) * 90)
+                elapsed = time.time() - t0
+                eta = int(elapsed / max(i, 1) * (total - i))
+                yield f"data: {json.dumps({'type': 'step', 'step': step, 'pct': pct, 'eta': eta})}\n\n"
+                if i == 0:
+                    if not ensure_mesh_loaded(artifact_id):
+                        yield f"data: {json.dumps({'type': 'error', 'error': 'Reperto non trovato'})}\n\n"
+                        return
+                    mesh = mesh_processor.meshes[artifact_id]
+                    features = mesh_processor._extract_features(mesh, artifact_id)
+                    if view_type in ('render_3d', 'complete_sheet_3d',
+                                     'complete_sheet_3d_front'):
+                        textured = load_textured_mesh(artifact_id)
+                        if textured is not None:
+                            mesh = textured
+                    output_format = 'png'
+                    if view_type in ('complete_sheet', 'complete_sheet_3d',
+                                     'complete_sheet_3d_front'):
+                        vt = 180 if view_type == 'complete_sheet' else 240
+                    elif view_type == 'render_3d':
+                        vt = 150
+                    else:
+                        vt = 90
+                    image_data = generate_drawing_safe(
+                        mesh, artifact_id, features, view_type,
+                        timeout=vt, output_format=output_format)
+                    _store_cached_drawing(artifact_id, view_type,
+                                          output_format, image_data)
+
+            yield f"data: {json.dumps({'type': 'done', 'pct': 100})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={'Cache-Control': 'no-cache',
+                 'X-Accel-Buffering': 'no',
+                 'Connection': 'keep-alive'})
+
+
+
     """AI Assistant page."""
     artifacts = list(mesh_processor.meshes.keys())
     return render_template('ai_assistant.html', artifacts=artifacts)

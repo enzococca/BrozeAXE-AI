@@ -326,26 +326,61 @@ async function composePlate() {
     btn.disabled = true;
     btn.textContent = 'Generazione in corso...';
     preview.innerHTML = `
-        <div style="padding: 40px;">
-            <div style="border: 4px solid #f3f3f3; border-top: 4px solid #4299e1; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto;"></div>
-            <p style="margin-top: 16px; color: #718096;">Generazione tavola in corso... (${cells.length} disegni)</p>
-        </div>
-        <style>@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }</style>`;
+        <div id="progressWrap" style="padding: 40px; max-width: 500px; margin: 0 auto;">
+            <div style="background: #e2e8f0; border-radius: 8px; height: 24px; overflow: hidden; margin-bottom: 12px;">
+                <div id="progressBar" style="background: linear-gradient(90deg, #4299e1, #667eea); height: 100%; width: 0%; transition: width 0.4s ease; border-radius: 8px;"></div>
+            </div>
+            <p id="progressText" style="color: #4a5568; font-size: 14px; margin: 0;">Avvio generazione...</p>
+            <p id="progressEta" style="color: #a0aec0; font-size: 12px; margin: 4px 0 0 0;"></p>
+        </div>`;
 
     try {
-        const resp = await fetch('/web/compose-plate', {
+        const resp = await fetch('/web/compose-plate-stream', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(config),
         });
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let token = null;
+        let buf = '';
 
-        if (!resp.ok) {
-            let msg = 'Errore nella generazione';
-            try { const err = await resp.json(); msg = err.error || msg; } catch(_) {}
-            throw new Error(msg);
+        while (true) {
+            const {value, done: streamDone} = await reader.read();
+            if (streamDone) break;
+            buf += decoder.decode(value, {stream: true});
+            const lines = buf.split('\n');
+            buf = lines.pop();
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                const evt = JSON.parse(line.slice(6));
+                const bar = document.getElementById('progressBar');
+                const txt = document.getElementById('progressText');
+                const eta = document.getElementById('progressEta');
+                if (evt.type === 'progress') {
+                    bar.style.width = evt.pct + '%';
+                    txt.textContent = `Disegno ${evt.cell}/${evt.total}: ${evt.artifact}`;
+                    eta.textContent = evt.eta > 0 ? `Tempo stimato: ~${evt.eta}s` : '';
+                } else if (evt.type === 'composing') {
+                    bar.style.width = evt.pct + '%';
+                    txt.textContent = 'Composizione tavola finale...';
+                    eta.textContent = '';
+                } else if (evt.type === 'done') {
+                    bar.style.width = '100%';
+                    txt.textContent = 'Completato!';
+                    eta.textContent = '';
+                    token = evt.token;
+                } else if (evt.type === 'error') {
+                    throw new Error(evt.error);
+                }
+            }
         }
 
-        plateBlob = await resp.blob();
+        if (!token) throw new Error('Nessun risultato ricevuto');
+
+        const plateResp = await fetch(`/web/compose-plate-result/${token}`);
+        if (!plateResp.ok) throw new Error('Impossibile scaricare il risultato');
+        plateBlob = await plateResp.blob();
         const url = URL.createObjectURL(plateBlob);
 
         const fmt = config.output_format;
