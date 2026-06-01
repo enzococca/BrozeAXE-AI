@@ -755,25 +755,26 @@ class TechnicalDrawingGenerator:
     def _draw_alette_lines(self, ax, mesh, projection_axes=(0, 2),
                            depth_axis=1, linewidth=0.6):
         """
-        Mark the inner edge of each margine rialzato (aletta) with a single
-        smooth line, Cataruzza-style.
+        Mark the inner edge of each margine rialzato (aletta) — Cataruzza
+        style.
 
-        For each horizontal slice of the front-surface height map, scans
-        outward from the centre and finds where the slope (dH/du) first
-        exceeds a threshold — the "foot" where the flat central face begins
-        rising into the raised margin.  The resulting left and right point
-        series are smoothed into two clean lines.
+        Uses a THICKNESS MAP (front − back depth) which isolates the alette
+        from the overall convex body shape.  For each row, finds the
+        thickness peak in the outer portion of each half (where the thin
+        alette ridges are), then walks inward to the foot where the
+        thickness drops back to the flat-centre level.
         """
         try:
-            from scipy.ndimage import gaussian_filter, gaussian_filter1d
+            from scipy.ndimage import gaussian_filter1d
             from scipy.interpolate import griddata
 
             a0, a1 = list(projection_axes)
             v = mesh.vertices
             normals = mesh.vertex_normals
 
-            front = v[normals[:, depth_axis] > 0.1]
-            if len(front) < 50:
+            front = v[normals[:, depth_axis] > 0.2]
+            back = v[normals[:, depth_axis] < -0.2]
+            if len(front) < 50 or len(back) < 50:
                 return
 
             u_min, u_max = v[:, a0].min(), v[:, a0].max()
@@ -785,45 +786,71 @@ class TechnicalDrawingGenerator:
             ws = np.linspace(w_min, w_max, nw)
             Ug, Wg = np.meshgrid(us, ws)
 
-            H = griddata(front[:, [a0, a1]], front[:, depth_axis],
-                         (Ug, Wg), method='linear')
-            if not np.isfinite(np.nanmax(H)):
+            fz = griddata(front[:, [a0, a1]], front[:, depth_axis],
+                          (Ug, Wg), method='linear')
+            bz = griddata(back[:, [a0, a1]], back[:, depth_axis],
+                          (Ug, Wg), method='linear')
+            thick = fz - bz
+            if not np.isfinite(np.nanmax(thick)):
                 return
-            H = np.nan_to_num(H, nan=np.nanmin(H))
-            H = gaussian_filter(H, 2.5)
-
-            du = u_span / max(nu - 1, 1)
-            dHdu = np.gradient(H, du, axis=1)
+            thick = np.nan_to_num(thick, nan=0.0)
+            for j in range(nw):
+                thick[j] = gaussian_filter1d(thick[j], 2.0)
 
             mid = nu // 2
-            slope_ref = np.percentile(np.abs(dHdu), 85)
-            if slope_ref < 1e-6:
-                return
-            slope_thr = 0.25 * slope_ref
+            c0, c1 = int(nu * 0.42), int(nu * 0.58)
+            # Outer search zones: left 0..40% of width, right 60..100%
+            l_end = int(nu * 0.45)
+            r_start = int(nu * 0.55)
 
             pts_l, pts_r = [], []
             for j in range(nw):
-                row_slope = np.abs(dHdu[j])
-                # Scan LEFT from centre: find first column where slope
-                # exceeds threshold (start of the left aletta wall).
-                for i in range(mid, 3, -1):
-                    if row_slope[i] > slope_thr:
-                        pts_l.append((us[i], ws[j]))
-                        break
-                # Scan RIGHT from centre.
-                for i in range(mid, nu - 3):
-                    if row_slope[i] > slope_thr:
-                        pts_r.append((us[i], ws[j]))
-                        break
+                row = thick[j]
+                center_t = np.median(row[c0:c1])
+                tmax = row.max()
+                if tmax <= 0 or (tmax - center_t) < 0.10 * tmax:
+                    continue
 
-            min_pts = max(15, int(nw * 0.18))
+                # Left aletta: find peak in OUTER left zone
+                left_zone = row[:l_end]
+                if len(left_zone) < 3:
+                    continue
+                lpeak_i = np.argmax(left_zone)
+                lpeak_t = row[lpeak_i]
+                relief_l = lpeak_t - center_t
+                if relief_l > 0.08 * tmax:
+                    thr = center_t + 0.40 * relief_l
+                    foot_i = lpeak_i
+                    for i in range(lpeak_i, min(mid + 3, nu)):
+                        if row[i] <= thr:
+                            foot_i = i
+                            break
+                    pts_l.append((us[foot_i], ws[j]))
+
+                # Right aletta: find peak in OUTER right zone
+                right_zone = row[r_start:]
+                if len(right_zone) < 3:
+                    continue
+                rpeak_i = r_start + np.argmax(right_zone)
+                rpeak_t = row[rpeak_i]
+                relief_r = rpeak_t - center_t
+                if relief_r > 0.08 * tmax:
+                    thr = center_t + 0.40 * relief_r
+                    foot_i = rpeak_i
+                    for i in range(rpeak_i, max(mid - 3, -1), -1):
+                        if row[i] <= thr:
+                            foot_i = i
+                            break
+                    pts_r.append((us[foot_i], ws[j]))
+
+            min_pts = max(15, int(nw * 0.15))
             for pts in (pts_l, pts_r):
                 if len(pts) < min_pts:
                     continue
                 c = np.array(pts)
-                if c[:, 0].std() > 0.20 * u_span:
+                if c[:, 0].std() > 0.22 * u_span:
                     continue
-                if (c[:, 1].max() - c[:, 1].min()) < 0.25 * w_span:
+                if (c[:, 1].max() - c[:, 1].min()) < 0.20 * w_span:
                     continue
                 cu = gaussian_filter1d(c[:, 0], sigma=8)
                 ax.plot(cu, c[:, 1], 'k-', linewidth=max(linewidth, 0.7),
